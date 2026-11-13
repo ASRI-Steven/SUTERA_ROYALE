@@ -1,0 +1,559 @@
+{
+ "version": 3,
+ "bones": [
+  "hips",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "armL",
+  "foreL",
+  "handL",
+  "armR",
+  "foreR",
+  "handR",
+  "thighL",
+  "shinL",
+  "footL",
+  "thighR",
+  "shinR",
+  "footR"
+ ],
+ "pivots": {
+  "hips": [
+   0,
+   0.98,
+   0
+  ],
+  "spine": [
+   0,
+   1.08,
+   0
+  ],
+  "chest": [
+   0,
+   1.28,
+   0
+  ],
+  "neck": [
+   0,
+   1.55,
+   0
+  ],
+  "head": [
+   0,
+   1.62,
+   0
+  ],
+  "armL": [
+   0.2,
+   1.49,
+   0
+  ],
+  "foreL": [
+   0.2,
+   1.21,
+   0
+  ],
+  "handL": [
+   0.2,
+   0.96,
+   0
+  ],
+  "armR": [
+   -0.2,
+   1.49,
+   0
+  ],
+  "foreR": [
+   -0.2,
+   1.21,
+   0
+  ],
+  "handR": [
+   -0.2,
+   0.96,
+   0
+  ],
+  "thighL": [
+   0.1,
+   0.93,
+   0
+  ],
+  "shinL": [
+   0.1,
+   0.5,
+   0
+  ],
+  "footL": [
+   0.1,
+   0.08,
+   0
+  ],
+  "thighR": [
+   -0.1,
+   0.93,
+   0
+  ],
+  "shinR": [
+   -0.1,
+   0.5,
+   0
+  ],
+  "footR": [
+   -0.1,
+   0.08,
+   0
+  ]
+ },
+ "slots": [
+  "skin",
+  "hand",
+  "top",
+  "sleeve",
+  "cuff",
+  "pants",
+  "inner",
+  "fixed"
+ ],
+ "neutral": 0.5,
+ "variants": [
+  {
+   "key": "m1",
+   "glb": "m1.glb",
+   "lods": [
+    "m1_lod0",
+    "m1_lod1",
+    "m1_lod2",
+    "m1_lod3"
+   ],
+   "tris": [
+    10769,
+    3635,
+    1097,
+    240
+   ],
+   "verts": [
+    6457,
+    2494,
+    940,
+    296
+   ],
+   "hair": [
+    {
+     "style": "short02",
+     "bone": "head",
+     "map": "hair_short02.webp",
+     "lods": [
+      "m1_hair_short02_0",
+      "m1_hair_short02_1"
+     ],
+     "tris": [
+      2200,
+      599
+     ]
+    },
+    {
+     "style": "short04",
+     "bone": "head",
+     "map": "hair_short04.webp",
+     "lods": [
+      "m1_hair_short04_0",
+      "m1_hair_short04_1"
+     ],
+     "tris": [
+      1050,
+      599
+     ]
+    }
+   ],
+   "albedo": "m1_albedo.webp",
+   "normal": "m1_normal.webp",
+   "orm": "m1_orm.webp",
+   "skinMean": [
+    0.5985626578330994,
+    0.3425562381744385,
+    0.22445940971374512
+   ],
+   "gear": [
+    {
+     "name": "helmet1",
+     "mesh": "m1_helmet1",
+     "bone": "head",
+     "tint": null,
+     "tris": 676
+    },
+    {
+     "name": "helmet2",
+     "mesh": "m1_helmet2",
+     "bone": "head",
+     "tint": null,
+     "tris": 852
+    },
+    {
+     "name": "helmet3",
+     "mesh": "m1_helmet3",
+     "bone": "head",
+     "tint": null,
+     "tris": 888
+    },
+    {
+     "name": "vest1",
+     "mesh": "m1_vest1",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1022
+    },
+    {
+     "name": "vest2",
+     "mesh": "m1_vest2",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1178
+    },
+    {
+     "name": "vest3",
+     "mesh": "m1_vest3",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1354
+    },
+    {
+     "name": "pack",
+     "mesh": "m1_pack",
+     "bone": "chest",
+     "tint": "pack",
+     "tris": 572
+    }
+   ]
+  },
+  {
+   "key": "f1",
+   "glb": "f1.glb",
+   "lods": [
+    "f1_lod0",
+    "f1_lod1",
+    "f1_lod2",
+    "f1_lod3"
+   ],
+   "tris": [
+    11455,
+    3868,
+    1171,
+    249
+   ],
+   "verts": [
+    6651,
+    2497,
+    929,
+    281
+   ],
+   "hair": [
+    {
+     "style": "bob01",
+     "bone": "head",
+     "map": "hair_bob01.webp",
+     "lods": [
+      "f1_hair_bob01_0",
+      "f1_hair_bob01_1"
+     ],
+     "tris": [
+      2199,
+      600
+     ]
+    },
+    {
+     "style": "ponytail01",
+     "bone": "head",
+     "map": "hair_ponytail01.webp",
+     "lods": [
+      "f1_hair_ponytail01_0",
+      "f1_hair_ponytail01_1"
+     ],
+     "tris": [
+      2199,
+      600
+     ]
+    }
+   ],
+   "albedo": "f1_albedo.webp",
+   "normal": "f1_normal.webp",
+   "orm": "f1_orm.webp",
+   "skinMean": [
+    0.7125130295753479,
+    0.4312521517276764,
+    0.2734803259372711
+   ],
+   "gear": [
+    {
+     "name": "helmet1",
+     "mesh": "f1_helmet1",
+     "bone": "head",
+     "tint": null,
+     "tris": 676
+    },
+    {
+     "name": "helmet2",
+     "mesh": "f1_helmet2",
+     "bone": "head",
+     "tint": null,
+     "tris": 852
+    },
+    {
+     "name": "helmet3",
+     "mesh": "f1_helmet3",
+     "bone": "head",
+     "tint": null,
+     "tris": 888
+    },
+    {
+     "name": "vest1",
+     "mesh": "f1_vest1",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1022
+    },
+    {
+     "name": "vest2",
+     "mesh": "f1_vest2",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1178
+    },
+    {
+     "name": "vest3",
+     "mesh": "f1_vest3",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1354
+    },
+    {
+     "name": "pack",
+     "mesh": "f1_pack",
+     "bone": "chest",
+     "tint": "pack",
+     "tris": 572
+    }
+   ]
+  },
+  {
+   "key": "m2",
+   "glb": "m2.glb",
+   "lods": [
+    "m2_lod0",
+    "m2_lod1",
+    "m2_lod2",
+    "m2_lod3"
+   ],
+   "tris": [
+    11865,
+    3977,
+    1207,
+    254
+   ],
+   "verts": [
+    6799,
+    2554,
+    943,
+    285
+   ],
+   "hair": [
+    {
+     "style": "short04",
+     "bone": "head",
+     "map": "hair_short04.webp",
+     "lods": [
+      "m2_hair_short04_0",
+      "m2_hair_short04_1"
+     ],
+     "tris": [
+      1050,
+      600
+     ]
+    },
+    {
+     "style": "short02",
+     "bone": "head",
+     "map": "hair_short02.webp",
+     "lods": [
+      "m2_hair_short02_0",
+      "m2_hair_short02_1"
+     ],
+     "tris": [
+      2200,
+      600
+     ]
+    }
+   ],
+   "albedo": "m2_albedo.webp",
+   "normal": "m2_normal.webp",
+   "orm": "m2_orm.webp",
+   "skinMean": [
+    0.6063730716705322,
+    0.35589519143104553,
+    0.23405680060386658
+   ],
+   "gear": [
+    {
+     "name": "helmet1",
+     "mesh": "m2_helmet1",
+     "bone": "head",
+     "tint": null,
+     "tris": 676
+    },
+    {
+     "name": "helmet2",
+     "mesh": "m2_helmet2",
+     "bone": "head",
+     "tint": null,
+     "tris": 852
+    },
+    {
+     "name": "helmet3",
+     "mesh": "m2_helmet3",
+     "bone": "head",
+     "tint": null,
+     "tris": 888
+    },
+    {
+     "name": "vest1",
+     "mesh": "m2_vest1",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1022
+    },
+    {
+     "name": "vest2",
+     "mesh": "m2_vest2",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1178
+    },
+    {
+     "name": "vest3",
+     "mesh": "m2_vest3",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1354
+    },
+    {
+     "name": "pack",
+     "mesh": "m2_pack",
+     "bone": "chest",
+     "tint": "pack",
+     "tris": 572
+    }
+   ]
+  },
+  {
+   "key": "f2",
+   "glb": "f2.glb",
+   "lods": [
+    "f2_lod0",
+    "f2_lod1",
+    "f2_lod2",
+    "f2_lod3"
+   ],
+   "tris": [
+    10770,
+    3633,
+    1098,
+    239
+   ],
+   "verts": [
+    6157,
+    2285,
+    834,
+    252
+   ],
+   "hair": [
+    {
+     "style": "ponytail01",
+     "bone": "head",
+     "map": "hair_ponytail01.webp",
+     "lods": [
+      "f2_hair_ponytail01_0",
+      "f2_hair_ponytail01_1"
+     ],
+     "tris": [
+      2199,
+      599
+     ]
+    },
+    {
+     "style": "bob01",
+     "bone": "head",
+     "map": "hair_bob01.webp",
+     "lods": [
+      "f2_hair_bob01_0",
+      "f2_hair_bob01_1"
+     ],
+     "tris": [
+      2200,
+      599
+     ]
+    }
+   ],
+   "albedo": "f2_albedo.webp",
+   "normal": "f2_normal.webp",
+   "orm": "f2_orm.webp",
+   "skinMean": [
+    0.7017294764518738,
+    0.42233288288116455,
+    0.2697944939136505
+   ],
+   "gear": [
+    {
+     "name": "helmet1",
+     "mesh": "f2_helmet1",
+     "bone": "head",
+     "tint": null,
+     "tris": 676
+    },
+    {
+     "name": "helmet2",
+     "mesh": "f2_helmet2",
+     "bone": "head",
+     "tint": null,
+     "tris": 852
+    },
+    {
+     "name": "helmet3",
+     "mesh": "f2_helmet3",
+     "bone": "head",
+     "tint": null,
+     "tris": 888
+    },
+    {
+     "name": "vest1",
+     "mesh": "f2_vest1",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1022
+    },
+    {
+     "name": "vest2",
+     "mesh": "f2_vest2",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1178
+    },
+    {
+     "name": "vest3",
+     "mesh": "f2_vest3",
+     "bone": "chest",
+     "tint": null,
+     "tris": 1354
+    },
+    {
+     "name": "pack",
+     "mesh": "f2_pack",
+     "bone": "chest",
+     "tint": "pack",
+     "tris": 572
+    }
+   ]
+  }
+ ],
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X. Mesh ber-skin pada pose diam rig.js; JOINTS_0 mengacu urutan \"bones\". _SLOT = indeks slot warna. Albedo netral \u00d7 neutral."
+}

@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Kawasan Hidup</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: one-screen command center. The isometric toy town is the hero on the left; the selected cluster's needs and the weekly missions sit in a right rail; the live event feed runs under the town. Stacks to one column under 960px. Dark theme = the same town at night, where street lights matter. */
+:root{
+  --bg:#EDF2EF; --surface:#FFFFFF; --surface-2:#F3F7F5; --fg:#14201C; --muted:#55655E; --line:#D4DDD8;
+  --accent:#0F7C6B; --accent-fg:#FFFFFF; --accent-soft:#D5EDE7;
+  --st-baru:#D63A2A; --st-respon:#D97A0B; --st-wo:#2E6AD1; --st-selesai:#1D9353;
+  --good:#1D9353; --warn:#B07D00; --crit:#D63A2A;
+  --sky:#DCEAE4; --grass:#A3CF8F; --grass-2:#97C684; --soil:#8C6A47; --road:#6E7A80; --road-line:#EEF2F3; --lot:#8A959A;
+  --wall-l:#EEE8DE; --wall-r:#D5CCBE; --roof-a:#C0563F; --roof-b:#4F6F8F; --roof-c:#3E494E;
+  --window:#8DB3C9; --window-lit:#FFD37A; --tree:#3F9D5B; --tree-dry:#B78D3F; --trunk:#7A5A3A;
+  --lamp:#39444A; --lamp-glow:#FFD678; --trash:#2A3033; --water:#73BAD7; --shade:#14201C;
+  --night:0;
+  --font-display:"Baloo 2","Trebuchet MS",system-ui,sans-serif;
+  --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:14px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1614; --surface:#12201C; --surface-2:#172823; --fg:#E2EDE8; --muted:#90A69E; --line:#26392F;
+    --accent:#3CC5AC; --accent-fg:#052019; --accent-soft:#163B33;
+    --st-baru:#FF6A57; --st-respon:#FFA94A; --st-wo:#72A4FF; --st-selesai:#4BD088;
+    --good:#4BD088; --warn:#F2C14E; --crit:#FF6A57;
+    --sky:#0A181B; --grass:#24473A; --grass-2:#204135; --soil:#3B2D20; --road:#2A3236; --road-line:#7B888E; --lot:#343D42;
+    --wall-l:#5F5D59; --wall-r:#4C4A47; --roof-a:#7E3B2D; --roof-b:#304861; --roof-c:#232B2F;
+    --window:#2F4B59; --window-lit:#FFC65A; --tree:#2E6C46; --tree-dry:#6F5B2F; --trunk:#4B3A28;
+    --lamp:#9AA7AC; --lamp-glow:#FFC65A; --trash:#07090A; --water:#2A5E77; --shade:#000000;
+    --night:1; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1614; --surface:#12201C; --surface-2:#172823; --fg:#E2EDE8; --muted:#90A69E; --line:#26392F;
+  --accent:#3CC5AC; --accent-fg:#052019; --accent-soft:#163B33;
+  --st-baru:#FF6A57; --st-respon:#FFA94A; --st-wo:#72A4FF; --st-selesai:#4BD088;
+  --good:#4BD088; --warn:#F2C14E; --crit:#FF6A57;
+  --sky:#0A181B; --grass:#24473A; --grass-2:#204135; --soil:#3B2D20; --road:#2A3236; --road-line:#7B888E; --lot:#343D42;
+  --wall-l:#5F5D59; --wall-r:#4C4A47; --roof-a:#7E3B2D; --roof-b:#304861; --roof-c:#232B2F;
+  --window:#2F4B59; --window-lit:#FFC65A; --tree:#2E6C46; --tree-dry:#6F5B2F; --trunk:#4B3A28;
+  --lamp:#9AA7AC; --lamp-glow:#FFC65A; --trash:#07090A; --water:#2A5E77; --shade:#000000;
+  --night:1; color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.45;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:18px 28px}
+.app{max-width:1260px;margin:0 auto;display:grid;gap:16px}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px}
+.brand{min-width:0;max-width:560px}
+.tag{display:inline-flex;align-items:center;font-size:11px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;color:var(--accent);background:var(--accent-soft);padding:3px 9px;border-radius:999px}
+.brand h1{font-family:var(--font-display);font-weight:800;font-size:clamp(34px,4.6vw,50px);line-height:.95;margin:8px 0 6px;letter-spacing:-.01em;text-wrap:balance}
+.brand p{margin:0;color:var(--muted);font-size:14.5px}
+.summary{display:flex;flex-wrap:wrap;gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 14px;display:grid;gap:6px;align-content:center;min-width:0}
+.lbl{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.lbl b{color:var(--fg)}
+.row{display:flex;align-items:center;gap:10px}
+.big{font-family:var(--font-display);font-weight:800;font-size:40px;line-height:.85;font-variant-numeric:tabular-nums}
+.xp{width:170px;max-width:100%;height:8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden}
+.xp span{display:block;height:100%;background:var(--accent);transition:width .5s ease}
+.mono{font-family:var(--font-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.counts{display:flex;flex-wrap:wrap;gap:6px 14px}
+.count{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+.count b{font-family:var(--font-mono);font-weight:500;font-size:15px;color:var(--fg);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex:none}
+.d-baru{background:var(--st-baru)} .d-respon{background:var(--st-respon)} .d-wo{background:var(--st-wo)} .d-selesai{background:var(--st-selesai)}
+.chip{display:inline-flex;align-items:center;font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.chip.good{color:var(--good);background:color-mix(in srgb,var(--good) 15%,transparent)}
+.chip.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 17%,transparent)}
+.chip.crit{color:var(--crit);background:color-mix(in srgb,var(--crit) 15%,transparent)}
+.bg-good{background:var(--good)} .bg-warn{background:var(--warn)} .bg-crit{background:var(--crit)}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:16px;align-items:start}
+.col{display:grid;gap:12px;min-width:0}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.btn{font:700 14px/1 var(--font-body);border-radius:10px;padding:11px 15px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.primary:hover{filter:brightness(1.06)}
+.btn.small{padding:8px 11px;font-size:13px}
+.btn.wide{width:100%}
+.switch{display:inline-flex;align-items:center;gap:8px;font:700 14px/1 var(--font-body);background:transparent;border:0;color:var(--fg);cursor:pointer;padding:6px 2px}
+.switch .track{width:40px;height:23px;border-radius:999px;background:var(--line);position:relative;transition:background .2s;flex:none}
+.switch .track::after{content:"";position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .2s}
+.switch[aria-checked="true"] .track{background:var(--accent)}
+.switch[aria-checked="true"] .track::after{transform:translateX(17px)}
+.switch .state{color:var(--muted);font-weight:600}
+.hint{color:var(--muted);font-size:13px;margin-left:auto}
+.btn:focus-visible,.switch:focus-visible,.chipbtn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.stage{position:relative;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);background:var(--sky)}
+canvas{display:block;width:100%;touch-action:manipulation}
+.tip{position:absolute;pointer-events:none;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.14);white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chipbtn{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:5px 13px 5px 5px;font:700 13px/1 var(--font-body);cursor:pointer}
+.chipbtn[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.badge{display:inline-grid;place-items:center;min-width:30px;height:23px;padding:0 6px;border-radius:999px;font:800 12px/1 var(--font-body);font-variant-numeric:tabular-nums;color:var(--surface)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted)}
+.lg{display:inline-flex;align-items:center;gap:6px}
+.legend .div{flex-basis:100%;height:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;min-width:0}
+.card h2{font-family:var(--font-display);font-weight:700;font-size:21px;line-height:1.05;margin:0}
+.card h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:800;color:var(--muted);margin:16px 0 8px}
+.chead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.eyebrow{font-size:12px;color:var(--muted);font-weight:600;margin-bottom:2px}
+.cscore{display:grid;justify-items:end;gap:6px}
+.needs{display:grid;gap:10px;margin-top:14px}
+.need{display:grid;grid-template-columns:20px 1fr auto;align-items:center;gap:5px 9px}
+.need svg{width:18px;height:18px;color:var(--muted)}
+.need .nm{font-weight:700;font-size:14px}
+.need .val{font-family:var(--font-mono);font-size:13px;font-variant-numeric:tabular-nums}
+.need .bar{grid-column:2/4;height:9px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden}
+.need .bar span{display:block;height:100%;border-radius:999px;transition:width .5s ease}
+.tickets{list-style:none;margin:0 0 12px;padding:0;display:grid;gap:8px}
+.ticket{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:3px 10px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.stagechip{grid-row:1/3;grid-column:1;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;min-width:86px}
+.ticket .what{grid-column:2;grid-row:1;font-weight:700;font-size:14px}
+.ticket .meta{grid-column:2;grid-row:2;color:var(--muted);font-size:12px}
+.ticket .act{grid-column:3;grid-row:1/3}
+.empty{color:var(--muted);font-size:14px;margin:0 0 12px}
+.mission{display:grid;gap:6px;padding:12px 0 0;margin-top:12px;border-top:1px solid var(--line)}
+.mission .t{font-weight:800}
+.mission .d{font-size:14px}
+.mission .r{font-size:12px;color:var(--muted)}
+.prog{height:9px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden}
+.prog span{display:block;height:100%;background:var(--accent);transition:width .5s ease}
+.done{color:var(--good);font-weight:800;font-size:13px}
+.feed ol{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:7px}
+.feed li{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:10px;align-items:center;font-size:14px}
+.feed time{font-family:var(--font-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.feed .cl{color:var(--muted)}
+.foot{color:var(--muted);font-size:13px;margin:0;max-width:760px}
+.toasts{position:fixed;right:max(16px,env(safe-area-inset-right,0px));bottom:calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:8px;z-index:20;width:min(340px,calc(100vw - 32px))}
+.toast{background:var(--fg);color:var(--bg);border-radius:12px;padding:12px 14px;box-shadow:0 10px 30px rgba(0,0,0,.25);animation:pop .35s ease;font-size:14px}
+.toast b{display:block;font-family:var(--font-display);font-size:18px;line-height:1.1;margin-bottom:2px}
+@keyframes pop{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+@media (max-width:960px){.main{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:560px){.hint{margin-left:0;flex-basis:100%}.big{font-size:34px}.stat{flex:1 1 140px}}
+@media (prefers-reduced-motion: reduce){.toast{animation:none}.need .bar span,.prog span,.xp span,.switch .track,.switch .track::after{transition:none}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="tag">Mockup · data contoh</span>
+      <h1>Kawasan Hidup</h1>
+      <p>Gamification untuk command center. Kebutuhan tiap cluster naik turun mengikuti keluhan, respond ticket, dan WO.</p>
+    </div>
+    <div class="summary">
+      <div class="stat"><span class="lbl">Skor kawasan</span><div class="row"><span class="big" id="kScore">0</span><span class="chip good" id="kStatus">Sehat</span></div></div>
+      <div class="stat"><span class="lbl">Level <b id="lvl">3</b></span><div class="xp"><span id="xpFill"></span></div><span class="mono" id="xpText">0 / 300 XP</span></div>
+      <div class="stat"><span class="lbl">Hari ini</span>
+        <div class="counts">
+          <span class="count"><span class="dot d-baru"></span>Baru <b id="cBaru">0</b></span>
+          <span class="count"><span class="dot d-respon"></span>Direspon <b id="cRespon">0</b></span>
+          <span class="count"><span class="dot d-wo"></span>WO <b id="cWo">0</b></span>
+          <span class="count"><span class="dot d-selesai"></span>Selesai <b id="cDone">0</b></span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="col">
+      <div class="toolbar">
+        <button type="button" class="btn primary" id="btnNew">Keluhan baru</button>
+        <button type="button" class="switch" id="btnDemo" role="switch" aria-checked="true"><span class="track" aria-hidden="true"></span>Simulasi live <span class="state" id="demoState">Nyala</span></button>
+        <button type="button" class="btn" id="btnReset">Ulang dari awal</button>
+        <span class="hint">Klik cluster di peta untuk melihat kebutuhannya.</span>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="town" role="img" aria-label="Peta isometrik kawasan contoh dengan enam cluster. Pilih cluster lewat tombol di bawah peta."></canvas>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+      <div class="chips" id="chips" role="group" aria-label="Pilih cluster"></div>
+      <div class="legend">
+        <span class="lg"><span class="dot d-baru"></span>Baru</span>
+        <span class="lg"><span class="dot d-respon"></span>Direspon</span>
+        <span class="lg"><span class="dot d-wo"></span>WO berjalan</span>
+        <span class="lg"><span class="dot d-selesai"></span>Selesai</span>
+        <span class="div"></span>
+        <span class="lg">Lampu padam: penerangan turun</span>
+        <span class="lg">Kantong sampah: kebersihan turun</span>
+        <span class="lg">Pohon menguning: kenyamanan turun</span>
+        <span class="lg">Cincin merah di gerbang: keamanan di bawah 60</span>
+      </div>
+      <section class="card feed"><h2>Kejadian terbaru</h2><ol id="feed"></ol></section>
+    </div>
+    <aside class="col">
+      <section class="card" id="clusterCard"></section>
+      <section class="card" id="missions"></section>
+    </aside>
+  </div>
+  <p class="foot">Di versi asli, titik keluhan, respond ticket, dan WO datang dari TownshipDB lewat BFF dan muncul di peta paling lambat 30 detik. Skor, XP, dan misi di halaman ini hanya contoh aturan main.</p>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+'use strict';
+const RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const NX = 16, NY = 11, TW = 64, TH = 32, HEAD = 96, BASE = 16;
+const FONT = '"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif';
+
+const NEEDS = [
+  {key:'keb', label:'Kebersihan', icon:'<polygon points="10,2 12,8 18,10 12,12 10,18 8,12 2,10 8,8"/>'},
+  {key:'pen', label:'Penerangan', icon:'<circle cx="10" cy="8" r="5.5"/><rect x="7.5" y="13.5" width="5" height="4" rx="1"/>'},
+  {key:'kea', label:'Keamanan', icon:'<path d="M10 2 L17 5 V10 C17 14 14 17 10 18 C6 17 3 14 3 10 V5 Z"/>'},
+  {key:'ken', label:'Kenyamanan', icon:'<circle cx="10" cy="8" r="6"/><rect x="9" y="12" width="2" height="6"/>'}
+];
+const NEED_LABEL = Object.fromEntries(NEEDS.map(n => [n.key, n.label]));
+const CATS = [
+  {key:'pju', label:'PJU mati', need:'pen'},
+  {key:'lampu-taman', label:'Lampu taman padam', need:'pen'},
+  {key:'sampah', label:'Sampah belum diangkut', need:'keb'},
+  {key:'rumput', label:'Rumput liar di fasum', need:'keb'},
+  {key:'palang', label:'Palang gerbang macet', need:'kea'},
+  {key:'cctv', label:'CCTV cluster mati', need:'kea'},
+  {key:'saluran', label:'Saluran mampet', need:'ken'},
+  {key:'jalan', label:'Jalan berlubang', need:'ken'},
+  {key:'pohon', label:'Dahan pohon patah', need:'ken'}
+];
+const CAT = Object.fromEntries(CATS.map(c => [c.key, c]));
+const ORDER = ['baru', 'respon', 'wo', 'selesai'];
+const STAGE_LABEL = {baru:'Baru', respon:'Direspon', wo:'WO berjalan', selesai:'Selesai'};
+const NEXT = {baru:'Respon', respon:'Buat WO', wo:'Selesaikan'};
+const PEN = {baru:16, respon:11, wo:6};
+const STATUS_LABEL = {good:'Sehat', warn:'Perlu perhatian', crit:'Kritis'};
+
+const LAYOUTS = {
+  res:  {houses:[[0,0,'a'],[2,0,'b'],[0,2,'c'],[2,2,'a']], trees:[[1.5,1.5],[3.5,1.2],[1.2,3.5]],
+         lamps:[[3.78,0.6],[3.78,3.78],[0.6,3.78]], trash:[[1.15,0.55],[0.55,1.6],[2.95,1.35],[1.6,2.95]]},
+  res2: {houses:[[0,0,'b'],[3,0,'c'],[1,2,'a'],[3,2,'b']], trees:[[1.6,0.5],[0.5,2.5],[2.6,3.6],[0.6,3.5]],
+         lamps:[[3.78,1.7],[3.78,3.78],[1.7,3.78]], trash:[[1.1,1.2],[2.7,0.6],[2.3,2.7],[0.6,1.6]]},
+  park: {houses:[[0,0,'a'],[3,0,'c']], water:[[1,2],[2,2],[1,3],[2,3]],
+         trees:[[0.5,2.4],[3.5,2.4],[1.6,0.6],[2.5,1.4],[0.6,3.6],[3.3,3.4],[1.5,1.4]],
+         lamps:[[3.78,1.6],[3.78,3.78],[0.5,1.6]], trash:[[1.2,1.0],[2.9,1.1],[0.9,1.9],[2.2,0.4]]},
+  com:  {shops:[[0,0,46,'a'],[1,0,54,'b'],[2,0,46,'c'],[3,0,40,'a'],[0,2,38,'b'],[1,2,44,'a'],[2,2,38,'c']],
+         lot:[[0,3],[1,3],[2,3],[3,3]], trees:[[3.5,2.5]],
+         lamps:[[0.5,3.8],[2.0,3.8],[3.7,3.8]], trash:[[0.6,1.5],[1.7,1.6],[2.8,1.4],[3.5,1.8]]}
+};
+const CL = [
+  {id:'anggrek', name:'Anggrek', kind:'Hunian', gx:1, gy:1, lay:'res', base:{keb:88, pen:84, kea:90, ken:86}},
+  {id:'cemara', name:'Cemara', kind:'Hunian', gx:6, gy:1, lay:'res2', base:{keb:82, pen:80, kea:82, ken:80}},
+  {id:'kenanga', name:'Kenanga', kind:'Hunian', gx:11, gy:1, lay:'res', base:{keb:90, pen:80, kea:84, ken:88}},
+  {id:'teratai', name:'Teratai', kind:'Hunian', gx:1, gy:6, lay:'res2', base:{keb:84, pen:86, kea:80, ken:78}},
+  {id:'bambu', name:'Bambu', kind:'Hunian dan taman', gx:6, gy:6, lay:'park', base:{keb:86, pen:88, kea:88, ken:92}},
+  {id:'niaga', name:'Ruko Niaga', kind:'Komersial', gx:11, gy:6, lay:'com', base:{keb:70, pen:92, kea:84, ken:80}}
+];
+const TILE = Array.from({length:NY}, (_, y) => Array.from({length:NX}, (_, x) => (x % 5 === 0 || y % 5 === 0) ? 'road' : 'grass'));
+CL.forEach(c => {
+  const L = LAYOUTS[c.lay];
+  c.houses = (L.houses || []).map(([x, y, r]) => ({kind:'house', x:c.gx + x, y:c.gy + y, roof:'roof-' + r}))
+    .concat((L.shops || []).map(([x, y, h, r]) => ({kind:'shop', x:c.gx + x, y:c.gy + y, h, roof:'roof-' + r})));
+  c.trees = (L.trees || []).map(([x, y]) => ({x:c.gx + x, y:c.gy + y}));
+  c.lamps = (L.lamps || []).map(([x, y]) => ({x:c.gx + x, y:c.gy + y}));
+  c.trash = (L.trash || []).map(([x, y]) => ({x:c.gx + x, y:c.gy + y}));
+  (L.water || []).forEach(([x, y]) => { TILE[c.gy + y][c.gx + x] = 'water'; });
+  (L.lot || []).forEach(([x, y]) => { TILE[c.gy + y][c.gx + x] = 'lot'; });
+});
+const movers = [
+  {kind:'bus', color:'accent', speed:0.9, dist:0, path:[[0.5,0.5],[15.5,0.5],[15.5,10.5],[0.5,10.5]]},
+  {kind:'car', color:'roof-a', speed:1.3, dist:4, path:[[5.5,0.5],[5.5,10.5],[10.5,10.5],[10.5,0.5]]},
+  {kind:'car', color:'roof-b', speed:1.15, dist:11, path:[[0.5,5.5],[15.5,5.5],[15.5,10.5],[0.5,10.5]]}
+].map(m => {
+  const segs = m.path.map((a, i) => {
+    const b = m.path[(i + 1) % m.path.length];
+    return {a, b, dx:Math.sign(b[0] - a[0]), dy:Math.sign(b[1] - a[1]), len:Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1])};
+  });
+  return Object.assign({}, m, {segs, len:segs.reduce((acc, g) => acc + g.len, 0)});
+});
+
+/* ---------- state ---------- */
+let state;
+function seed(){
+  const now = Date.now();
+  state = {tickets:[], seq:1, xp:240, level:3, boost:{}, m:{terang:{done:false, count:1}, kilat:{done:false}},
+           feed:[], selected:'cemara', demo:!RM, doneToday:3};
+  const S = [['anggrek','pohon','wo',200,1],['kenanga','saluran','wo',130,2],['niaga','jalan','respon',75,1],
+             ['cemara','sampah','respon',48,2],['bambu','lampu-taman','respon',35,0],['teratai','cctv','respon',26,3],
+             ['niaga','rumput','baru',20,4],['teratai','palang','baru',14,0],['cemara','pju','baru',6,1],['niaga','sampah','baru',3,5]];
+  S.forEach(([c, cat, stage, ago, house]) => {
+    state.tickets.push({id:state.seq++, c, cat, stage, created:now - ago * 60000, updated:now - Math.round(ago * 0.35) * 60000, house});
+  });
+  const verb = {baru:'Keluhan baru', respon:'Direspon', wo:'WO dibuat'};
+  state.feed = state.tickets.map(t => ({at:t.updated, stage:t.stage, text:verb[t.stage] + ': ' + CAT[t.cat].label, c:t.c}))
+    .concat([{at:now - 52 * 60000, stage:'selesai', text:'Selesai: Lampu taman padam', c:'kenanga'}])
+    .sort((a, b) => b.at - a.at).slice(0, 8);
+}
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const byId = id => CL.find(c => c.id === id);
+function needs(c){
+  const v = {};
+  NEEDS.forEach(n => { v[n.key] = c.base[n.key] + (state.boost[n.key] || 0); });
+  for (const t of state.tickets) if (t.c === c.id && t.stage !== 'selesai') v[CAT[t.cat].need] -= PEN[t.stage];
+  NEEDS.forEach(n => { v[n.key] = clamp(Math.round(v[n.key]), 4, 100); });
+  return v;
+}
+const score = c => { const v = needs(c); return Math.round((v.keb + v.pen + v.kea + v.ken) / 4); };
+const kawasan = () => Math.round(CL.reduce((acc, c) => acc + score(c), 0) / CL.length);
+const statusOf = v => v >= 75 ? 'good' : v >= 50 ? 'warn' : 'crit';
+const litCount = pen => pen >= 80 ? 3 : pen >= 65 ? 2 : pen >= 45 ? 1 : 0;
+const trashCount = keb => keb >= 80 ? 0 : keb >= 66 ? 1 : keb >= 52 ? 2 : keb >= 38 ? 3 : 4;
+
+function pushFeed(stage, text, c){ state.feed.unshift({at:Date.now(), stage, text, c}); state.feed = state.feed.slice(0, 8); }
+function addTicket(cId, catKey){
+  const c = byId(cId), now = Date.now();
+  state.tickets.push({id:state.seq++, c:cId, cat:catKey, stage:'baru', created:now, updated:now, house:Math.floor(Math.random() * c.houses.length)});
+  if (state.m.kilat.done === false) {} /* mission re-check happens on respond */
+  pushFeed('baru', 'Keluhan baru: ' + CAT[catKey].label, cId);
+}
+function gainXP(n){
+  state.xp += n;
+  while (state.xp >= 100 * state.level){
+    state.xp -= 100 * state.level; state.level++;
+    toast('Naik ke level ' + state.level, 'Kawasan makin hidup. Pertahankan respon cepat.');
+  }
+}
+function checkKilat(){
+  if (!state.m.kilat.done && !state.tickets.some(t => t.stage === 'baru')){
+    state.m.kilat.done = true; gainXP(40);
+    toast('Misi selesai: Respons kilat', 'Tidak ada keluhan baru yang menunggu. +40 XP.');
+  }
+}
+function advance(id){
+  const t = state.tickets.find(x => x.id === id);
+  if (!t || t.stage === 'selesai') return;
+  const next = ORDER[ORDER.indexOf(t.stage) + 1], cat = CAT[t.cat], now = Date.now();
+  t.stage = next; t.updated = now;
+  if (next === 'respon') pushFeed('respon', 'Direspon: ' + cat.label, t.c);
+  else if (next === 'wo') pushFeed('wo', 'WO dibuat: ' + cat.label, t.c);
+  else {
+    t.doneAt = now; state.doneToday++;
+    const fast = now - t.created < 45 * 60000;
+    pushFeed('selesai', 'Selesai: ' + cat.label + (fast ? ' (cepat, +10 XP)' : ''), t.c);
+    gainXP(30 + (fast ? 10 : 0));
+    if (cat.need === 'pen' && !state.m.terang.done){
+      state.m.terang.count++;
+      if (state.m.terang.count >= 3){
+        state.m.terang.done = true; state.boost.pen = (state.boost.pen || 0) + 8;
+        toast('Misi selesai: Terang lagi', 'Penerangan di semua cluster naik 8 poin.');
+      }
+    }
+    if (RM) setTimeout(() => { purge(); requestDraw(); }, 2800);
+  }
+  checkKilat(); renderUI(); requestDraw();
+}
+function purge(){
+  const now = Date.now();
+  state.tickets = state.tickets.filter(t => !(t.stage === 'selesai' && now - t.doneAt > 2700));
+}
+function demoTick(){
+  if (!state.demo) return;
+  const open = state.tickets.filter(t => t.stage !== 'selesai');
+  if (open.length < 5 || (Math.random() < 0.4 && open.length < 14)){
+    const c = CL[Math.floor(Math.random() * CL.length)], cat = CATS[Math.floor(Math.random() * CATS.length)];
+    addTicket(c.id, cat.key); renderUI(); requestDraw();
+  } else {
+    const sorted = open.slice().sort((a, b) => a.updated - b.updated);
+    advance(sorted[Math.floor(Math.random() * Math.min(3, sorted.length))].id);
+  }
+}
+
+/* ---------- canvas ---------- */
+const $ = id => document.getElementById(id);
+const cv = $('town'), ctx = cv.getContext('2d'), stage = $('stage'), tip = $('tip');
+let W = 0, H = 0, DPR = 1, s = 1, ox = 0, oy = 0, night = false, hover = null, labelRects = [];
+const T = {};
+const TOKENS = ['sky','grass','grass-2','soil','road','road-line','lot','wall-l','wall-r','roof-a','roof-b','roof-c','window','window-lit',
+  'tree','tree-dry','trunk','lamp','lamp-glow','trash','water','shade','accent','surface','fg','line','st-baru','st-respon','st-wo','st-selesai','good','warn','crit'];
+function readTokens(){
+  const cs = getComputedStyle(document.documentElement);
+  TOKENS.forEach(k => { T[k] = cs.getPropertyValue('--' + k).trim() || '#888888'; });
+  night = cs.getPropertyValue('--night').trim() === '1';
+  requestDraw();
+}
+function rgb(h){
+  h = String(h).trim(); if (h[0] === '#') h = h.slice(1);
+  if (h.length === 3) h = h.split('').map(ch => ch + ch).join('');
+  const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function mixDark(a, b, t, d){ const A = rgb(a), B = rgb(b); return 'rgb(' + [0,1,2].map(i => Math.round((A[i] + (B[i] - A[i]) * t) * (1 - d))).join(',') + ')'; }
+function mixTo(a, b, t){ const A = rgb(a), B = rgb(b); return 'rgb(' + [0,1,2].map(i => Math.round(A[i] + (B[i] - A[i]) * t)).join(',') + ')'; }
+const darken = (h, t) => mixTo(h, '#000000', t), lighten = (h, t) => mixTo(h, '#ffffff', t);
+function alpha(h, a){ const [r, g, b] = rgb(h); return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')'; }
+
+function layout(){
+  const w = stage.clientWidth; if (!w) return;
+  const mapW = (NX + NY) * TW / 2, mapH = (NX + NY) * TH / 2 + HEAD + BASE;
+  W = w; H = Math.round(clamp(w * mapH / mapW, 240, 640));
+  s = Math.min((W - 20) / mapW, (H - 12) / mapH);
+  ox = (W - mapW * s) / 2 + NY * TW / 2 * s; oy = (H - mapH * s) / 2 + HEAD * s;
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); cv.style.height = H + 'px';
+  requestDraw();
+}
+const iso = (x, y) => [(x - y) * TW / 2 * s + ox, (x + y) * TH / 2 * s + oy];
+const up = (p, h) => [p[0], p[1] - h];
+function poly(pts, fill, stroke){
+  ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  if (fill){ ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke){ ctx.strokeStyle = stroke; ctx.stroke(); }
+}
+function line(a, b){ ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); }
+function circle(x, y, r, fill){ ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill(); }
+function ell(x, y, rx, ry, fill){ ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill(); }
+function rr(x, y, w, h, r){
+  ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function face(a, b, hh, t0, t1, v0, v1, fill){
+  const P = (t, v) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t - hh * v];
+  poly([P(t0, v0), P(t1, v0), P(t1, v1), P(t0, v1)], fill);
+}
+function star(x, y, r, fill){
+  ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * .3, y - r * .3); ctx.lineTo(x + r, y); ctx.lineTo(x + r * .3, y + r * .3);
+  ctx.lineTo(x, y + r); ctx.lineTo(x - r * .3, y + r * .3); ctx.lineTo(x - r, y); ctx.lineTo(x - r * .3, y - r * .3); ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+}
+
+function drawBase(){
+  const L = iso(0, NY), B = iso(NX, NY), R = iso(NX, 0), d = BASE * s;
+  poly([L, B, up(B, -d), up(L, -d)], darken(T.soil, 0.05));
+  poly([B, R, up(R, -d), up(B, -d)], darken(T.soil, 0.28));
+}
+function drawGround(){
+  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++){
+    const t = TILE[y][x];
+    const f = t === 'road' ? T.road : t === 'water' ? T.water : t === 'lot' ? T.lot : ((x + y) & 1 ? T.grass : T['grass-2']);
+    poly([iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)], f);
+  }
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = alpha(T['road-line'], 0.8); ctx.lineWidth = Math.max(1, 1.6 * s);
+  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++){
+    if (TILE[y][x] !== 'road') continue;
+    const vx = x % 5 === 0, hy = y % 5 === 0;
+    if (vx && hy) continue;
+    if (vx) line(iso(x + 0.5, y + 0.28), iso(x + 0.5, y + 0.72)); else line(iso(x + 0.28, y + 0.5), iso(x + 0.72, y + 0.5));
+  }
+  ctx.strokeStyle = alpha(T['road-line'], 0.55); ctx.lineWidth = Math.max(1, 1.1 * s);
+  for (let y = 0; y < NY; y++) for (let x = 0; x < NX; x++){
+    if (TILE[y][x] === 'lot') line(iso(x + 0.04, y + 0.2), iso(x + 0.04, y + 0.8));
+    if (TILE[y][x] === 'water'){ ctx.strokeStyle = alpha('#ffffff', night ? 0.12 : 0.4); line(iso(x + 0.3, y + 0.45), iso(x + 0.58, y + 0.45)); ctx.strokeStyle = alpha(T['road-line'], 0.55); }
+  }
+}
+function blockPath(c, pad){ return [iso(c.gx - pad, c.gy - pad), iso(c.gx + 4 + pad, c.gy - pad), iso(c.gx + 4 + pad, c.gy + 4 + pad), iso(c.gx - pad, c.gy + 4 + pad)]; }
+function drawHighlights(){
+  if (hover && hover !== state.selected){ ctx.lineWidth = 1.5; poly(blockPath(byId(hover), 0.05), alpha(T.accent, 0.06), alpha(T.accent, 0.55)); }
+  const sel = byId(state.selected);
+  if (sel){ ctx.lineWidth = 2.5; poly(blockPath(sel, 0.08), alpha(T.accent, 0.12), T.accent); }
+}
+function drawPools(){
+  if (!night) return;
+  for (const c of CL){
+    const on = litCount(needs(c).pen);
+    c.lamps.forEach((l, i) => {
+      if (i >= on) return;
+      const [x, y] = iso(l.x, l.y), r = 36 * s;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, alpha(T['lamp-glow'], 0.3)); g.addColorStop(1, alpha(T['lamp-glow'], 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, y, r, r / 2, 0, 0, Math.PI * 2); ctx.fill();
+    });
+  }
+}
+function drawHouse(h){
+  const x = h.x + 0.14, y = h.y + 0.14, w = 0.72, hh = 20 * s;
+  const p1 = iso(x, y), p2 = iso(x + w, y), p3 = iso(x + w, y + w), p4 = iso(x, y + w);
+  const g = iso(h.x + 0.66, h.y + 0.66); ell(g[0], g[1], 24 * s, 11 * s, alpha(T.shade, night ? 0.32 : 0.14));
+  poly([p4, p3, up(p3, hh), up(p4, hh)], T['wall-l']);
+  poly([p3, p2, up(p2, hh), up(p3, hh)], T['wall-r']);
+  face(p4, p3, hh, 0.42, 0.62, 0, 0.6, darken(T[h.roof], 0.25));
+  face(p3, p2, hh, 0.3, 0.7, 0.38, 0.76, night ? T['window-lit'] : T.window);
+  const ro = 0.07, q1 = up(iso(x - ro, y - ro), hh), q2 = up(iso(x + w + ro, y - ro), hh), q3 = up(iso(x + w + ro, y + w + ro), hh), q4 = up(iso(x - ro, y + w + ro), hh);
+  const c = iso(x + w / 2, y + w / 2), apex = [c[0], c[1] - hh - 17 * s], rc = T[h.roof];
+  poly([q1, q2, apex], lighten(rc, 0.1)); poly([q4, q1, apex], lighten(rc, 0.18));
+  poly([q4, q3, apex], lighten(rc, 0.05)); poly([q3, q2, apex], darken(rc, 0.16));
+  h.apex = apex;
+}
+function drawShop(h){
+  const x = h.x + 0.06, y = h.y + 0.1, w = 0.88, d = 0.8, hh = h.h * s;
+  const p1 = iso(x, y), p2 = iso(x + w, y), p3 = iso(x + w, y + d), p4 = iso(x, y + d);
+  const g = iso(h.x + 0.62, h.y + 0.64); ell(g[0], g[1], 30 * s, 13 * s, alpha(T.shade, night ? 0.32 : 0.14));
+  poly([p4, p3, up(p3, hh), up(p4, hh)], T['wall-l']);
+  poly([p3, p2, up(p2, hh), up(p3, hh)], T['wall-r']);
+  ctx.lineWidth = Math.max(1, s);
+  poly([up(p1, hh), up(p2, hh), up(p3, hh), up(p4, hh)], lighten(T['wall-r'], 0.18), darken(T['wall-r'], 0.15));
+  const lit = night ? T['window-lit'] : T.window, floors = Math.max(2, Math.round(h.h / 16)), gf = 1 / floors;
+  for (let f = 1; f < floors; f++){
+    const v0 = f / floors + 0.05, v1 = (f + 1) / floors - 0.07;
+    face(p4, p3, hh, 0.14, 0.44, v0, v1, lit); face(p4, p3, hh, 0.56, 0.86, v0, v1, lit); face(p3, p2, hh, 0.2, 0.8, v0, v1, lit);
+  }
+  face(p4, p3, hh, 0.12, 0.88, 0.03, gf * 0.78, night ? lighten(T['window-lit'], 0.1) : darken(T.window, 0.12));
+  face(p4, p3, hh, 0.04, 0.96, gf * 0.8, gf * 1.02, T[h.roof]);
+  h.apex = [(p1[0] + p3[0]) / 2, (p1[1] + p3[1]) / 2 - hh - 2 * s];
+}
+function drawTree(t, dry){
+  const [x, y] = iso(t.x, t.y), k = s;
+  ell(x + 4 * k, y + 1.5 * k, 10 * k, 4.5 * k, alpha(T.shade, night ? 0.3 : 0.14));
+  ctx.fillStyle = T.trunk; ctx.fillRect(x - 1.7 * k, y - 10 * k, 3.4 * k, 10 * k);
+  const c1 = mixDark(T.tree, T['tree-dry'], dry, 0), c2 = mixDark(T.tree, T['tree-dry'], dry, 0.18);
+  circle(x - 6 * k, y - 13 * k, 7.2 * k, c2); circle(x + 6 * k, y - 13 * k, 7.2 * k, c2); circle(x, y - 18 * k, 9.6 * k, c1);
+  circle(x - 3 * k, y - 21 * k, 3.4 * k, alpha('#ffffff', night ? 0.05 : 0.16));
+}
+function drawLamp(l, on){
+  const [x, y] = iso(l.x, l.y), k = s, top = y - 30 * k, hx = x + 4.5 * k, hy = top + 1.5 * k;
+  ctx.strokeStyle = T.lamp; ctx.lineWidth = Math.max(1, 2 * k); ctx.lineCap = 'round';
+  line([x, y], [x, top]); line([x, top], [hx, top]);
+  if (on){
+    const r = (night ? 28 : 14) * k, g = ctx.createRadialGradient(hx, hy, 0, hx, hy, r);
+    g.addColorStop(0, alpha(T['lamp-glow'], night ? 0.8 : 0.5)); g.addColorStop(1, alpha(T['lamp-glow'], 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, r, 0, Math.PI * 2); ctx.fill();
+    circle(hx, hy, 2.8 * k, T['lamp-glow']);
+  } else circle(hx, hy, 2.5 * k, darken(T.lamp, 0.25));
+}
+function drawTrash(t){
+  const [x, y] = iso(t.x, t.y), k = s;
+  ell(x + k, y + k, 6 * k, 2.6 * k, alpha(T.shade, 0.18));
+  circle(x - 2.4 * k, y - 3 * k, 3.6 * k, T.trash); circle(x + 2.6 * k, y - 2.6 * k, 3.1 * k, lighten(T.trash, 0.14));
+  circle(x - 2.4 * k, y - 6.4 * k, 1.1 * k, lighten(T.trash, 0.35));
+}
+function moverPos(m){
+  let d = m.dist % m.len; if (d < 0) d += m.len;
+  for (const g of m.segs){
+    if (d <= g.len){ const t = g.len ? d / g.len : 0; return {x:g.a[0] + (g.b[0] - g.a[0]) * t, y:g.a[1] + (g.b[1] - g.a[1]) * t, dx:g.dx, dy:g.dy}; }
+    d -= g.len;
+  }
+  const g = m.segs[0]; return {x:g.a[0], y:g.a[1], dx:g.dx, dy:g.dy};
+}
+function drawVehicle(m, p){
+  const bus = m.kind === 'bus', along = p.dx !== 0, len = bus ? 0.9 : 0.5, wid = bus ? 0.34 : 0.3;
+  const w = along ? len : wid, d = along ? wid : len, cx = p.x + p.dy * 0.2, cy = p.y - p.dx * 0.2;
+  const x = cx - w / 2, y = cy - d / 2, hh = (bus ? 11 : 7) * s, col = T[m.color];
+  const p1 = iso(x, y), p2 = iso(x + w, y), p3 = iso(x + w, y + d), p4 = iso(x, y + d);
+  const g = iso(cx + 0.1, cy + 0.1); ell(g[0], g[1], (bus ? 24 : 14) * s, (bus ? 9 : 6) * s, alpha(T.shade, night ? 0.3 : 0.16));
+  poly([p4, p3, up(p3, hh), up(p4, hh)], col);
+  poly([p3, p2, up(p2, hh), up(p3, hh)], darken(col, 0.22));
+  poly([up(p1, hh), up(p2, hh), up(p3, hh), up(p4, hh)], lighten(col, 0.16));
+  const win = night ? T['window-lit'] : lighten(T.window, 0.25);
+  face(p4, p3, hh, 0.1, 0.9, 0.45, 0.82, win); face(p3, p2, hh, 0.12, 0.88, 0.45, 0.82, win);
+}
+function drawObjects(){
+  const list = [];
+  for (const c of CL){
+    const v = needs(c), dry = clamp((85 - v.ken) / 45, 0, 1), on = litCount(v.pen), tn = trashCount(v.keb);
+    c.houses.forEach(h => list.push({d:h.x + h.y + 1, fn:() => (h.kind === 'shop' ? drawShop(h) : drawHouse(h))}));
+    c.trees.forEach(t => list.push({d:t.x + t.y, fn:() => drawTree(t, dry)}));
+    c.lamps.forEach((l, i) => list.push({d:l.x + l.y, fn:() => drawLamp(l, i < on)}));
+    c.trash.slice(0, tn).forEach(t => list.push({d:t.x + t.y, fn:() => drawTrash(t)}));
+  }
+  movers.forEach(m => { const p = moverPos(m); list.push({d:p.x + p.y, fn:() => drawVehicle(m, p)}); });
+  list.sort((a, b) => a.d - b.d).forEach(o => o.fn());
+}
+function drawSecurity(now){
+  for (const c of CL){
+    if (needs(c).kea >= 60) continue;
+    const g = iso(c.gx + 4, c.gy + 4), x = g[0], y = g[1] - 10 * s, R = Math.max(6, 8 * s), ph = RM ? 0.4 : ((now / 1300) % 1);
+    ctx.strokeStyle = alpha(T.crit, (1 - ph) * 0.9); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, R + ph * 14 * Math.max(s, 0.6), 0, Math.PI * 2); ctx.stroke();
+    circle(x, y, R + 1.5, T.surface); circle(x, y, R, T.crit);
+    ctx.fillStyle = T.surface; ctx.font = '800 ' + Math.round(R * 1.3) + 'px ' + FONT; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', x, y + 0.5);
+  }
+}
+function drawPins(now, ms){
+  const groups = new Map();
+  for (const t of state.tickets){
+    if (t.stage === 'selesai' && ms - t.doneAt > 2600) continue;
+    const c = byId(t.c), key = t.c + ':' + (t.house % c.houses.length);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+  const r = Math.max(4.5, 7 * s);
+  for (const list of groups.values()){
+    const c = byId(list[0].c), h = c.houses[list[0].house % c.houses.length];
+    if (!h || !h.apex) continue;
+    list.forEach((t, i) => {
+      const off = (i - (list.length - 1) / 2) * (2 * r + 4), col = T['st-' + t.stage];
+      let x = h.apex[0] + off, y = h.apex[1] - 14 * s - r, a = 1, pr = 0;
+      if (t.stage === 'selesai'){ pr = clamp((ms - t.doneAt) / 2600, 0, 1); y -= pr * 16 * s; a = 1 - pr * pr; }
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = alpha(col, 0.8); ctx.lineWidth = Math.max(1, 1.4 * s); line([x, y + r], [h.apex[0], h.apex[1] - 2 * s]);
+      if (t.stage === 'baru'){
+        const ph = RM ? 0.35 : ((now / 1100 + t.id * 0.37) % 1);
+        ctx.strokeStyle = alpha(col, (1 - ph) * 0.85); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, r + ph * 12 * Math.max(s, 0.6), 0, Math.PI * 2); ctx.stroke();
+      }
+      circle(x, y, r + 1.8, T.surface); circle(x, y, r, col);
+      if (t.stage === 'selesai'){
+        ctx.strokeStyle = T.surface; ctx.lineWidth = Math.max(1.5, 1.8 * s);
+        ctx.beginPath(); ctx.moveTo(x - r * 0.45, y); ctx.lineTo(x - r * 0.1, y + r * 0.38); ctx.lineTo(x + r * 0.5, y - r * 0.4); ctx.stroke();
+        for (let j = 0; j < 4; j++){
+          const ang = j * Math.PI / 2 + pr * 2, rad = r + 6 + pr * 14 * Math.max(s, 0.6);
+          star(x + Math.cos(ang) * rad, y + Math.sin(ang) * rad, 2.5 + 1.5 * (1 - pr), T['st-selesai']);
+        }
+      }
+      ctx.globalAlpha = 1;
+    });
+  }
+}
+function drawLabels(){
+  labelRects = [];
+  const px = clamp(Math.round(15 * s), 11, 13);
+  for (const c of CL){
+    const sc = score(c), st = statusOf(sc), [cx, cy] = iso(c.gx + 2, c.gy + 2), y = cy - 66 * s - 8;
+    ctx.font = '700 ' + px + 'px ' + FONT;
+    const tw = ctx.measureText(c.name).width, bh = px + 12, bw = px + 13, padL = 4, gap = 7, padR = 10;
+    const w = padL + bw + gap + tw + padR, x0 = Math.round(cx - w / 2), y0 = Math.round(y - bh / 2), sel = c.id === state.selected;
+    rr(x0, y0, w, bh, bh / 2); ctx.fillStyle = alpha(T.surface, 0.95); ctx.fill();
+    ctx.lineWidth = sel ? 2 : 1; ctx.strokeStyle = sel ? T.accent : T.line; ctx.stroke();
+    rr(x0 + padL, y0 + 3, bw, bh - 6, (bh - 6) / 2); ctx.fillStyle = T[st]; ctx.fill();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = T.surface; ctx.font = '800 ' + (px - 1) + 'px ' + FONT; ctx.fillText(String(sc), x0 + padL + bw / 2, y0 + bh / 2 + 0.5);
+    ctx.textAlign = 'left'; ctx.fillStyle = T.fg; ctx.font = '700 ' + px + 'px ' + FONT; ctx.fillText(c.name, x0 + padL + bw + gap, y0 + bh / 2 + 0.5);
+    labelRects.push({id:c.id, x0, y0, w, h:bh});
+  }
+}
+function draw(now){
+  if (!W) return;
+  const ms = Date.now();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, lighten(T.sky, night ? 0.03 : 0.3)); g.addColorStop(1, T.sky);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  drawBase(); drawGround(); drawHighlights(); drawPools(); drawObjects(); drawSecurity(now); drawPins(now, ms); drawLabels();
+}
+let pending = false;
+function requestDraw(){
+  if (!RM || pending) return;
+  pending = true; requestAnimationFrame(t => { pending = false; draw(t); });
+}
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  movers.forEach(m => { m.dist += m.speed * dt; });
+  purge(); draw(now); requestAnimationFrame(loop);
+}
+
+/* ---------- interaction ---------- */
+function localXY(e){ const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+function pick(mx, my){
+  for (const L of labelRects) if (mx >= L.x0 && mx <= L.x0 + L.w && my >= L.y0 && my <= L.y0 + L.h) return L.id;
+  const a = (mx - ox) / (TW / 2 * s), b = (my - oy) / (TH / 2 * s), gx = (a + b) / 2, gy = (b - a) / 2;
+  const c = CL.find(k => gx >= k.gx && gx < k.gx + 4 && gy >= k.gy && gy < k.gy + 4);
+  return c ? c.id : null;
+}
+cv.addEventListener('pointermove', e => {
+  const [mx, my] = localXY(e), id = pick(mx, my);
+  hover = id; cv.style.cursor = id ? 'pointer' : 'default';
+  if (id && e.pointerType === 'mouse'){
+    const c = byId(id), sc = score(c);
+    tip.hidden = false; tip.innerHTML = '<b>' + esc(c.name) + '</b> · skor ' + sc + ' · ' + STATUS_LABEL[statusOf(sc)];
+    let x = mx + 14; const tw = tip.offsetWidth; if (x + tw > W - 8) x = mx - tw - 14;
+    tip.style.left = Math.max(8, x) + 'px'; tip.style.top = Math.max(8, Math.min(H - 40, my + 14)) + 'px';
+  } else tip.hidden = true;
+  requestDraw();
+});
+cv.addEventListener('pointerleave', () => { hover = null; tip.hidden = true; requestDraw(); });
+cv.addEventListener('click', e => {
+  const [mx, my] = localXY(e), id = pick(mx, my);
+  if (id){ state.selected = id; renderUI(); requestDraw(); }
+});
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-adv],[data-add],[data-sel]');
+  if (!el) return;
+  if (el.dataset.adv){ advance(Number(el.dataset.adv)); }
+  else if (el.dataset.add){ addTicket(el.dataset.add, CATS[Math.floor(Math.random() * CATS.length)].key); renderUI(); requestDraw(); }
+  else if (el.dataset.sel){ state.selected = el.dataset.sel; renderUI(); requestDraw(); }
+});
+$('btnNew').addEventListener('click', () => {
+  const c = CL[Math.floor(Math.random() * CL.length)];
+  addTicket(c.id, CATS[Math.floor(Math.random() * CATS.length)].key); renderUI(); requestDraw();
+});
+$('btnDemo').addEventListener('click', () => { state.demo = !state.demo; renderUI(); });
+$('btnReset').addEventListener('click', () => { seed(); renderUI(); requestDraw(); });
+
+/* ---------- UI ---------- */
+function esc(v){ return String(v).replace(/[&<>"']/g, ch => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[ch])); }
+function ago(ms){
+  const m = Math.floor((Date.now() - ms) / 60000);
+  if (m < 1) return 'baru saja';
+  if (m < 60) return m + ' mnt lalu';
+  return Math.floor(m / 60) + ' j ' + (m % 60) + ' mnt lalu';
+}
+const hhmm = ms => new Date(ms).toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
+function renderUI(){
+  const k = kawasan(), ks = statusOf(k);
+  $('kScore').textContent = k;
+  const kst = $('kStatus'); kst.className = 'chip ' + ks; kst.textContent = STATUS_LABEL[ks];
+  const max = 100 * state.level;
+  $('lvl').textContent = state.level; $('xpFill').style.width = Math.round(state.xp / max * 100) + '%'; $('xpText').textContent = state.xp + ' / ' + max + ' XP';
+  const open = state.tickets.filter(t => t.stage !== 'selesai');
+  $('cBaru').textContent = open.filter(t => t.stage === 'baru').length;
+  $('cRespon').textContent = open.filter(t => t.stage === 'respon').length;
+  $('cWo').textContent = open.filter(t => t.stage === 'wo').length;
+  $('cDone').textContent = state.doneToday;
+
+  $('chips').innerHTML = CL.map(c => {
+    const sc = score(c);
+    return '<button type="button" class="chipbtn" data-sel="' + c.id + '" aria-pressed="' + (c.id === state.selected) + '"><span class="badge bg-' + statusOf(sc) + '">' + sc + '</span>' + esc(c.name) + '</button>';
+  }).join('');
+
+  const c = byId(state.selected), v = needs(c), sc = score(c), st = statusOf(sc);
+  const list = open.filter(t => t.c === c.id).sort((a, b) => ORDER.indexOf(a.stage) - ORDER.indexOf(b.stage) || a.created - b.created);
+  $('clusterCard').innerHTML =
+    '<div class="chead"><div><div class="eyebrow">' + esc(c.kind) + '</div><h2>' + esc(c.name) + '</h2></div>' +
+    '<div class="cscore"><span class="big">' + sc + '</span><span class="chip ' + st + '">' + STATUS_LABEL[st] + '</span></div></div>' +
+    '<div class="needs">' + NEEDS.map(n => {
+      const val = v[n.key];
+      return '<div class="need"><svg viewBox="0 0 20 20" aria-hidden="true" fill="currentColor">' + n.icon + '</svg><span class="nm">' + n.label +
+        '</span><span class="val">' + val + '</span><div class="bar" role="meter" aria-label="' + n.label + '" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + val +
+        '"><span class="bg-' + statusOf(val) + '" style="width:' + val + '%"></span></div></div>';
+    }).join('') + '</div>' +
+    '<h3>Keluhan terbuka (' + list.length + ')</h3>' +
+    (list.length ? '<ul class="tickets">' + list.map(t =>
+      '<li class="ticket"><span class="stagechip"><span class="dot d-' + t.stage + '"></span>' + STAGE_LABEL[t.stage] + '</span>' +
+      '<span class="what">' + esc(CAT[t.cat].label) + '</span>' +
+      '<button type="button" class="btn small act" data-adv="' + t.id + '">' + NEXT[t.stage] + '</button>' +
+      '<span class="meta">' + NEED_LABEL[CAT[t.cat].need] + ' · ' + ago(t.created) + '</span></li>').join('') + '</ul>'
+      : '<p class="empty">Tidak ada keluhan terbuka di cluster ini.</p>') +
+    '<button type="button" class="btn wide" data-add="' + c.id + '">Tambah keluhan di ' + esc(c.name) + '</button>';
+
+  const m = state.m, baruN = open.filter(t => t.stage === 'baru').length;
+  $('missions').innerHTML = '<h2>Misi minggu ini</h2>' +
+    '<div class="mission"><div class="t">Terang lagi</div><div class="d">Selesaikan 3 keluhan penerangan.</div>' +
+    (m.terang.done ? '<div class="done">Selesai. Penerangan semua cluster naik 8 poin.</div>'
+      : '<div class="prog"><span style="width:' + Math.round(m.terang.count / 3 * 100) + '%"></span></div><div class="r">' + m.terang.count + ' dari 3 · Hadiah: penerangan semua cluster +8</div>') + '</div>' +
+    '<div class="mission"><div class="t">Respons kilat</div><div class="d">Pastikan tidak ada keluhan yang masih berstatus Baru.</div>' +
+    (m.kilat.done ? '<div class="done">Selesai. +40 XP.</div>'
+      : '<div class="r">Masih ' + baruN + ' keluhan baru menunggu respon · Hadiah: +40 XP</div>') + '</div>';
+
+  $('feed').innerHTML = state.feed.map(f =>
+    '<li><time>' + hhmm(f.at) + '</time><span class="dot d-' + f.stage + '"></span><span>' + esc(f.text) + ' <span class="cl">· ' + esc(byId(f.c).name) + '</span></span></li>').join('');
+
+  $('btnDemo').setAttribute('aria-checked', String(state.demo));
+  $('demoState').textContent = state.demo ? 'Nyala' : 'Mati';
+}
+function toast(title, body){
+  const el = document.createElement('div');
+  el.className = 'toast'; el.innerHTML = '<b>' + esc(title) + '</b>' + esc(body);
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
+
+/* ---------- boot ---------- */
+function start(data){
+  if (data && data.state && Array.isArray(data.state.tickets)) state = data.state; else seed();
+  readTokens(); layout(); renderUI();
+  if (!RM) requestAnimationFrame(loop); else requestDraw();
+  setInterval(demoTick, 3400);
+  setInterval(renderUI, 30000);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => requestDraw());
+  if ('ResizeObserver' in window) new ResizeObserver(layout).observe(stage); else window.addEventListener('resize', layout);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readTokens);
+  new MutationObserver(readTokens).observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+}
+const hot = window.claude && window.claude.hot;
+if (hot && typeof hot.snapshot === 'function'){ try { hot.snapshot(() => ({state})); } catch (e) {} }
+if (hot && typeof hot.ready === 'function') hot.ready(start); else start((hot && hot.data) || {});
+})();
+</script>
+
+</body>
+</html>

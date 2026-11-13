@@ -1,0 +1,473 @@
+{
+ "weapons": [
+  {
+   "kind": "pistol",
+   "name": "P9",
+   "node": "pistol",
+   "tris": 3832,
+   "mag": {
+    "node": "pistol_mag",
+    "pos": [
+     0.0,
+     0.045,
+     -0.01462
+    ],
+    "tris": 340
+   },
+   "lod1": "pistol_lod1",
+   "lod1Tris": 72,
+   "muzzle": [
+    0,
+    0.078,
+    -0.1435
+   ],
+   "sight": [
+    0,
+    0.101,
+    0.04
+   ],
+   "guard": [
+    -0.026,
+    -0.034,
+    -0.008
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "smg",
+   "name": "Kilat",
+   "node": "smg",
+   "tris": 6436,
+   "mag": {
+    "node": "smg_mag",
+    "pos": [
+     0.0,
+     0.058,
+     -0.111
+    ],
+    "tris": 340
+   },
+   "lod1": "smg_lod1",
+   "lod1Tris": 132,
+   "muzzle": [
+    0,
+    0.092,
+    -0.3632
+   ],
+   "sight": [
+    0,
+    0.142,
+    0.055
+   ],
+   "guard": [
+    0,
+    0.054,
+    -0.258
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "ar",
+   "name": "Garuda",
+   "node": "ar",
+   "tris": 9784,
+   "mag": {
+    "node": "ar_mag",
+    "pos": [
+     0.0,
+     0.06,
+     -0.097
+    ],
+    "tris": 700
+   },
+   "lod1": "ar_lod1",
+   "lod1Tris": 264,
+   "muzzle": [
+    0,
+    0.088,
+    -0.6289
+   ],
+   "sight": [
+    0,
+    0.163,
+    -0.036
+   ],
+   "guard": [
+    0,
+    0.044,
+    -0.33
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "shotgun",
+   "name": "Badai",
+   "node": "shotgun",
+   "tris": 6390,
+   "pump": {
+    "node": "shotgun_pump",
+    "pos": [
+     0.0,
+     0.068,
+     -0.335
+    ],
+    "tris": 504,
+    "travel": 0.06
+   },
+   "lod1": "shotgun_lod1",
+   "lod1Tris": 136,
+   "muzzle": [
+    0,
+    0.102,
+    -0.6672
+   ],
+   "sight": [
+    0,
+    0.1222,
+    0.045
+   ],
+   "guard": [
+    0,
+    0.023,
+    -0.335
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "dmr",
+   "name": "Elang",
+   "node": "dmr",
+   "tris": 9604,
+   "mag": {
+    "node": "dmr_mag",
+    "pos": [
+     0.0,
+     0.062,
+     -0.1
+    ],
+    "tris": 348
+   },
+   "lod1": "dmr_lod1",
+   "lod1Tris": 264,
+   "muzzle": [
+    0,
+    0.092,
+    -0.8458
+   ],
+   "sight": [
+    0,
+    0.164,
+    0.104
+   ],
+   "guard": [
+    0,
+    0.046,
+    -0.39
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "sniper",
+   "name": "Rajawali",
+   "node": "sniper",
+   "tris": 9776,
+   "mag": {
+    "node": "sniper_mag",
+    "pos": [
+     0.0,
+     0.062,
+     -0.075
+    ],
+    "tris": 344
+   },
+   "parts": [
+    {
+     "node": "sniper_bolt",
+     "pos": [
+      0,
+      0.09,
+      0.02
+     ],
+     "tris": 448
+    }
+   ],
+   "lod1": "sniper_lod1",
+   "lod1Tris": 244,
+   "muzzle": [
+    0,
+    0.09,
+    -0.9455
+   ],
+   "sight": [
+    0,
+    0.172,
+    0.15
+   ],
+   "guard": [
+    0,
+    0.042,
+    -0.37
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "lmg",
+   "name": "Gempa",
+   "node": "lmg",
+   "tris": 8020,
+   "mag": {
+    "node": "lmg_mag",
+    "pos": [
+     0.0,
+     0.05,
+     -0.09
+    ],
+    "tris": 880
+   },
+   "lod1": "lmg_lod1",
+   "lod1Tris": 152,
+   "muzzle": [
+    0,
+    0.094,
+    -0.8
+   ],
+   "sight": [
+    0,
+    0.163,
+    0.06
+   ],
+   "guard": [
+    0,
+    0.033,
+    -0.265
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "revolver",
+   "name": "Kobra",
+   "node": "revolver",
+   "tris": 6340,
+   "parts": [
+    {
+     "node": "revolver_cyl",
+     "pos": [
+      0,
+      0.072,
+      -0.031
+     ],
+     "tris": 1844
+    }
+   ],
+   "lod1": "revolver_lod1",
+   "lod1Tris": 96,
+   "muzzle": [
+    0,
+    0.088,
+    -0.2355
+   ],
+   "sight": [
+    0,
+    0.111,
+    0.03
+   ],
+   "guard": [
+    -0.026,
+    -0.034,
+    -0.008
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "burst",
+   "name": "Petir",
+   "node": "burst",
+   "tris": 5176,
+   "mag": {
+    "node": "burst_mag",
+    "pos": [
+     0.0,
+     0.06,
+     -0.097
+    ],
+    "tris": 384
+   },
+   "lod1": "burst_lod1",
+   "lod1Tris": 152,
+   "muzzle": [
+    0,
+    0.088,
+    -0.6085
+   ],
+   "sight": [
+    0,
+    0.165,
+    -0.042
+   ],
+   "guard": [
+    0,
+    0.042,
+    -0.31
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "pdw",
+   "name": "Lebah",
+   "node": "pdw",
+   "tris": 4856,
+   "mag": {
+    "node": "pdw_mag",
+    "pos": [
+     0.0,
+     0.056,
+     -0.1
+    ],
+    "tris": 296
+   },
+   "lod1": "pdw_lod1",
+   "lod1Tris": 112,
+   "muzzle": [
+    0,
+    0.09,
+    -0.3405
+   ],
+   "sight": [
+    0,
+    0.145,
+    -0.012
+   ],
+   "guard": [
+    0,
+    0.054,
+    -0.2
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  },
+  {
+   "kind": "dbs",
+   "name": "Gada",
+   "node": "dbs",
+   "tris": 4352,
+   "parts": [
+    {
+     "node": "dbs_brk",
+     "pos": [
+      0,
+      0.06,
+      -0.058
+     ],
+     "tris": 1240
+    }
+   ],
+   "lod1": "dbs_lod1",
+   "lod1Tris": 88,
+   "muzzle": [
+    0,
+    0.092,
+    -0.6205
+   ],
+   "sight": [
+    0,
+    0.124,
+    0.02
+   ],
+   "guard": [
+    0,
+    0.027,
+    -0.23
+   ],
+   "handR": [
+    0.026,
+    0.004,
+    0.01
+   ]
+  }
+ ],
+ "hands": {
+  "fp_hand_r": {
+   "tris": 6380,
+   "pos": [
+    0.026,
+    0.004,
+    0.01
+   ],
+   "note": "letakkan node di posisi ini relatif origin senjata (sama untuk semua senjata)"
+  },
+  "fp_hand_l": {
+   "tris": 6372,
+   "note": "letakkan di <kind>_guard (pusat telapak)"
+  },
+  "fp_hand_nade": {
+   "tris": 6868,
+   "note": "tangan kanan menggenggam granat; origin = pusat badan granat"
+  },
+  "fp_forearm": {
+   "tris": 1256,
+   "note": "lengan bawah 1 m sepanjang +Y glTF (pergelangan di +0,5), diskala ke panjang lengan"
+  },
+  "fp_hand_open": {
+   "tris": 5324,
+   "note": "tangan terbuka: jari ke \u2212Z glTF, ibu jari +X; origin = pusat telapak"
+  }
+ },
+ "nades": [
+  {
+   "kind": "frag",
+   "name": "Granat",
+   "node": "frag",
+   "tris": 2208,
+   "lod1": "frag_lod1",
+   "lod1Tris": 60
+  },
+  {
+   "kind": "smoke",
+   "name": "Asap",
+   "node": "smoke",
+   "tris": 1436,
+   "lod1": "smoke_lod1",
+   "lod1Tris": 76
+  }
+ ],
+ "axes": "glTF: +Y atas, laras \u2212Z, kanan +X; origin senjata = titik genggam gagang pistol (condong 18\u00b0)"
+}

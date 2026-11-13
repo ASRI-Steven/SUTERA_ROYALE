@@ -1,0 +1,29 @@
+{
+ "length": 30.0,
+ "span": 36.2,
+ "tris": 7916,
+ "props": [
+  [
+   10.4,
+   1.6,
+   6.25
+  ],
+  [
+   5.2,
+   1.6,
+   6.25
+  ],
+  [
+   -5.2,
+   1.6,
+   6.25
+  ],
+  [
+   -10.4,
+   1.6,
+   6.25
+  ]
+ ],
+ "spinAxis": "Z lokal",
+ "note": "glTF: +Y atas, hidung +Z, origin tengah badan; ramp belakang terbuka"
+}

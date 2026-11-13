@@ -1,0 +1,131 @@
+{
+ "items": [
+  {
+   "name": "ammo_light",
+   "tris": 236,
+   "size": [
+    0.246,
+    0.148,
+    0.169
+   ]
+  },
+  {
+   "name": "ammo_rifle",
+   "tris": 184,
+   "size": [
+    0.256,
+    0.169,
+    0.123
+   ]
+  },
+  {
+   "name": "ammo_shell",
+   "tris": 208,
+   "size": [
+    0.22,
+    0.116,
+    0.137
+   ]
+  },
+  {
+   "name": "band",
+   "tris": 230,
+   "size": [
+    0.185,
+    0.083,
+    0.204
+   ]
+  },
+  {
+   "name": "kit",
+   "tris": 250,
+   "size": [
+    0.346,
+    0.134,
+    0.266
+   ]
+  },
+  {
+   "name": "vest1",
+   "tris": 198,
+   "size": [
+    0.444,
+    0.091,
+    0.52
+   ]
+  },
+  {
+   "name": "vest2",
+   "tris": 218,
+   "size": [
+    0.444,
+    0.091,
+    0.52
+   ]
+  },
+  {
+   "name": "vest3",
+   "tris": 284,
+   "size": [
+    0.444,
+    0.091,
+    0.525
+   ]
+  },
+  {
+   "name": "helmet1",
+   "tris": 210,
+   "size": [
+    0.257,
+    0.162,
+    0.292
+   ]
+  },
+  {
+   "name": "helmet2",
+   "tris": 246,
+   "size": [
+    0.242,
+    0.158,
+    0.275
+   ]
+  },
+  {
+   "name": "helmet3",
+   "tris": 278,
+   "size": [
+    0.256,
+    0.158,
+    0.275
+   ]
+  },
+  {
+   "name": "crate",
+   "tris": 238,
+   "size": [
+    0.644,
+    0.428,
+    0.484
+   ]
+  },
+  {
+   "name": "parachute",
+   "tris": 600,
+   "size": [
+    6.826,
+    4.716,
+    2.45
+   ],
+   "harness": [
+    0,
+    0,
+    0
+   ],
+   "canopyY": 4.4,
+   "span": 6.83,
+   "top": 4.71,
+   "forward": "-Z"
+  }
+ ],
+ "note": "glTF +Y atas; size = [lebar X, tinggi Y, dalam Z] m; origin tengah bawah (parachute: origin di harness, tepi depan kanopi ke -Z); warna verteks COLOR_0 linear, material vc"
+}

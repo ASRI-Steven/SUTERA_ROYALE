@@ -1,0 +1,122 @@
+[
+ {
+  "name": "trembesi",
+  "group": 0,
+  "height": 8.913,
+  "crownRadius": 7.456,
+  "tris": {
+   "lod0": 740,
+   "lod1": 105
+  }
+ },
+ {
+  "name": "ketapang",
+  "group": 0,
+  "height": 8.564,
+  "crownRadius": 3.978,
+  "tris": {
+   "lod0": 387,
+   "lod1": 62
+  }
+ },
+ {
+  "name": "mahoni",
+  "group": 0,
+  "height": 9.959,
+  "crownRadius": 4.031,
+  "tris": {
+   "lod0": 478,
+   "lod1": 60
+  }
+ },
+ {
+  "name": "flamboyan",
+  "group": 0,
+  "height": 7.432,
+  "crownRadius": 6.088,
+  "tris": {
+   "lod0": 503,
+   "lod1": 97
+  }
+ },
+ {
+  "name": "palem_raja",
+  "group": 1,
+  "height": 13.379,
+  "crownRadius": 4.291,
+  "tris": {
+   "lod0": 495,
+   "lod1": 91
+  }
+ },
+ {
+  "name": "kelapa",
+  "group": 1,
+  "height": 9.733,
+  "crownRadius": 5.947,
+  "tris": {
+   "lod0": 664,
+   "lod1": 84
+  }
+ },
+ {
+  "name": "glodokan",
+  "group": 2,
+  "height": 10.613,
+  "crownRadius": 1.767,
+  "tris": {
+   "lod0": 240,
+   "lod1": 52
+  }
+ },
+ {
+  "name": "cemara",
+  "group": 2,
+  "height": 10.007,
+  "crownRadius": 2.837,
+  "tris": {
+   "lod0": 374,
+   "lod1": 50
+  }
+ },
+ {
+  "name": "pucuk_merah",
+  "group": "bush",
+  "height": 1.299,
+  "crownRadius": 0.962,
+  "tris": {
+   "lod0": 104,
+   "lod1": 16
+  }
+ },
+ {
+  "name": "ilalang_a",
+  "group": "grass",
+  "height": 1.059,
+  "crownRadius": 0.93,
+  "tris": {
+   "lod0": 39,
+   "lod1": null
+  }
+ },
+ {
+  "name": "ilalang_b",
+  "group": "grass",
+  "height": 0.98,
+  "crownRadius": 1.3,
+  "tris": {
+   "lod0": 36,
+   "lod1": null
+  }
+ },
+ {
+  "name": "ilalang_c",
+  "group": "grass",
+  "height": 1.282,
+  "crownRadius": 1.015,
+  "tris": {
+   "lod0": 36,
+   "lod1": null
+  }
+ }
+]

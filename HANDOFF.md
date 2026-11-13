@@ -1,0 +1,1008 @@
+# HANDOFF: SENARA_DIGITAL_TWIN (command center kawasan)
+
+**Status:** belum ada kode. Dokumen ini jadi titik awal.
+**Scope Fase 1 terbaru (9 Nov): peta Alam Sutera Tangerang + keluhan, respond ticket, WO yang muncul otomatis. Detailnya di §14, dan §14 lebih diutamakan daripada §6.**
+Dibuat 9 Nov 2026 dari diskusi Steven dan Claude. Riwayat lengkapnya ada di `~/Documents/HISTORY_CHAT_ide-project_2026-11-09.md`.
+Nama folder masih sementara, silakan diganti.
+
+Semua path di bawah relatif terhadap `~/Documents/web/`, kecuali disebut lain.
+
+---
+
+## 1. Tujuan
+
+Satu layar peta 3D kawasan yang menampilkan kejadian yang sedang berlangsung (keluhan, emergency, WO, kamera lalu lintas) beserta riwayatnya. Nanti ditambah simulasi what-if. Tujuannya supaya tim operasional bisa bertindak lebih cepat dan pola masalah kelihatan.
+
+- **Pemakai:** tim estate management / command center (pantau harian), manajemen (review), dan nanti marketing (versi tanpa data sensitif).
+- **Ukuran berhasil:** waktu respon emergency, ketepatan SLA WO, dan jumlah keluhan berulang di lokasi yang sama.
+- **Bukan pengganti BO.** Aplikasi ini read-only. Tindakan tetap dilakukan di ASA_BACKOFFICE_WEB atau app staf.
+- **Posisinya sebagai digital twin:** Fase 1–2 = tingkat "cermin" dan "analisis". Simulasi (Fase 3+) yang membuatnya jadi digital twin penuh.
+
+## 2. Keputusan yang sudah diambil
+
+| Topik | Keputusan | Alasan |
+|---|---|---|
+| Tempat | Project baru dengan pola SENARA_ASSET_MANAGEMENT_GOTH (SAMGA) | Datanya lintas sistem, butuh mode TV, tidak milik satu BO |
+| Bukan di PetaCuan | — | PetaCuan project pribadi yang publik di Vercel/Supabase |
+| Peta | Google Maps JS API (vector map) + deck.gl `GoogleMapsOverlay` | Steven sudah punya akses Google Maps; deck.gl untuk layer data |
+| Cadangan peta | MapLibre + PMTiles dari `~/petacuan/jabodetabek.osm.pbf`, disimpan di Garage | Kalau Google tidak bisa dipakai atau harus full on-prem |
+| Database | Tetap SQL Server (TownshipDB) lewat SP. **Tanpa time-series DB** untuk sekarang | Datanya event dengan volume kecil, bukan stream |
+| Data live | BFF query DB tiap 15–30 detik, di-cache, lalu dikirim ke browser lewat SSE | DB cukup di-query sekali per interval, berapa pun jumlah layarnya |
+| Emergency instan (opsional) | Publish ke websocket internal (`SOCKET_URL` + `/publish`, pola `Payment_BCA_Microservice_Golang_API_New/utils/notify.go:55`) | Tidak perlu menunggu polling |
+
+## 3. Stack (ikut SAMGA)
+
+- **web:** React 19 + Vite + TypeScript + Tailwind 3 + @tanstack/react-query, versinya ikut `SENARA_ASSET_MANAGEMENT_GOTH/web/package.json`. Peta pakai `@vis.gl/react-google-maps` + `@deck.gl/google-maps`.
+- **bff:** Go 1.23 + chi v5 (ikut `SENARA_ASSET_MANAGEMENT_GOTH/bff/go.mod`), plus driver SQL Server yang sama dengan SAMGA.
+- **SSO:** `GET /api/sso/consume?sid=<Session_ID>&next=/`. Salin pola `SENARA_ASSET_MANAGEMENT_GOTH/bff/internal/api/handlers.go:216-224`.
+- **Deploy:** docker-compose + nginx seperti SAMGA (`docker-compose.yml`, `web/nginx.conf`).
+- **Google Maps:**
+  - Map ID tipe vector dengan tilt dan rotation aktif.
+  - API key baru khusus project ini, dibatasi HTTP referrer dan hanya untuk Maps JavaScript API (tambah Map Tiles API kalau pakai photorealistic).
+  - Jangan pakai key yang di-hardcode di ASA_MOBILE.
+
+## 4. Arsitektur
+
+```
+Browser (React + Google Maps + deck.gl)
+   |  REST + SSE (/api/*)
+Go BFF (chi), cache in-memory per layer (15–30 detik)
+   +-- SQL Server TownshipDB: SP baru khusus peta (read-only)
+   +-- Console CAKRAWALA: status kamera (pola proxy Township API /traffic/status)
+   +-- ZoneMinder (api-zm): stream CCTV di-proxy, token tetap di server
+   +-- (opsional) websocket internal: event emergency baru
+SSO: Senara Session_ID -> CORE.SecurityManagementDB (pola SAMGA)
+```
+
+## 5. Inventaris data (dicek ke kode 9 Nov 2026)
+
+| Layer | Koordinat | Sumber / bukti | Catatan |
+|---|---|---|---|
+| Keluhan | Ada (Lat/Long dari app) | `Township_Information_System_API/laravel/app/Http/Controllers/API/ComplaintController.php:340-341`, SP `USP_Mobile_ComplaintRequest_Save` | |
+| Emergency | Ada | `.../API/CustomerController.php` `save_emergency` (baris 2107), SP `USP_Mobile_Emergency_Save_v2` (@Latitude/@Longitude). Master radius: `ASA_BACKOFFICE_WEB/app/Http/Controllers/Master/EmergencyRadiusController.php` | |
+| WO / respond ticket | Tidak ada di kode | SP `usp_Mobile_Admin_WorkOrder_*` (SENARA_MANAGEMENT_API). `WoController.php` dan `RespondController.php` mereferensikan `IDX_T_Complaint*` | Lokasi diambil lewat join ke keluhan. Relasinya perlu dicek |
+| Kamera CAKRAWALA | Belum ada | `T_TrafficNotice` cuma menyimpan CameraId/CameraName (`Township_Information_System_API/laravel/app/Services/CakrawalaService.php:121`). Status live lewat `/traffic/status` (README.md:213-228) | Perlu tabel posisi kamera |
+| CCTV ZoneMinder | Belum ada | `ZoneMinderController@check_zone_minder` | Perlu pemetaan monitor → posisi |
+| Sutera Loop | Belum ada | `.../API/SuteraLoopController.php`: `USP_Mobile_SuteraLoop_Line_List`, `_StopPoint_List`, `_Line_StopPoint_List`. Model app (`~/Documents/mobile/ASA_MOBILE/lib/model/sutera_loop_model.dart`) cuma berisi nama jalur, warna, nama halte, dan jam | Koordinat halte dan garis rute harus dibuat. Posisi bus live juga belum ada. Mungkin SP-nya punya kolom koordinat yang tidak dipakai app, perlu dicek |
+| Aset GA | GPS saat opname | `SENARA_ASSET_MANAGEMENT_GOTH/web/src/screens/opname/OpnameFormScreen.tsx` | Fase belakangan |
+| Unit / cluster | Belum ada | — | Site plan (DWG) → GeoJSON. Tanya dulu ke SalesDB/tim planning |
+
+## 6. Fase
+
+**Fase 0: prasyarat (bukan kode)**
+- [ ] Tentukan pemilik dan pemakai hariannya.
+- [ ] Daftarkan app di CORES (IDX_M_Apps baru) beserta menunya, ikut pola Loyalty/SAMGA.
+- [ ] Siapkan Google Cloud: Map ID vector (tilt/rotation) dan API key baru yang dibatasi domain.
+- [ ] Cek di Google Earth apakah Alam Sutera sudah tampil 3D foto-realistis.
+- [ ] Siapkan domain dan server Docker.
+- [ ] Minta site plan DWG/DXF ke tim planning.
+- [ ] Kumpulkan posisi kamera CAKRAWALA (dari console / repo SS_CCTV_CV) dan daftar monitor ZoneMinder.
+- [ ] Minta akun DB read-only untuk BFF ke DBA.
+- [ ] Minta API key console CAKRAWALA khusus BFF. Township API memakai `CAKRAWALA_*` di .env-nya sendiri.
+- [ ] Siapkan kredensial ZoneMinder untuk proxy stream.
+- [ ] Buat koordinat halte dan garis rute Sutera Loop (digambar sekali, simpan sebagai GeoJSON).
+
+**Fase 1: cermin (peta live)**
+- Layer: keluhan aktif, emergency aktif, WO berjalan (koordinat lewat keluhan), kamera (status CAKRAWALA), jalur dan halte Sutera Loop.
+- Versi minimal yang paling cepat jalan: keluhan + emergency saja, karena koordinatnya sudah ada. Kamera dan Sutera Loop menyusul setelah posisinya tersedia.
+- Buang titik yang koordinatnya kosong, (0,0), atau di luar kawasan. Filternya pakai master Emergency Radius.
+- UI: layout home seperti di §7. Klik item → peta terbang ke lokasi dan kamera terdekat tampil. Ada mode TV.
+- Dianggap selesai kalau:
+  - Kejadian baru muncul paling lambat 30 detik setelah dibuat.
+  - Layar TV bisa jalan 8 jam tanpa reload.
+  - Tidak ada token atau API key internal yang terkirim ke browser.
+
+**Fase 2: analisis**
+- Heatmap dan timeline (24 jam / 30 hari, bisa replay), SLA WO per area, keluhan berulang per lokasi.
+- Polygon unit/cluster dari site plan, diwarnai sesuai status.
+
+**Fase 3: what-if (mulai dari yang datanya sudah siap)**
+- Respon emergency: kalau pos security dipindah atau ditambah, waktu tempuh rata-rata jadi berapa (pakai jalan OSM + riwayat emergency).
+- Beban WO: kalau teknisi ditambah, berapa persen WO yang selesai dalam SLA (pakai riwayat WO).
+- Simulasinya jalan sebagai job Python di backend. Hasilnya jadi layer "sebelum vs sesudah".
+
+**Fase 4: nanti**
+- Simulasi genangan (DEMNAS + jaringan saluran + data hujan, pakai SWMM).
+- Simulasi lalu lintas (SUMO + hitungan kendaraan per kamera).
+- GPS bus Sutera Loop live. Kalau data seperti ini sudah ada, baru pertimbangkan TimescaleDB atau columnstore di SQL Server.
+
+## 7. Tampilan home
+
+```
++--------------------------------------------------------------------+
+| Command Center Alam Sutera      Sen 09 Nov 14:32   (!) 1 emergency |
++--------------+-------------------------------------+---------------+
+| LAYER        |                                     | PERLU TINDAKAN|
+| [x] Keluhan  |      peta 3D miring                 | (!) Emergency |
+| [x] Emergency|      - gedung 3D                    |     Cluster X |
+| [x] WO       |      - cluster diwarnai per status  | WO lewat SLA  |
+| [x] Kamera   |      - titik berdenyut = emergency  | 5 keluhan PJU |
+| [ ] Sutera   |      - ikon kamera merah = macet    |     Cluster Y |
+|     Loop     |      - garis = jalur Sutera Loop    |               |
+| HARI INI     |                                     | KAMERA        |
+| Keluhan  24  |                                     | [feed live]   |
+| WO aktif 11  |                                     |               |
++--------------+-------------------------------------+---------------+
+| <  timeline 24 jam (geser untuk replay)  >                         |
++--------------------------------------------------------------------+
+```
+
+Pilihan tampilan gedung 3D:
+1. Gedung 3D bawaan Google vector map.
+2. Photorealistic 3D, kalau Alam Sutera sudah tercakup.
+3. Polygon site plan yang ditinggikan sesuai jumlah lantai dan diwarnai sesuai data.
+
+Pakai #1 atau #2 sebagai dasar, lalu tumpuk #3 di atasnya.
+
+## 8. Draft kontrak API BFF (Fase 1)
+
+| Method | Path | Isi |
+|---|---|---|
+| GET | `/api/sso/consume?sid=&next=` | SSO Senara (salin dari SAMGA) |
+| GET | `/api/summary` | Angka hari ini: keluhan baru, emergency aktif, WO aktif, WO lewat SLA |
+| GET | `/api/layers/complaints?status=active` | `[{id, lat, lng, kategori, status, dibuat, cluster}]` |
+| GET | `/api/layers/emergencies?status=active` | `[{id, lat, lng, jenis, status, dibuat}]` |
+| GET | `/api/layers/work-orders?status=open` | `[{id, complaintId, lat, lng, status, dibuat, batasSla}]` |
+| GET | `/api/layers/cameras` | `[{cameraId, nama, lat, lng, status}]` |
+| GET | `/api/layers/sutera-loop` | `{lines: [...], stops: [...]}` |
+| GET | `/api/stream` | SSE, event `layer-updated` berisi `{layer, versi}` |
+| GET | `/api/cameras/{id}/stream` | Proxy MJPEG, token tetap di server |
+
+Aturan payload:
+- Payload harus kecil. Jangan kirim foto atau base64 (pelajaran dari kasus lambatnya QMS).
+- Data pribadi (nama dan telepon pelapor) tidak masuk layer peta. Untuk detail, tautkan ke BO.
+
+## 9. Draft DB (semua DRAFT, Steven yang memfinalkan dan menjalankan)
+
+Standar yang dipakai:
+- Tabel master `M_`, transaksi `T_`, report `R_`. PK `IDX_<tabel>`.
+- Kolom audit `DCreate`, `UCreate`, `DModified`, `UModified`, `RecordStatus` (default `'A'`).
+- Selalu buat SP baru, jangan ALTER SP lama. Versinya naik `_v2`, `_v3`, dan seterusnya.
+
+Isi draft:
+- Tabel `M_CameraLocation` di TownshipDB: `IDX_M_CameraLocation`, `CameraId` (dari CAKRAWALA), `CameraName`, `ZoneMinderMonitorId` (nullable), `Latitude`, `Longitude`, `Township`, plus kolom audit.
+- SP read-only (nama usulan, prefix `usp_DT_` = Digital Twin):
+  - `usp_DT_R_ComplaintMap_List` (@Status, @Since) → id, lat, lng, kategori, status, DCreate, cluster
+  - `usp_DT_R_EmergencyMap_List`
+  - `usp_DT_R_WorkOrderMap_List` (join ke keluhan untuk ambil koordinat)
+  - `usp_DT_R_Summary_Today`
+  - `usp_DT_M_CameraLocation_List`
+- Akun DB khusus read-only untuk BFF, yang hanya boleh EXEC SP `usp_DT_*`.
+
+## 10. Pertanyaan terbuka
+
+1. Siapa pemilik dan pemakai hariannya? Ini menentukan prioritas fitur.
+2. Nama project dan domain finalnya apa?
+3. Apakah semua WO berasal dari keluhan? Kalau ada WO tanpa keluhan, lokasinya harus diambil dari tempat lain.
+4. Kolom koordinat keluhan dan emergency ada di tabel dan kolom apa? Bisa dicek dari isi SP `USP_Mobile_ComplaintRequest_Save` dan `USP_Mobile_Emergency_Save_v2` (Steven yang cek).
+5. Apakah posisi kamera tersedia di console CAKRAWALA (repo SS_CCTV_CV)? Kalau tidak, `M_CameraLocation` diisi manual.
+6. Apakah file site plan DWG ada? Kalau ada, sudah pakai koordinat UTM 48S atau masih koordinat lokal?
+7. Apakah perlu bisa diakses dari luar jaringan kantor, misalnya untuk presentasi?
+
+## 11. Aturan kerja (berlaku untuk siapa pun yang melanjutkan, termasuk Claude)
+
+- Jangan query DB langsung. SQL dibuat sebagai file, Steven yang menjalankan.
+- Jangan tambah env atau flag testing di kode maupun .env.
+- Kalau mengubah SP, buat versi baru. Jangan ALTER SP lama.
+- Jangan commit atau push tanpa diminta.
+- Jawaban singkat dan to the point.
+
+## 12. Langkah berikutnya
+
+1. Steven menjawab pertanyaan terbuka nomor 1–4.
+2. Claude membuat scaffold project (salin struktur SAMGA: `web/`, `bff/`, `sql/`, `docker-compose.yml`) beserta file SQL draft dari §9.
+3. Steven menjalankan SQL di dev, lalu Fase 1 dijalankan di lokal dengan data dev.
+
+**File referensi yang perlu dibaca dulu:**
+- `SENARA_ASSET_MANAGEMENT_GOTH/README.md`
+- `SENARA_ASSET_MANAGEMENT_GOTH/bff/internal/api/handlers.go` (SSO)
+- `Township_Information_System_API/README.md:213-228` (CAKRAWALA)
+- `Township_Information_System_API/laravel/app/Services/CakrawalaService.php`
+- `Payment_BCA_Microservice_Golang_API_New/utils/notify.go` (websocket publish)
+
+## 13. Detail simulasi (Fase 3–4): sumber data dan cara kerja
+
+### 13.1 Respon emergency (pos security). Kesiapan: siap
+| Data | Sumber |
+|---|---|
+| Riwayat emergency + koordinat + waktu | TownshipDB. Koordinat dari SP `USP_Mobile_Emergency_Save_v2`. Waktu selesai (FinishTime) ditambahkan di CR ASA Fase 3 (AFRD-BDS25-025), cek tabelnya. Perlu SP baru untuk menarik riwayatnya |
+| Posisi pos security | Belum ada di sistem. Minta daftarnya ke tim security/estate, lalu simpan di tabel `M_SecurityPost` (lat, lng, shift) |
+| Jaringan jalan | OSM: ekstrak Geofabrik/Overpass, atau `~/petacuan/jabodetabek.osm.pbf`. Cek apakah jalan dalam cluster dan gerbangnya (`barrier=gate`) sudah benar |
+| Kecepatan | Asumsi per jenis jalan atau kecepatan patroli (motor). Dikalibrasi dengan waktu respon asli |
+
+Cara kerja (Python `osmnx` + `networkx`):
+1. Bentuk graf jalan dari OSM.
+2. Untuk tiap emergency historis, hitung waktu tempuh terpendek dari pos terdekat.
+3. Hitung rata-rata, P50, dan P90.
+4. Untuk skenario, pindah atau tambah pos lalu hitung ulang. Bisa juga dioptimasi otomatis (p-median / maximal coverage): taruh k pos di titik yang membuat P90 paling kecil.
+5. Hasil di peta: area jangkauan 5 dan 10 menit (isochrone) sebelum vs sesudah, plus angka P50/P90.
+
+### 13.2 Beban WO (jumlah teknisi). Kesiapan: siap
+| Data | Sumber |
+|---|---|
+| Riwayat WO: dibuat, di-assign, mulai, selesai, kategori, lokasi | SP `usp_Mobile_Admin_WorkOrder_*` (SENARA_MANAGEMENT_API: Assign_Save, Finish, Info). Tanggal mulai WO ditambahkan di CR Fase 3. Perlu SP baru untuk riwayatnya |
+| Jumlah teknisi per hari | Dihitung dari data assignment WO. Jadwal shift minta ke estate kalau tidak ada di sistem |
+| Target SLA per kategori | Cek master. Kalau belum ada, minta targetnya ke estate |
+
+Cara kerja (discrete-event simulation, Python `SimPy`):
+1. WO datang mengikuti pola historis per jam/hari.
+2. WO dikerjakan teknisi yang sedang kosong, dengan durasi kerja diambil dari distribusi historis per kategori.
+3. Kalibrasi: jalankan dengan jumlah teknisi asli bulan lalu, lalu bandingkan % SLA hasil simulasi dengan % SLA aslinya.
+4. Jalankan skenario N+1, N+2, dan seterusnya. Hasilnya % WO dalam SLA dan rata-rata waktu tunggu, per area.
+
+### 13.3 Genangan (SWMM). Kesiapan: berat
+| Data | Sumber |
+|---|---|
+| Elevasi | DEMNAS (BIG, gratis, ~8 m, tanahair.indonesia.go.id). Untuk skala kawasan masih kasar. Lebih bagus pakai survei topografi/peil dari engineering atau scan drone |
+| Jaringan saluran | As-built drawing dari engineering: saluran, gorong-gorong, dimensi, kemiringan, elevasi dasar, outfall, pompa, kolam retensi |
+| Hujan | BMKG (dataonline.bmkg.go.id), NASA GPM IMERG untuk event historis, atau pasang rain gauge sendiri. Skenario pakai hujan rencana (kurva IDF) |
+| Kalibrasi | Titik genangan historis dari keluhan (kalau ada kategori banjir/genangan di master kategori keluhan) beserta fotonya |
+
+Cara kerja:
+1. **Langkah awal tanpa SWMM:** analisis titik rendah dari DEM, ditumpuk dengan riwayat keluhan genangan. Hasilnya peta rawan genangan.
+2. **SWMM (EPA, open source, Python `pyswmm`):** bagi kawasan jadi sub-catchment (luas dan % permukaan kedap dari site plan/citra), masukkan saluran dan junction, lalu jalankan event hujan. Hasilnya node yang meluap (volume dan durasi). Luasan genangan diperkirakan dari DEM di sekitar node.
+3. Butuh orang yang paham hidrologi. Pertimbangkan melibatkan engineering atau konsultan.
+
+### 13.4 Lalu lintas (SUMO). Kesiapan: berat
+| Data | Sumber |
+|---|---|
+| Jaringan jalan | OSM, dikonversi dengan `netconvert --osm`. Cek lajur, satu arah, dan lampu lalu lintas |
+| Volume kendaraan per kamera per interval | Belum pasti ada. Console CAKRAWALA baru terlihat mengirim status (started/red/ended). Cek di repo SS_CCTV_CV apakah ada hitungan kendaraan (kontraknya `docs/ASA-MOBILE-TRAFFIC.md`) |
+| Lampu lalu lintas | Timing dari estate/Dishub, kalau ada |
+| Validasi | Riwayat status macet CAKRAWALA (`T_TrafficNotice`) |
+
+Cara kerja:
+1. Bangun jaringan jalan dan pasang "detektor" di posisi kamera.
+2. Bentuk rute kendaraan yang cocok dengan hitungan kamera (`routeSampler`).
+3. Jalankan baseline, lalu cocokkan jam-jam macetnya dengan riwayat CAKRAWALA.
+4. Jalankan skenario, misalnya jalan X ditutup untuk event. Hasilnya segmen jalan yang macet, waktu tempuh, dan panjang antrean, ditampilkan sebelum vs sesudah.
+
+### 13.5 GPS bus Sutera Loop: belum ada (dicek 9 Nov 2026)
+- Township API `SuteraLoopController.php` cuma memanggil 3 SP list: jalur, halte, dan jam.
+- Master di BO (`ASA_BACKOFFICE_WEB/resources/views/master/sutera-loop/`) tidak punya field koordinat. Form halte cuma berisi IDX dan state, form jalur berisi LineColor.
+- App warga cuma menampilkan daftar, tanpa peta dan tanpa URL tracking.
+- Tidak ada kata tracking, GPS, armada, atau fleet di repo mana pun di Mac.
+- Masih mungkin busnya pakai GPS dari operator/vendor di luar sistem ini. Tanyakan ke tim/operator Sutera Loop, dan cek juga project yang masih ada di Parallels.
+- Kalau memang belum ada, ada dua pilihan:
+  1. GPS tracker 4G di tiap bus + Traccar (open source). BFF tinggal membaca posisi dari Traccar.
+  2. App sederhana di HP sopir yang mengirim lokasi. Lebih murah, tapi kurang andal.
+- Begitu ini jalan, datanya jadi rapat (posisi tiap 5–10 detik). Di titik inilah time-series DB atau tabel berpartisi mulai relevan.
+
+### 13.6 Alternatif tools lalu lintas (gratis)
+
+Ada dua pekerjaan yang berbeda:
+- **Hitung kendaraan** = computer vision dari CCTV. Ini data asli.
+- **Simulasi** = what-if, memakai data hitungan itu sebagai input.
+
+TraCI bukan pengganti SUMO. TraCI adalah API Python untuk mengendalikan SUMO yang sedang jalan: menutup jalan di tengah simulasi, membaca antrean, atau menarik posisi kendaraan simulasi untuk dianimasikan di peta. Versi in-process yang lebih cepat namanya `libsumo`.
+
+**Hitung kendaraan (data asli)**
+| Tool | Lisensi | Catatan |
+|---|---|---|
+| Cek CAKRAWALA / repo SS_CCTV_CV dulu | — | Console-nya sudah menganalisis kamera lalu lintas, jadi mungkin hitungannya sudah ada dan tinggal dibuka |
+| Roboflow `supervision` + ByteTrack | MIT | Hitung kendaraan yang melewati garis (LineZone) per kelas: motor, mobil, bus, truk |
+| Detector YOLOX / RT-DETR | Apache-2.0 | Model deteksinya. Ultralytics YOLO juga gratis tapi AGPL-3.0, jadi cek dulu kalau mau dipakai sebagai layanan |
+| OpenCV (background subtraction) | Apache-2.0 | Paling ringan dan cukup CPU, tapi akurasinya rendah |
+| Frigate | MIT | NVR dengan deteksi objek. Bisa berdampingan dengan ZoneMinder |
+| NVIDIA DeepStream | Gratis (lisensi NVIDIA) | Untuk banyak kamera, butuh GPU NVIDIA |
+
+**Simulasi lalu lintas**
+| Tool | Lisensi | Level | Catatan |
+|---|---|---|---|
+| OSMnx + NetworkX | MIT / BSD | Statis | Paling ringan, tanpa data hitungan. Tutup jalan X, lalu lihat ruas mana yang jadi rute alternatif (betweenness sebelum vs sesudah) |
+| UXsim | MIT | Meso | Murni Python (`pip install uxsim`), cepat, cocok untuk what-if tutup jalan di level jaringan |
+| SUMO + TraCI / libsumo | EPL-2.0 | Mikro | Paling detail: lajur, persimpangan, lampu. Bisa animasi di peta lewat TraCI |
+| CityFlow | Apache-2.0 | Mikro | Cepat, sering dipakai untuk riset lampu lalu lintas. Sudah jarang diupdate |
+| MATSim | GPL-2.0 | Agent-based | Java, untuk pola perjalanan skala kota. Terlalu besar untuk satu kawasan |
+| A/B Street | Apache-2.0 | Mikro (seperti game) | Impor OSM, bisa edit jalan lalu lihat efeknya. Bagus untuk demo, tapi pengembangannya melambat |
+
+**Urutan yang disarankan:**
+1. Cek CAKRAWALA dulu.
+2. OSMnx (tanpa data hitungan).
+3. UXsim.
+4. SUMO + TraCI, kalau sudah perlu detail persimpangan dan lampu.
+
+### 13.7 Update 9 Nov: hitungan kendaraan katanya sudah dibuat di CAKRAWALA
+Ini masih kabar, belum dicek. Repo SS_CCTV_CV tidak ada di Mac, mungkin ada di Parallels.
+
+Yang terlihat dari Township API:
+- Webhook cuma meneruskan `state` (started/red/ended), `level`, dan `camera {id, name}`. Sisanya disimpan mentah di kolom `Payload` di `T_TrafficNotice` (`CakrawalaService.php:94-130`).
+- Status live: `CAKRAWALA_PUBLIC_BASE_URL` + `/public/traffic/{township}`, pakai key `CAKRAWALA_PUBLIC_TRAFFIC_KEY`, cache 20 detik.
+
+Cek apakah Payload berisi hitungan (Steven yang run, di TownshipDB):
+```sql
+SELECT TOP 5 NoticeId, CameraId, CameraName, [State], [Level], SentAt, Payload
+FROM T_TrafficNotice
+WHERE IsTest = 0
+ORDER BY DCreate DESC;
+```
+
+Pertanyaan untuk pemilik CAKRAWALA:
+1. Hitungannya per kamera per interval berapa menit? Dipisah per jenis kendaraan dan per arah?
+2. Riwayatnya disimpan di mana, dan berapa lama?
+3. Ada endpoint untuk riwayat dan data live (pakai key seperti `CAKRAWALA_PUBLIC_TRAFFIC_KEY`), atau bisa dibuatkan?
+4. Posisi kamera (lat/long) dan arah pandangnya ada di console? Kalau ada, `M_CameraLocation` tidak perlu diisi manual.
+5. Garis hitung tiap kamera ada di ruas jalan mana? Ini dibutuhkan untuk memasang detektor di UXsim/SUMO.
+
+Kalau hitungannya memang ada, simulasi lalu lintas naik dari "berat" ke "sedang". Layer kamera di peta juga bisa langsung menampilkan volume, bukan cuma merah/hijau.
+
+### 13.8 Update 9 Nov: kata Steven, hitungan kendaraan dan simulasi lalu lintas "semuanya" sudah dibuat di CAKRAWALA
+Belum dicek, karena repo SS_CCTV_CV tidak ada di Mac. Kalau benar:
+- **Bagian lalu lintas jangan dibuat ulang.** Digital twin cukup mengambilnya dari CAKRAWALA lewat API. Tools di §13.4 dan §13.6 jadi cadangan saja.
+- **Digital twin fokus ke yang belum ada:** keluhan, emergency, WO, Sutera Loop, aset, what-if emergency dan WO, plus menggabungkan semuanya dalam satu peta.
+- **Yang dibutuhkan dari CAKRAWALA:**
+  - API untuk hitungan live dan riwayat per kamera.
+  - Posisi dan arah tiap kamera.
+  - API untuk menjalankan skenario simulasi (input: jalan ditutup, jam; output: ruas macet, waktu tempuh) dengan format hasil yang bisa ditaruh di peta (GeoJSON).
+  - Key/akses untuk BFF.
+- **Langkah:** baca repo/docs SS_CCTV_CV dulu (kemungkinan ada di Parallels) atau tanya pemiliknya, sebelum mendesain layer lalu lintas.
+
+## 14. Scope Fase 1 terbaru (9 Nov 2026): peta Alam Sutera + keluhan, respond ticket, WO
+
+**Arahan:** mulai dari peta Alam Sutera (Tangerang). Kalau ada keluhan baru, otomatis muncul di peta. Fokus ke alur keluhan → respond ticket → WO. Lalu lintas (CAKRAWALA, nanti dilanjutkan tim lain), Sutera Loop, emergency, dan aset menyusul.
+
+### 14.1 Alur data (dari kode)
+```
+Keluhan: header -> detail (IDX_T_ComplaintHeader, IDX_T_ComplaintDetail)
+  dibuat dari app warga: USP_Mobile_ComplaintRequest_Save (membawa Latitude/Longitude)
+  atau dari BO:          usp_T_ComplaintRequest_Create_v, usp_T_ComplaintRequestDetail_Save_v
+  |
+  +-- Respond ticket, per IDX_T_ComplaintDetail
+  |     app staf: usp_Mobile_Admin_Respond_Save / _Finish_v / _Reject / _Close
+  |     BO:       usp_T_RespondTicketDetail_Save_v / _Finish_v / _Reject_v
+  |
+  +-- WO, per IDX_T_ComplaintDetail (WorkOrderAssign, WorkOrderItem)
+        app staf: SENARA_MANAGEMENT_API WoController (usp_Mobile_Admin_WorkOrder_*)
+        BO:       usp_T_WorkOrderAssign_*
+```
+- Nama tabel kemungkinan `T_ComplaintHeader`, `T_ComplaintDetail`, `T_WorkOrderAssign`, `T_WorkOrderItem`. Ini disimpulkan dari nama PK (standar `IDX_<tabel>`), jadi perlu dikonfirmasi.
+- **Koordinat** diambil dari keluhan. Respond ticket dan WO ikut keluhannya lewat `IDX_T_ComplaintDetail`.
+- **WO dari keluhan?** Di kode, WO selalu membawa `@IDX_T_ComplaintDetail` (12 kali di `WoController.php`), jadi kemungkinan besar semua WO berasal dari keluhan. Perlu dikonfirmasi.
+
+### 14.2 Tahap per titik (warna marker)
+| Tahap | Kondisi | Tampilan |
+|---|---|---|
+| Baru | Keluhan belum direspon | Merah, berdenyut |
+| Direspon | Sudah ada respond ticket, belum ada WO | Oranye |
+| WO berjalan | WO sudah di-assign, belum selesai | Biru |
+| Selesai | Respond/WO sudah finish | Hijau |
+| Ditutup / ditolak | Close atau reject | Abu-abu, disembunyikan secara default |
+
+Kolom status yang menandai tiap tahap dipetakan Steven dari SP yang sudah ada (`usp_T_ComplaintRequest_List_v`, `usp_T_RespondTicket_List_v`, list WO).
+
+### 14.3 Supaya muncul otomatis
+- BFF memanggil `usp_DT_R_ComplaintMap_List @SinceModified` tiap 15 detik. Yang diambil hanya baris yang berubah sejak cursor terakhir. Hasilnya disimpan di cache, lalu delta-nya dikirim ke browser lewat SSE.
+- Di browser: titik baru muncul dengan animasi berdenyut, dan masuk ke panel "Perlu tindakan".
+- Target: keluhan baru sudah muncul di peta paling lambat 30 detik setelah dibuat.
+- Kalau nanti butuh instan: Township API publish ke websocket internal setiap kali menyimpan keluhan (opsional, perlu mengubah Township API).
+
+### 14.4 Peta Alam Sutera
+- Google Maps vector map. Titik tengah dan batas peta diambil dari master Emergency Radius area Alam Sutera, atau dari polygon kawasan yang digambar sekali.
+- Buang titik yang di luar radius, (0,0), atau koordinatnya kosong.
+- Gedung pakai 3D bawaan Google dulu. Polygon cluster dari site plan menyusul di Fase 2.
+
+### 14.5 Draft kontrak SP (isi SP ditulis Steven)
+`usp_DT_R_ComplaintMap_List`
+- Input: `@Area` (area Alam Sutera), `@SinceModified DATETIME = NULL`, `@IncludeClosed BIT = 0`
+- Output satu baris per `IDX_T_ComplaintDetail`:
+  - `IDX_T_ComplaintHeader`, `IDX_T_ComplaintDetail`
+  - `Latitude`, `Longitude`
+  - `IDX_M_ComplaintType`, `ComplaintTypeName`
+  - `Tahap`
+  - `DCreate` (waktu keluhan), `DRespond`, `DWorkOrderAssign`, `DFinish`, `DClose`
+  - `DModified` (yang paling akhir di antara keluhan/respond/WO)
+  - `Cluster`/`UnitCode` kalau ada
+- Tanpa foto, dan tanpa nama/telepon pelapor.
+
+`usp_DT_R_ComplaintMap_Summary`
+- Untuk angka panel: keluhan baru hari ini, belum direspon > X jam, WO berjalan, selesai hari ini.
+
+### 14.6 Panel "Perlu tindakan" (Fase 1)
+- Keluhan baru yang belum direspon > X jam.
+- Respond yang ditolak.
+- WO berjalan yang melewati SLA (kalau target SLA-nya ada).
+
+### 14.7 Pertanyaan khusus Fase 1
+1. Area/township mana saja yang termasuk "Alam Sutera Tangerang" (ID area di DB)?
+2. Kolom status mana yang menandai tiap tahap di header, detail, respond, dan WO?
+3. Koordinat keluhan disimpan di header atau di detail?
+4. Berapa ambang "belum direspon > X jam" dan target SLA WO per kategori?
+5. Keluhan yang dibuat staf dari BO juga punya koordinat? Form `complaint_request_form.blade.php` memuat field koordinat/peta.
+
+### 14.8 Langkah
+1. Steven menjawab pertanyaan 1–3 (cek isi SP yang disebut di §14.2).
+2. Claude membuat scaffold (pola SAMGA), file SQL draft sesuai kontrak §14.5, dan peta Alam Sutera dengan layer keluhan.
+3. Steven menjalankan SQL di dev. Uji: buat keluhan dari app versi dev, lalu pastikan muncul di peta paling lambat 30 detik.
+
+## 15. Status integrasi keluhan (9 Nov 2026)
+
+- SP `dbo.usp_DT_R_ComplaintMap_List` (`sql/001_…`) sudah dijalankan Steven di TownshipDB dev.
+- BFF Go (`bff/`, pola SAMGA: chi + go-mssqldb) menyajikan `web/` dan `/api/stream` (SSE), `/api/complaints`, `/api/health`.
+  - `.env` disalin dari `.env` Township API (server TownshipDB dev), `AREA_ID=1`.
+- Cara jalan:
+  ```
+  cd bff && ./bin/alsut3d-bff
+  ```
+  Lalu buka http://127.0.0.1:8765. Build ulang (offline dari cache modul): `GOPROXY=off GOSUMDB=off go build -o bin/alsut3d-bff ./cmd/server`.
+- Uji pertama: 551 keluhan terbuka. Tahapnya Direspon 498, Baru 51, WO 2. Sumber koordinat: GPS app 368, lokasi unit 101, tanpa koordinat 82. Yang masuk kotak Alam Sutera 419.
+- Temuan: semua "Direspon" di dev berumur 75–656 hari dengan status header/detail `PROCESS` (data lama yang tidak pernah ditutup). Perlu dipastikan ke bisnis status mana yang berarti selesai. Kalau perlu, tambahkan batas umur untuk keluhan terbuka di SP versi berikutnya (`_v2`).
+
+## 16. Mode Jelajah orang ketiga (9 Nov 2026)
+
+- Kode: `web/map/walk.js` (modul baru), disambungkan di `web/map/alsut3d.js` (bayangan, label, `flyTo` → teleport, klik peta, loop), tombol `#walkBtn` di `web/index.html`, gaya `.wk-*` di `web/map/alsut3d.css`.
+- Alur: tombol orang berjalan di kontrol kanan → klik titik di peta → avatar muncul di situ, kamera menukik ke belakangnya. Titik di dalam gedung/rumah → muncul di jalan terdekat menghadap titik itu; kalau tidak ada jalan, di depan gedung.
+- Kendali: W A S D / panah (kiri-kanan memutar kamera), Shift lari, Spasi lompat, seret = putar kamera, scroll = jarak kamera, E = info terdekat (keluhan ≤ 28 m, gedung yang ditabrak, tempat ≤ 30 m), M / "Pindah" = pilih titik baru, H = petunjuk, Esc = keluar. Layar sentuh: joystick + tombol lompat.
+- Gedung (kecuali atap/kanopi), air, batang pohon, dan tepi kawasan padat. Kamera naik melewati atap kalau terhalang.
+- HUD: nama cluster (atau tempat terdekat) + nama jalan, minimap berputar ikut kamera (klik = pindah, scroll = zoom, titik keluhan ikut tampil). Hasil cari, tombol kartu "Pindah ke sini", dan notifikasi "Lihat di peta" = teleport saat mode jelajah.
+- Ringan: bayangan matahari dihitung ulang tiap avatar pindah 45 m (jendela ±240 m); bayangan avatar pakai bulatan lunak. Pin keluhan diturunkan ke 10 m selama jelajah.
+- Belum ada: interior gedung (OSM hanya bentuk luar + tinggi). Opsi: foto 360° per gedung (E di depan pintu → tur 360), atau model 3D `.glb` dari arsitek/BIM untuk benar-benar berjalan di dalam.
+- Sudah dites di Chrome headless (GPU Metal) lewat CDP: desktop 1440×900 dan emulasi HP 390×844 (sentuh), tanpa error console.
+
+## 17. Karakter v2, jelajah v2, dan game Sutera Royale (9 Nov 2026)
+
+- Modul bersama baru di `web/map/`:
+  - `world.js`: pembangun dunia 3D, dipindah dari `alsut3d.js`.
+  - `collide.js`: tabrakan, sinar peluru, dan garis pandang.
+  - `rig.js`: karakter bersendi dengan animasi prosedural (jalan, lari, jongkok, lompat, terjun, payung, bidik, kena tembak, mati), versi tunggal dan versi kerumunan instans.
+  - `mapview.js`: minimap dan peta besar.
+- Jelajah v2:
+  - Kontrol: mouse langsung menggerakkan kamera (pointer lock, tanpa klik tahan), V orang pertama/ketiga, M peta besar (klik = pindah), F/E info.
+  - Panel kiri dan notifikasi disembunyikan selama jelajah.
+- Game `web/royale.html` + `web/game/*.js`: battle royale orisinal (bukan tiruan aset/nama game lain), 1 pemain vs 50 bot mudah.
+  - Pesawat. Terjun hanya bisa di atas kawasan; terjun otomatis sebelum pesawat keluar.
+  - Terjun bebas → payung otomatis di 120 m.
+  - Loot di sekitar gedung, plus jaminan senjata di depan pemain saat mendarat.
+  - 5 senjata: Pistol P9, SMG Kilat, Senapan Garuda, Shotgun Badai, DMR Elang.
+  - Perban/P3K, rompi & helm lv.1–3, peti jarahan dari yang tersingkir.
+  - Zona ungu menyusut 8 fase (±12 menit).
+  - Bot:
+    - ±60% mendarat di titik panas.
+    - 70% langsung bersenjata.
+    - Navigasi A* di jaringan jalan.
+    - Reaksi 0,75–1,35 dtk, sebaran bidik ±2,7°, damage ke pemain ×0,6.
+- Uji Chrome headless (GPU Metal):
+  - Alur menu → pesawat → terjun → ambil senjata → tembak → layar akhir tanpa error console.
+  - Bot saling menyingkirkan (±18 dalam 2,5 menit setelah mendarat).
+  - ±120 fps di darat (1440×900).
+- Tingkat kesulitan Mudah / Sedang / Sulit dipilih di menu (tersimpan di browser). Preset di `DIFFICULTY` dalam `web/game/bots.js`; pengali kerusakan ke pemain di `main.js`:
+  - Reaksi: Mudah 0,75–1,35 dtk, Sedang 0,45–0,85 dtk, Sulit 0,24–0,5 dtk.
+  - Sebaran bidik ke pemain: Mudah 2,7°, Sedang 1,8°, Sulit 1,15°.
+  - Jarak lihat: Mudah 95 m, Sedang 130 m, Sulit 170 m.
+  - Kerusakan ke pemain: Mudah ×0,6, Sedang ×0,85, Sulit ×1.
+  - Pelindung saat mendarat: Mudah tidak ada; Sedang ±35% rompi / 25% helm; Sulit ±65% / 50%.
+  - Jongkok saat baku tembak jarak jauh: Mudah tidak pernah; Sedang dan Sulit ada peluangnya.
+  - Antar-bot sengaja dilunakkan (bidikan ≥ 2,3°, kerusakan ×0,65) supaya arena tidak habis sebelum pemain sempat bertarung. Di level Sulit, ±setengah bot masih hidup 2 menit setelah mendarat.
+- Belum ada: kendaraan, interior gedung (butuh model dari tim planning: GLB/FBX/IFC/SketchUp atau DWG per lantai), multipemain.
+- Perbaikan 9 Nov (lanjutan):
+  - Membidik:
+    - Red dot senapan sekarang berbingkai terbuka (dulu kotak padat menutupi tengah layar).
+    - Bidikan besi pistol, SMG, dan shotgun diselaraskan.
+    - Kilatan moncong mengecil saat membidik.
+    - Teropong DMR lebih lebar; HUD tetap tampil di atasnya.
+  - Bug yang sudah dibetulkan: prompt ambil barang, bar isi ulang, dan teropong sempat tidak tampil karena satu baris di `main.js` tertelan komentar.
+  - Peta besar & minimap (jelajah dan game) menampilkan nama tempat:
+    - Landmark dan cluster selalu tampil.
+    - Fasilitas kecil muncul saat diperbesar.
+    - Lokasi pemain tampil di bawah kompas game.
+- Zona dirombak (9 Nov, setelah masukan Steven):
+  - Alur fase:
+    - **Kawasan aman** (±75 dtk, tanpa dinding).
+    - **Zona ditandai**: lingkaran putih muncul, dinding ungu diam, hitung mundur.
+    - **Sedang menyusut**: dinding berjalan dengan kecepatan tetap, ada label dan bar progres.
+    - Kembali ke "zona ditandai" untuk fase berikutnya.
+  - Dinding pertama = lingkaran yang memuat seluruh kawasan, menyusut ke lingkaran putih pertama. Susut pertama maks 130 dtk; lingkaran pertama cenderung di tengah kawasan.
+  - Garis dinding tidak lagi bergeser (dulu animasinya terlihat seperti dinding bergerak).
+  - Label HUD dulu ambigu ("Zona menyusut" + sisa waktu susut terbaca seperti hitung mundur). Sekarang: "Fase n · mulai menyusut dalam" vs "Sedang menyusut · selesai dalam".
+  - Dites dengan mempercepat waktu: jari-jari tidak berubah selama fase tunggu.
+- Bidik SMG/pistol/shotgun: titik putih di tengah tetap tampil; untuk red dot senapan disembunyikan karena titik merahnya sudah jadi patokan.
+
+## 18. Kendaraan, bot taktis, dan peta tanpa bolong (11 Nov 2026)
+
+### 18.1 Kendaraan
+- **Model:** dibuat dengan Blender 5.2.4 headless (`~/Applications/Blender.app`), lewat skrip `tools/blender/vehicles.py`.
+  - Jalankan: `Blender -b --factory-startup -P tools/blender/vehicles.py -- [--only id] [--quick] [--shots] [--lineup] [--turntable]`.
+  - Hasil: `web/game/assets/vehicles/{lintas,banteng,walet,loop}.glb` + `manifest.json` (ukuran, posisi jok/mata/pintu/roda, palet warna).
+  - Kontrak GLB:
+    - Depan +Z, kiri +X.
+    - Titik asal di tanah, tengah antar-as.
+    - Simpul `body`, `wheel_*`, `steer` (motor), `seat_driver`, `eye_driver`, `exit_l/r`, `exhaust`.
+    - Material `paint`/`glass`/`tire`/`light_*` dst.
+  - Mobil setir kanan, jadi pintu pengemudi = `exit_r`.
+- **Jenis kendaraan (orisinal, bukan tiruan merek/game lain):**
+
+  | Kendaraan | Top speed | HP | Jumlah di arena |
+  |---|---|---|---|
+  | Sutera Lintas (hatchback) | 125 km/j | 1000 | 16 |
+  | Banteng 4x4 | 110 km/j, nyaris tidak melambat di rumput | 1500 | 9 |
+  | Walet 150 (skuter matic) | 115 km/j, pengendara terbuka | 450 | 14 |
+  | Bus Sutera Loop | 80 km/j | 2600 | 3, hanya di jalan ≥ 7 m |
+
+  Kendaraan diparkir di tepi kiri jalan saat halaman dimuat, jadi terlihat juga di kamera menu. Angka-angka ada di `TYPES` (`web/game/vehicles.js`).
+- **Preview:**
+  - Render Cycles di `preview/vehicles/`: `lineup.png`, per kendaraan, `colors.png`, `turntable.mp4`.
+  - Showroom 3D: `web/garasi.html` (ganti kendaraan, warna cat, lampu, putar).
+- **Kode game:**
+  - `web/game/vehicles.js`:
+    - Muat GLB; kalau GLB tidak ada, pakai model kotak.
+    - Fisika arcade: setir model sepeda, selip saat rem tangan, boost, lebih lambat di luar jalan.
+    - Tabrakan dengan gedung/pohon/tepi kawasan/kendaraan lain.
+    - Menabrak orang.
+    - Rusak → berasap → terbakar ±5 dtk → meledak (radius 7,5 m). Bangkai tetap ada sebagai penghalang.
+    - Suara mesin, klakson, decit, ledakan (`audio.js`).
+  - Sambungan ke pemain di `player.js`:
+    - Masuk/turun pakai `F` (pintu terdekat).
+    - `W`/`S` gas/rem-mundur, `A`/`D` setir, `Spasi` rem tangan, `Shift` boost, `H` atau klik kiri klakson.
+    - `V` kamera belakang ↔ kursi pengemudi; mouse = lihat sekeliling, kamera kembali ke belakang sendiri.
+  - Sambungan ke `main.js`:
+    - Peluru kena bodi kendaraan. Kaca mobil 50% tembus ke pengemudi; pengendara motor/jip terbuka kena langsung.
+    - Kerusakan ledakan dihitung di `explode()`.
+    - Feed: "tertabrak kendaraan / terkena ledakan / tewas dalam tabrakan / jatuh dari kendaraan".
+  - HUD: panel km/j + darah kendaraan; kendaraan terdekat tampil sebagai titik gelap di minimap/peta besar.
+  - Karakter punya pose duduk menyetir (`rig.js`, `s.sit = 'car' | 'bike'`).
+
+### 18.2 Bot (keluhan Steven: "bodoh, bahkan di Sulit")
+- **Akar masalah lama:**
+  - Graf jalan pecah jadi 359 bagian. Ujung jalan OSM yang disederhanakan tidak berbagi titik di simpang T, sehingga 40% simpul terputus dari jaringan utama.
+  - Akibatnya A* sering gagal dan bot berjalan lurus menabrak tembok.
+  - Saat bertarung, bot hanya menyamping di tempat terbuka.
+- **Perbaikan graf** (`buildGraph` di `web/game/bots.js`):
+  - Ujung buntu disambung ke ruas terdekat ≤ 9 m.
+  - Pecahan kecil disambung ke jaringan utama lewat sambungan pendek yang tidak menembus gedung.
+- **Navigasi lokal:** `web/game/nav.js` (baru).
+  - Grid A* 1,5 m yang dihitung saat dibutuhkan, untuk memutari gedung.
+  - Pencarian titik berlindung: sisi gedung yang tidak terlihat musuh, plus titik intip di tepinya.
+- **Taktik:**
+  - Berlindung → mengintip dengan bidikan siap (reaksi lebih cepat).
+  - Kena saat mengintip → balik berlindung.
+  - Di balik perlindungan: isi ulang & obati.
+  - Buntu → mengepung dari samping (flank) atau memburu sambil jongkok.
+  - Mendesak saat musuh lemah/isi ulang atau saat bersenjata jarak dekat.
+  - Mundur saat darah tipis.
+  - Pilih senjata sesuai jarak.
+  - Mendengar tembakan, langkah lari (Sedang/Sulit), dan mesin kendaraan.
+  - Menghindar dari kendaraan yang menyeruduk.
+  - Bidikan awal melebar lalu mengunci (`settle`).
+- **Kendaraan untuk bot:**
+  - Kalau zona jauh (≥ 340 m), bot mencari kendaraan kosong dalam radius ≤ 160 m.
+  - Menyetir di lajur kiri lewat graf jalan: pelan di tikungan, putar balik sambil mundur, meraba halangan, mundur kalau macet.
+  - Turun di tujuan, atau saat ada musuh dekat (Sulit), atau saat kendaraan hampir hancur.
+- **Preset `DIFFICULTY`** sekarang punya parameter taktik: `cover`, `peek`, `flank`, `push`, `settle`, `head`, `steps`, `dodge`, `drive`, dst.
+  - Antar-bot dilunakkan: sebaran ≥ 3°, kerusakan ×0,5, tanpa bidik kepala, reaksi +0,35 dtk. Tujuannya supaya arena tidak habis sebelum pemain sempat bertarung.
+- **Uji Chrome headless, Sulit:**
+  - Duel 1 lawan 1: bot langsung berlindung, mengintip 4×, mengobati diri di balik rumah, lalu mengepung dan memburu sambil jongkok.
+  - Pertandingan penuh: ±27 bot masih hidup 2 menit setelah mendarat. Bot naik kendaraan ke zona (sampai 86 km/j). Tanpa error console.
+
+### 18.3 Peta tanpa bolong
+- **Enclave:** ±10 ha dan 0,37 ha di dalam batas resmi dulu dipotong dari diorama (jadi "sumur" sedalam 26 m dengan dinding tak terlihat). Sekarang terisi data OSM, bisa dimasuki, dan di digital twin diberi tanda "Bukan kawasan Alam Sutera".
+  - Data: `tools/build_map.py`, `web/data/alsut-map.json`; array lama tidak berubah urutannya.
+- **Game:** `buildWorld(D, { game: true })` membuat tanah sampai cakrawala.
+  - Kota sekitar ±1 km dari OSM (`tools/build_context.py` → `web/data/alsut-context.json`, `web/map/context.js`), hanya visual.
+  - Batas area main tetap.
+- **Digital twin (`index.html`):** tampilan diorama dipertahankan.
+- Before/after: `preview/map-holes/`.
+
+### 18.4 Uji & catatan
+- Uji dari situs uji di scratchpad yang meng-symlink `web/`. Salinan `main.js` di sana membuka `window.__G`. Kode proyek tidak diberi flag/global uji.
+- fps ±120 di 1440×900 saat GPU tidak dipakai proses lain. Biaya CPU per frame: bot ±0,12 ms, kendaraan ±0,12 ms.
+- **Belum:** menembak dari dalam kendaraan / kursi penumpang, multipemain, interior gedung.
+
+## 19. Karakter baru, animasi, pohon, ilalang + tiarap, 1 vs 100, klakson MP3 (11 Nov 2026, lanjutan)
+
+Permintaan Steven (urutan): 1) karakter & animasi (mis. isi ulang), 2) pohon lebih bagus, 3) rumput tinggi untuk bersembunyi (jongkok/tiarap), bot memperhitungkannya, 4) gedung bisa dimasuki (**belum**, berikutnya). Tambahan: 1 vs 100 bot, klakson MP3.
+
+### 19.1 Karakter & animasi
+- **Model:** Blender (`tools/blender/characters.py`) → `web/game/assets/characters/person.glb` + `person.json`.
+  - 24 bagian kaku, satu per tulang rig, origin tepat di sendi: tubuh 2.442 segitiga + perlengkapan (rambut pendek/panjang, topi, helm, rompi, ransel, list).
+  - Warna verteks: putih = diwarnai per bot (slot pants/shirt/sleeve/skin/hair/shoes/gear/pack/trim).
+  - Tetap digambar sebagai kerumunan instans, jadi 100 bot tetap ringan.
+  - Dimuat di `main.js` sebelum dunia dibangun (`loadCharacterParts` → `setCharacterParts`, `map/rig.js`). Kalau gagal → karakter prosedural lama.
+- **Animasi baru (`map/rig.js`):**
+  - Isi ulang (tangan kiri: magasin → cabut → magasin baru di rompi → pasang; senjata dimiringkan).
+  - Mengobati (jongkok, membalut, senjata disandang).
+  - Ganti senjata, tiarap + merayap, duduk menyetir (sudah ada).
+  - IK lengan dua tulang: tangan kanan di pegangan, kiri di penyangga, per jenis senjata (`GRIP`).
+  - Senjata di tangan karakter = model senjata yang sedang dipakai (`addGearParts` + `gunGeometry`), bukan satu senapan generik.
+- Preview: `preview/characters/{hero,lineup}.png`.
+
+### 19.2 Pohon
+- Blender (`tools/blender/trees.py`) → `web/game/assets/trees/trees.glb` + `trees.json`.
+  - 2 varian per jenis: trembesi/ketapang (tajuk lebar), palem raja/kelapa, glodokan/cemara.
+  - LOD0 ≤ 800 segitiga, LOD1 ≤ 90.
+  - Alfa warna verteks = bobot goyang angin.
+  - Ada juga semak & 3 rumpun ilalang.
+- **`map/world.js` `upgradeTrees`:**
+  - Pohon prosedural tampil dulu, lalu diganti GLB (grup yang sama, jadi tombol lapisan "Pohon" di twin tetap jalan).
+  - LOD dekat ≤ 230 m dari kamera, dihitung ulang tiap kamera pindah 30 m lewat `onBeforeRender` (tanpa ubah loop).
+  - Angin di shader, variasi warna per pohon.
+  - Berlaku di game & digital twin.
+- Preview: `preview/trees/{lineup,lod}.png`.
+
+### 19.3 Ilalang + tiarap
+- **Peta rumput:** `tools/build_grass.py` → `web/data/alsut-grass.json`, raster 3 m.
+  - Sumber: tata guna lahan OSM (grass luas, meadow, farmland, sand, construction, scrub, wood, …) + lahan kosong besar tanpa bangunan/jalan/taman/parkir (di landuse=residential syaratnya lebih ketat).
+  - Hasil 163 ha (22,5% kawasan): 11,5 ha OSM + 152 ha lahan kosong.
+  - Ini perkiraan, bukan citra satelit. Bisa dikoreksi dengan menambah poligon OSM atau mengubah ambang di skrip.
+- **`map/grass.js`:**
+  - Rumpun instans hanya ≤ 105 m dari kamera (per petak 24 m, makin jauh makin jarang), bergoyang angin, rebah di dekat pemain.
+  - Area jauh: lapisan warna jerami.
+  - `at(x, y)` = kerapatan 0..1. Rumpun memakai ilalang GLB begitu `trees.glb` termuat.
+- **Tiarap:** `Z` (Spasi/C = bangun ke jongkok).
+  - Mata 0,42 m, merayap 1,15 m/dtk, sebaran ×0,55, sentakan ×0,5, transisi 0,6 dtk.
+  - Hitbox rebah sepanjang badan (`SPH_PRONE`, `main.js`).
+  - HUD: "Tersembunyi di rumput" / "Setengah tersembunyi".
+- **Persepsi bot (`perceive`):** di rumput (kerapatan > 0,35), target tiarap tidak terlihat lebih dari ±8 m dan jongkok lebih dari ±20 m, kecuali baru menembak (1,5 dtk) atau bergerak cepat.
+  - Uji: bot Sulit 30 m dengan garis pandang bersih tidak melihat pemain tiarap; begitu berdiri, langsung diserang.
+- **Bot ikut tiarap:** saat menembak jauh dengan AR/DMR (lebih sering di rumput) dan saat mengobati di rumput/tanpa perlindungan. Bangun dulu kalau harus pindah cepat.
+
+### 19.4 1 vs 100, klakson
+- `BOTS = 100` (`main.js`), 100 nama unik (`bots.js`), teks menu/HUD.
+- Loot ×1,6 (`loot.scatter(mult)`, kapasitas dinaikkan); kendaraan 58 (Lintas 22, Walet 20, Banteng 12, bus 4).
+- Titik panas pendaratan ±n/7; jatah pencarian jalur per frame 4 + n/20.
+- **Uji:** ±54 bot masih hidup 2 menit setelah mendarat, 120 fps, tanpa error.
+- **Klakson MP3** (dipasang agen kendaraan atas permintaan Steven): `web/game/assets/vehicles/klakson-*.mp3`, field `horn` di manifest.
+  - Di game: `H`/klik kiri memutar klip dari awal (`audio.clip`).
+  - Sopir bot juga mengklakson kalau ada orang menghalangi.
+  - Catatan agen: klip suara tokoh publik → ganti sebelum dipamerkan ke luar.
+
+### 19.5 Uji & catatan
+- Uji di Chrome headless (GPU Metal) lewat situs uji di scratchpad: pose per kotak, pertandingan penuh 1 vs 100 di Sulit, ilalang + persembunyian, kendaraan.
+- Cache module browser bisa menyajikan file lama setelah update, jadi refresh pakai Cmd+Shift+R.
+- **Belum:** gedung bisa dimasuki (no. 4), menembak dari kendaraan.
+
+## 20. Rumah bisa dimasuki + berenang (11 Nov 2026, lanjutan)
+
+### 20.1 Rumah (permintaan no. 4)
+- **Cakupan:** 5.471 rumah tapak (jenis 0, 4–12 titik, 35–700 m², tinggi ≥ 3,2 m), lantai dasar saja. Ruko, mal, dan menara tetap padat.
+- **`web/map/interiors.js`:**
+  - `planHomes(D)`: tata letak deterministik, dihitung saat dimuat (±10 ms).
+    - Pintu depan 1,7 m menghadap jalan terdekat; rumah ≥ 150 m² dapat pintu belakang.
+    - Sekat ruang dengan ambang 1,4 m (rumah segi empat ≥ 60 m², dibagi lagi kalau ≥ 140 m²).
+    - Jenis ruang: tamu/kamar/dapur.
+    - Perabot menempel dinding, tidak menghalangi pintu, perabot tinggi tidak menutup jendela.
+  - `createInteriors`: mesh interior dibuat hanya untuk rumah ≤ 85 m dari kamera (3 per frame), dibuang > 110 m.
+    - Isi mesh: lantai per ruang, plafon, sisi dalam dinding dengan lubang & kusen, sekat, daun pintu, perabot.
+    - Diberi cahaya ruangan.
+- **Lubang asli tanpa geometri baru:**
+  - Shader gedung (`world.js`) membuang (discard) piksel pintu & jendela lantai dasar untuk rumah yang terbuka.
+  - Data per gedung: atribut `bid` + tekstur kecil (`setHouseOpen`).
+  - Koordinat jendela (u = jarak keliling, v = tinggi) dipakai sama persis di shader, mesh interior, dan collider.
+- **Collider (`collide.js`, opsional `homes`):**
+  - Dinding tipis 0,2 m dengan celah pintu, ambang pintu (`z0` 2,2 m: menahan peluru, bukan jalan kaki).
+  - Pelat plafon (`slab`) menahan peluru dari atas/bawah, sekat, perabot (bisa jadi perlindungan).
+  - Peluru & garis pandang menembus jendela hanya < 90 m (`WIN_RANGE`), supaya adil: jendela jauh tampak tertutup.
+  - Tidak bisa mendarat di dalam rumah (`arrival`, `findFree(..., outside)`).
+- **Bot:** grid navigasi 1 m (`nav.js`, cek radius 0,3) → bisa masuk lewat pintu.
+  - Uji: bot dari 14 m di luar mengambil DMR di ruang belakang dalam 7,6 dtk.
+- **Loot:** rumah dapat 1–2 barang, 75% di dalam ruang.
+- **Kamera orang ketiga:** pakai sinar tepat (tidak menembus dinding tipis).
+
+### 20.2 Berenang (seperti PUBG)
+- **Gerak:** air (3 danau) bisa dimasuki pemain (`col.step(..., swim)`).
+  - Badan turun 1,3 m, kepala di permukaan, senjata disimpan, tidak bisa menembak/obat.
+  - Kecepatan 2,2 m/dtk (Shift 3,1).
+- **Menyelam:** `C` (turun 2,4 m), Spasi naik.
+  - Napas 20 dtk, lalu tenggelam (9/dtk, feed "tenggelam").
+  - Layar bawah air keruh (kabut 24 m, langit disembunyikan).
+- **Bot:**
+  - Tidak melihat yang menyelam; yang berenang hanya terlihat kepalanya (dibidik ke kepala).
+  - Peluru tertahan permukaan air (bidang y = 0).
+  - Bot & kendaraan tidak masuk air.
+- Pose renang di `rig.js` (`s.swim`): gaya bebas saat bergerak, mengapung tegak saat diam.
+
+### 20.3 Uji
+- Rumah: fasad berlubang dari jalan, interior terang, jalan masuk lewat pintu, loot di dalam, bot masuk rumah.
+- Berenang/menyelam: bot di tepi tidak melihat penyelam, melihat begitu muncul.
+- 1 vs 100: 120 fps, CPU ±4 ms/frame dengan 175 interior terbuka, tanpa error.
+
+## 21. Senjata, pesawat, barang & parasut baru (11 Nov 2026, lanjutan)
+
+Permintaan Steven: "senjata juga jelek, bikin bagus semua designnya", "pesawat juga bikin lebih bagus".
+
+- **Blender:**
+  - Skrip: `tools/blender/weapons.py`, `plane.py`, `props.py`.
+  - Aset: `web/game/assets/weapons/weapons.glb` (+ json), `assets/plane/plane.glb` (+ json), `assets/props/props.glb` (+ json).
+  - Preview: `preview/weapons/{lineup,fp_ar,plane}.png`, `preview/props/lineup.png`.
+- **Senjata (`weapons.js` `loadWeaponModels`, dimuat sebelum dunia dibangun):** model orang pertama per senjata (P9, Kilat, Garuda dengan red dot berbingkai terbuka, Badai pompa, Elang teropong).
+  - Titik bidik/moncong/penyangga dibaca dari model.
+  - Tangan bersarung + lengan ungu bermanset emas, magasin & pompa tetap beranimasi.
+  - Pantulan lingkungan untuk logam.
+  - `<jenis>_lod1` dipakai untuk loot & senjata di tangan karakter/bot (`gunGeometry`).
+- **Pesawat:** angkut 4 baling-baling (putih-ungu, list emas) menggantikan pesawat kotak; baling-baling berputar (`main.js`).
+- **Barang (`loot.js` `loadPropModels`):** peluru (3 jenis), perban, P3K, rompi & helm lv.1–3, peti jarahan.
+- **Parasut:** kanopi ram-air dengan tali (pemain emas, bot diwarnai per bot, diberi cahaya tipis supaya tidak gelap dari bawah).
+- **Cadangan:** semua aset opsional. Kalau GLB gagal dimuat, model prosedural lama dipakai.
+- **Uji:** 1 vs 100 di Sulit 120 fps tanpa error, dengan semua aset & fitur §18–21 aktif.
+
+## 22. Tembak dari kendaraan, lantai 2, ruko & mal (11 Nov 2026)
+
+Permintaan Steven: "bikin jadi bisa dong" (menembak dari dalam kendaraan, naik ke lantai 2 rumah, masuk ruko/mal).
+
+**Tembak dari kendaraan** (`vehicles.js` kursi `seat_p*`, `player.js` `seated()`/`fire()`, `main.js` `combat.probe`, `rig.js` pose duduk membidik, HUD):
+- **Sopir:** hanya pistol/SMG (otomatis ganti), busur ±100°.
+- **Penumpang:** semua senjata, busur ±150°.
+- **Kontrol:** klik kiri tembak, klik kanan bidik, Ctrl+1–4 pindah kursi (1 = sopir), H klakson, V kamera kursi.
+- Mobil tanpa sopir melambat sendiri.
+- Penumpang motor/jip terbuka kena seperti pengendara; mobil tertutup memakai aturan kaca.
+- **Belum:** bot menembak sambil menyetir (perlu `bots.js`: target ≤ 40 m saat drive, `combat.fire` dari `vehicles.eyeWorld`, pose `oneHand`).
+
+**Lantai 2 rumah** (`map/interiors.js` `planUpper`):
+- 1.378 rumah segi empat setinggi ≥ 6,2 m.
+- Tangga lurus 4,4 m menempel dinding luar (ruang mana saja, ruang tamu dulu).
+- Pelat lantai 3,3 m berlubang tangga (3 potong pas dinding), pagar lubang, plafon atas = min(tinggi − 0,25, 6,4).
+- Ruang atas memakai sekat yang sama dan diberi perabot (kamar).
+- Jendela atas berlubang (shader: batas = plafon teratas) dan bisa ditembus peluru.
+
+**Collider bertingkat** (`map/collide.js`):
+- `blocksAgent(G, x, y, ay)`: poligon hanya menghalangi bila memotong badan agen setinggi kaki ay.
+- `floorAt(x, y, ay)`: permukaan tertinggi ≤ ay + 0,6 (tanah / tangga `rampH` / pelat `floor`).
+- `step`/`resolve`/`blocked` menerima ay.
+
+**Agen di lantai bertingkat:**
+- **Pemain** (`ground()`): mengikuti permukaan, jatuh dari tepi.
+- **Bot:**
+  - Gerak per lantai.
+  - `go(b, x, y, spd, gz)` membuat rute: ke tangga → nav `'stair'` (mengikuti sumbu tangga) → tujuan.
+  - `nav.js` grid per lantai (lantai atas wajib ada pelat).
+  - Barang di lantai lain diberi penalti jarak ×1,5.
+  - Memburu musuh di lantai atas.
+- **Barang:** punya `z` (lantai), ambil hanya di lantai yang sama; peti mati di lantai atas tetap di lantai itu.
+
+**Ruko** (jenis 1, segi empat ≤ 3000 m²):
+- 84 blok / 1.129 unit selebar 5,2 m sejajar papan nama shader.
+- Etalase depan terbuka 4,5 × 3 m, sekat antarunit penuh, plafon 3,4 m.
+- Isi: minimarket (rak dinding, gondola, kasir, kulkas kaca), kafe (bar + meja), toko (rak, meja display, konter).
+
+**Mal / toko besar** (86 aula):
+- Pintu masuk 6 m tiap 24 m sepanjang deret sisi keliling yang menghadap jalan (≤ 2 rentang, bukaan boleh melewati sudut).
+- Plafon 4,6 m, kolom grid 10 m.
+- Isi sel: gondola / kios ungu-emas / meja kafe / taman + bangku.
+- Dinding dalam berupa deret etalase (kaca gelap + papan nama), lampu plafon.
+- Aula kecil (< 3000 m²): bukaan 3,6 m tiap 8 m, grid 6,5 m.
+
+**Shader (`world.js` tabel `uOpen`):**
+- Rumah: (buka, pintu1, plafon teratas), (pintu2, 0, 0).
+- Toko/aula: (buka, rentang A, tinggi bukaan), (rentang B, P, p). Berlubang bila mod(u, P) ∈ [p, P − p].
+
+**Kinerja & tampilan:**
+- **Loot:** ±23.000 barang, model ±250 segitiga, dulu semua digambar (6,6 jt segitiga → 85 fps). Sekarang hanya barang ≤ 120 m dari kamera (`loot.update(now, camera.position)`) → ±2 jt segitiga, 120 fps.
+- **Cahaya interior:** emisif 0,62, matahari langsung ×0,12 (rata, tidak gelap sebelah).
+
+**Server & cache:**
+- BFF kini mengirim `Cache-Control: no-cache` untuk file web (`bff/cmd/server/main.go` `noCache`, binary sudah di-build ulang).
+- `royale.html`:
+  - Import map memetakan modul ke `?v=20261111` (lepas dari cache lama yang membuat "does not provide an export named …").
+  - Layar muat menampilkan error modul.
+
+**Uji (Chrome headless):**
+- **Pemain:** naik/turun tangga 0 → 3,3 → 0 m.
+- **Bot:** naik tangga mengambil AR di lantai 2.
+- **Pertandingan 1 vs 100:** bot masuk ruko/mal dan sesekali naik lantai 2, 120 fps, tanpa error.
+- **Kendaraan:** uji sopir/penumpang lulus.
+
+## 23. Rumah v2, loot satu-satu, lompat jendela (11 Nov 2026, lanjutan)
+
+Keluhan Steven: rumah yang berhadapan tidak bisa dimasuki ("logikanya satu hadap depan satu hadap belakang pintunya"), "bikin rumah yang bener-bener bagus", loot jangan langsung semua terambil (seperti PUBG).
+
+**Pintu** (`map/interiors.js` `planHouse`):
+- **Pintu depan:** di sisi terdekat jalan utama (`MAIN`: trunk…living_street, bukan `service` = gang belakang), dengan syarat 1–2 m di luar pintu tidak ada gedung lain (`occupied`).
+- **Pintu belakang:** di sisi paling berlawanan atau samping (rumah ≥ 45 m²).
+- **Hasil:**
+  - 5.494 rumah bisa dimasuki.
+  - 3.728 rumah berpintu dua.
+
+**Teras** (`planPorch`):
+- Lantai +15 cm (bisa dipijak: poligon `floor: 0.15`), undakan, dua tiang, kanopi.
+- Hanya bila halaman depan kosong (bukan jalan/gedung).
+- 3.909 rumah.
+- Satu mesh statis untuk semua teras (`createInteriors` → `porches()`), selalu terlihat.
+
+**Kamar mandi** (`planBath`):
+- 2 × 1,7 m di pojok rumah (dapur dulu, lalu kamar).
+- Sekat L masuk `H.parts`, pintu 0,9 m, sehingga lantai 2 mendapat kamar mandi di posisi yang sama.
+- Isi: shower kaca, kloset, wastafel + cermin.
+- 2.909 rumah.
+
+**Interior:**
+- Warna dinding per jenis ruang (tamu krem, kamar pastel per rumah, dapur putih, kamar mandi biru) dan per lantai.
+- Plint kayu, gorden kiri-kanan + rel di tiap jendela, lukisan di sekat, karpet (tidak menghalangi), lampu plafon per ruang.
+- Dapur dengan kompor & bak cuci.
+
+**Dinding gandeng** (`world.js` `blindEdges`/`insideOther`, `D.blind`):
+- Sisi rumah yang < 1,2 m dari gedung lain tidak diberi jendela: `wuv` u = −1 di shader, tanpa lubang di interior, tanpa tembus peluru di collider.
+- 3.929 rumah / 8.222 sisi.
+
+**Lantai 2:**
+- 971 rumah. Lebih sedikit dari §22 karena tangga tidak boleh menimpa kamar mandi / dekat pintu belakang.
+
+**Loot seperti PUBG:**
+- Tidak ada ambil otomatis.
+- Peti jarahan dibuka dengan F lalu menjadi panel daftar isi (`hud.crate`). Kontrol:
+  - F mengambil baris teratas.
+  - 1–9 memilih baris.
+  - Menjauh > 2,8 m menutup panel.
+- `loot.js` `crateEntries`/`takeCrateEntry`/`crateEmpty`:
+  - Rompi/helm ditukar.
+  - Senjata lama jatuh ke tanah.
+- Bot tetap mengambil semua sekaligus.
+
+**Lompat jendela/perabot rendah** (`player.js` `vaultSpot`/`startVault`):
+- Syarat: sinar setinggi lutut terhalang ≤ 1,3 m, setinggi dada tembus, tempat mendarat kosong.
+- Spasi atau F (prompt "Lompati").
+- Lintasan 0,5 dtk lalu jatuh biasa (dari lantai 2 juga bisa).
+
+**Uji:** semua di atas dicek di Chrome headless, 120 fps, tanpa error.
+
+**Server Steven:**
+- Menyajikan salinan stabil `WEB_DIR=<scratchpad>/play-web`, disalin ulang setelah lolos uji.
+- Di luar sesi Claude: `cd bff && ./bin/alsut3d-bff` (menyajikan `../web`).
+
+## 24. Kinerja, air, kendaraan baru, animasi, pohon v2, suara (11 Nov 2026, lanjutan)
+
+**Kinerja:**
+- Penghitung FPS di layar (`main.js` `fpsTick`, `.h-fps`, F3) menampilkan FPS · ms · skala render.
+- Resolusi adaptif: skala turun bila FPS < 50 selama 1,5 dtk (1,5 → 1,25 → 1,0 → 0,85 → 0,7), naik lagi bila > 95 selama 6 dtk.
+- Game di layar Retina tanpa MSAA (`world.js`: `antialias: !(game && dpr ≥ 2)`). Tes 1728×1080 @2×: 78–94 → 118 fps.
+
+**Air** (`world.js` `waterize`, `riverGeo`):
+- Danau hijau-biru, sungai/kanal hijau-cokelat.
+- Riak bergerak (normal dari gelombang + noise), kilau matahari Phong, fresnel langit, buih tepi kanal (atribut `side`).
+- Kanal ≥ 3 m menjadi poligon air di collider (bisa direnangi, padat untuk bot/kendaraan) kecuali di jembatan; jembatan beton berpagar di persilangan jalan.
+- Sungai besar (Cisadane) & danau = `D.water` (sudah bisa direnangi sejak §20).
+- Kamera orang ketiga saat berenang ditahan di atas permukaan (y ≥ 0,5).
+
+**Fasad gedung:**
+- **Rumah:** kusen + palang + ambang jendela, list bawah, plester noise, list antar-lantai, atap bermotif genteng (dari normal & posisi dunia).
+- **Ruko:** jendela berkusen aluminium; kanopi menerus di depan deret etalase.
+- **Mal** (`o.kind` 4, area > 3000): panel kladding, pita kaca per lantai, papan reklame besar tiap 46 m, kanopi bertiang di tiap pintu masuk.
+- Jendela yang menumpuk pintu tidak lagi berlubang di shader/collider (bug "bisa melompat di samping pintu").
+
+**Kendaraan** (agen; `tools/blender/vehicles2.py`):
+- **Jenis baru:**
+  - Sutera Loop: troli merah-hijau, 12 kursi, menggantikan bus `loop`.
+  - `halilintar`: supercar kuning tanpa logo merek, ±240 km/j, 2 kursi, 4 unit dekat mal.
+  - `jawara`: moge chrome tanpa logo merek, ±165 km/j, 2 kursi, 8 unit.
+- **Aturan kursi:** motor 2; mobil 2 pintu 2; mobil 4 pintu 4 (`banteng` kini 4 pintu). Kursi diambil dari manifest, tiap kursi turun lewat pintunya, toast "Kendaraan penuh". Preview di `preview/vehicles/v2-*.png`, `garasi.html` diperbarui.
+- **Bug tertabrak saat turun** (agen): mobil tanpa sopir dulu memakai rem tangan (grip 16 %) → selip menabrak yang baru turun. Sekarang:
+  - Mengerem penuh.
+  - Kebal tabrak 2,2 dtk dari kendaraan yang baru ditinggal.
+  - Titik turun aman (pintu kursi → pintu lain → belakang).
+  - Cedera lompat hanya > 60 km/j.
+
+**Suara** (agen, `audio.js` `footstep`):
+- **Langkah bot terdengar:** lari 40 m / jalan 22 m / jongkok 6 m, panning, teredam tembok, ≤ 24 per dtk.
+- **Bot mendengar langkah pemain & bot lain** (35/18/5 m) lalu menoleh dan menyelidik.
+- **Tembakan musuh:** terdengar 380–720 m menurut senjata, makin pelan/teredam/terlambat dengan jarak, gema > 60 m, teredam bila penembak di dalam gedung, ≤ 14 suara sekaligus.
+
+**Animasi orang pertama** (agen, `weapons.js` `createViewModel`):
+- Reload per senjata (magasin lepas/masuk, pengokang, slide pistol, peluru shotgun satu per satu).
+- Perban (membalut lengan), P3K (kotak dibuka, suntik).
+- Ganti senjata, inspect (I), hentakan mendarat.
+- Durasi sama dengan waktu di game.
+- Bug: magasin & pompa senjata FP dulu tidak terpasang — sudah.
+
+**Pohon v2** (agen; `web/map/trees.js` `cleanTrees`, `tools/blender/trees2.py`):
+- 9.070 → 8.445 pohon. 1.169 yang di aspal dipindah ke trotoar; daftar sama untuk render & collider.
+- Daun kartu bertekstur atlas.
+- Jenis: trembesi, ketapang, mahoni, flamboyan, palem raja, kelapa, glodokan, cemara, semak pucuk merah (+7.157 semak hias tanpa tabrakan).
+- 3 LOD. Preview `preview/trees/lineup-v2.png`.
+
+**Uji final:** 1 vs 100 di Sulit tanpa error; FPS di akhir 105 pada 1280×800 (pohon menambah ±0,4 jt segitiga di area padat).
+
+**Belum:** bot menembak sambil menyetir.
+
+## 25. Mode realistis: langit HDR, PBR, post-processing (11–12 Nov 2026)
+
+Permintaan Steven: "bikin hyperrealistic semua upgrade tapi tetap smooth" (terinspirasi demo Unreal Engine). Game tetap three.js r160 di browser; yang dirombak adalah cara render. Semua hanya aktif di game (`opts.game` + `opts.real`); peta digital twin (`index.html`) tidak berubah. Kalau aset gagal dimuat (40 dtk), game memakai tampilan lama.
+
+**Aset (Poly Haven, lisensi CC0; diunduh `tools/realism/fetch_assets.py`):**
+- `web/game/assets/sky/`: `sky_1k.hdr` (cahaya), `sky_dome.jpg` (kubah, potongan atas 6144×1622 dari JPG 8K), `sky.json`. Langit: `kloofendal_48d_partly_cloudy_puresky`.
+- `web/game/assets/pbr/`: albedo/normal/kekasaran 1K untuk `asphalt_04`, `pavement_03`, `concrete_pavement`, `leafy_grass`, `forrest_ground_01`, `painted_plaster_wall`, `clay_roof_tiles_02` (+ `sets.json` ukuran ubin nyata).
+
+**`web/map/realism.js`:**
+- `loadRealism()` (tanpa renderer) → `{ init(renderer) → R }`.
+  - Dari data HDR: arah matahari (piksel paling terang), energi matahari (di atas batas jepit 14 → `DirectionalLight`), iradiansi langit (→ `HemisphereLight`), warna kaki langit.
+  - Eksposur dipanggang ke semua cahaya (bidang putih tersinari ≈ 1), sehingga benda tanpa cahaya (partikel, cincin barang) tetap memakai warna 0…1.
+  - Penyesuaian artistik: matahari ×1,3 + hangat, langit dijenuhkan-turun 35 %.
+- `useHemisphereAmbientOnly()`: menghapus IBL difus dari `ShaderChunk.lights_fragment_maps` (cahaya sekitar hanya dari HemisphereLight untuk Lambert & Standard; pantulan lingkungan tetap).
+- `R.groundMaterial(key, base, o)`: `MeshStandardMaterial` bertekstur (UV = meter dunia), variasi skala besar (anti-ubin), menerima bayangan dinamis.
+- `R.patch(m, { dyn })`: menambal material apa pun supaya menerima bayangan dinamis. `R.foliage(m)`: daun/rumput (cahaya tembus daun, sekitar diperkuat, alfa = topeng AO 0,25).
+- `skyDomeMaterial(R)`: kubah langit foto (LDR → HDR kira-kira lewat `skyExpand`), di bawah cakrawala = kabut sewarna kaki langit.
+- `createDynShadow()`: peta kedalaman 2048² seluas ±30 m di depan kamera, tiap frame, hanya benda di layer 3 (`DYN_LAYER`: karakter, kerumunan bot, kendaraan). **Penting:** target di-`clear` sekali saat dibuat; sampler bayangan yang terikat ke tekstur kosong membuat GPU (Metal) melewatkan draw call (tanah tidak tergambar dari pesawat/menu).
+
+**`web/game/postfx.js`** (urutan per frame): adegan → target HDR half-float + tekstur kedalaman (dengan stensil) → AO setengah resolusi (SAO, sampel di pusat texel, blur searah kedalaman) → resolve (AO + kabut atmosfer: warna = langit di arah itu, menipis dengan ketinggian) → senjata orang pertama → bloom (rantai 5 mip, campur hemat energi) → sinar matahari (blur radial) → komposit (eksposur, ACES, grading, vinyet, dither) → FXAA.
+- `TIERS`: Ultra / Tinggi / Sedang / Rendah / Hemat (tanpa post). `main.js` `STEPS` = [tingkat, skala render]; FPS < 50 selama 1,5 dtk turun, > 100 selama 8 dtk naik; F4 manual; pilihan terakhir disimpan (`localStorage royale.gfx`).
+
+**`world.js` (real):**
+- Lampu dari R; `overlay(g, { surf })` → permukaan PBR (`asphalt`, `pave`, `slab`, `grass`, `soil`); warna verteks menjadi tinta halus (`tint`, `ROAD_K`).
+- Halaman cluster: perumahan = rumput, komersial = pelat beton, konstruksi = tanah. Kerb abu beton.
+- Gedung (`bMat` → Standard, `#define REAL`): detail plester & genteng foto + peta normal (kerangka T/B dari normal dunia), interior palsu di balik kaca (`interiorRoom`: rumah / toko / kantor / lantai atas ruko), kaca memantulkan lingkungan (menara: metalik gelap + rangka aluminium).
+- Kubah langit foto; awan & cakram matahari lama disembunyikan.
+- `context.js`, `grass.js` (lapisan jauh), `interiors.js` (ruang dalam lebih gelap + eksposur otomatis ×2,1 di dalam gedung) ikut disesuaikan.
+
+**Kinerja (M1 Pro, Chrome headless tanpa vsync, 2268×1350):** jalan + 60 bot: Ultra 7,5 ms, Hemat 4,4 ms; pesawat 7,5 ms; menu 13,9 ms (seluruh kota terlihat, 1887 draw call). Pertandingan penuh 1 vs 100 Ultra: 102–108 FPS, tanpa error.
+
+**Belum (gelombang berikut):** karakter, kendaraan, senjata/tangan, pohon, isi rumah masih model lama.
+
+## 26. Kelancaran (120 Hz), pengatur kualitas baru, jendela & pintu rumah (12 Nov 2026)
+
+Keluhan Steven setelah mode realistis: tidak mulus setelah terjun, FPS turun di area rumput, senjata "aneh" langsung muncul di depan saat mendarat, dan jendela rumah yang tampak tidak ter-render tetapi bisa dilompati.
+
+**Temuan ukur** (M1 Pro, Chrome tanpa vsync, 2268×1350 = skala 1,5):
+- Game terikat GPU di Ultra (±7,5 ms; batas 120 Hz = 8,3 ms). Tingkat efek hampir tidak menghemat (Ultra → Rendah 0,5 ms); yang menentukan adalah skala render (1,5 → 1,25 → 1,0 = 6,9 → 5,9 → 5,2 ms setelah perbaikan).
+- CPU three.js terbuang untuk: (1) pass bayangan dinamis merender adegan utama tanpa lampu → versi lampu berubah dua kali per frame → program SEMUA material dievaluasi ulang (±1,4 ms); (2) `scene.updateMatrixWorld` dua kali per frame atas ±3900 objek (74 kendaraan × ±50 simpul), dan `scene.matrixAutoUpdate` bawaan memaksa semua turunan dihitung ulang; (3) rumput: `rebuild()` menulis & mengunggah 6,6 MB buffer tiap kamera pindah 8 m; (4) sampah memori 360 KB per frame.
+
+**Perbaikan (semua sudah di `web/`):**
+- `game/governor.js` (baru, murni logika; diuji dengan model layar di scratchpad): sasaran = laju layar (diukur dari rAF selagi memuat, `refreshProbe` di `main.js`). Frame telat > 10 % selama 1,5 dtk → turun satu langkah; mulus 10 dtk → naik; jeda coba-ulang berlipat (20 dtk … 2 menit). Layar ≥ 90 Hz dan di langkah "Tinggi" pun masih telat → setengah laju layar (frame genap dilewati, 60 FPS rata), kualitas naik lagi, laju penuh dicoba ulang berkala. Langkah = [tingkat efek, skala]: Ultra 1,5 / Ultra 1,25 / Tinggi 1,1 / Tinggi 1,0 / Sedang 0,9 / Rendah 0,8 / Hemat 0,8 / Hemat 0,65. Layar Retina mulai dari Ultra 1,25. Disimpan di `localStorage royale.gfx2`. F4 tetap pilihan manual.
+- `game/postfx.js`: resolve digabung ke komposit (satu pass layar penuh berkurang, target `rtResolve` dihapus). Senjata orang pertama digambar ke target adegan dengan `gl.depthRange(0, 0.02)` (selalu di depan tanpa menghapus kedalaman adegan; AO/kabut melewati piksel berkedalaman ≤ 0,021). `post.warm()` mengompilasi semua varian shader saat memuat.
+- `map/realism.js` `createDynShadow`: adegan proxy tersendiri (mesh ber-layer 3 dipindai tiap 30 frame; meminjam geometri, `matrixWorld`, `instanceMatrix`, kerangka). Adegan utama tidak dirender dua kali; satu material kedalaman per jenis objek. `useCheapShadowFilter()`: bayangan matahari bawaan three.js jadi 8 ambilan tekstur per piksel (dari 16).
+- `main.js`: `scene.matrixAutoUpdate = false`, `scene.matrixWorldAutoUpdate = false`, `scene.updateMatrixWorld()` sekali per frame sebelum bayangan & render. **Akibatnya:** objek digerakkan di fase update (bukan `onBeforeRender`); objek statis baru ber-`matrixAutoUpdate = false` dengan transform bukan identitas harus memanggil `updateMatrix()` + `updateMatrixWorld(true)` sendiri sekali.
+- `vehicles.js`: kendaraan diam ≥ 2,5 dtk dibekukan (`root.matrixWorldAutoUpdate = false`, tanpa `place()`).
+- `map/grass.js`: kolam 112 `InstancedMesh` per petak 24 m (satu instans = tambalan 3 rumpun); petak diisi sekali saat masuk jangkauan (≤ 4 per frame); menjarang menurut jarak = awalan daftar instans teracak; mengecil di tepi jangkauan di shader. Tiap mesh kolam punya objek geometri sendiri (atribut dipakai bersama): InstancedMesh yang berbagi geometri + program tetapi beda `instanceMatrix` membuat three.js menyetel ulang VAO tiap draw call.
+- `world.js` pohon: di udara (kamera > 270 m) semua pohon LOD terjauh dan pembagian LOD tidak diulang; hanya bagian buffer terpakai yang diunggah (`addUpdateRange`). Lapisan datar transparan `forceSinglePass` (tanpa render dua pass yang mengevaluasi ulang program).
+- `collide.js` `resolve` tanpa closure per panggilan; sampah per frame 360 → 250 KB (sisanya di bot: `gearOf`, `steer`, `pose`).
+- HUD: minimap digambar ±11×/dtk; `backdrop-filter` dihapus dari panel yang selalu tampil.
+- Bekal senjata saat mendarat (`loot.starter`) dihapus; pesan mendarat: "Cari senjata di rumah & ruko terdekat".
+
+**Hasil:** terjun → payung → mendarat terkunci 120 FPS (8,3 ms) di Ultra pada 1440×900 @1×; pertandingan 1 vs 100 tanpa error.
+
+**Jendela & pintu rumah (satu aturan untuk tampilan, tabrakan, interior):** sel jendela (lebar 1,44 m tiap 3,6 m keliling) hanya ada bila utuh di dalam sisi dinding (≥ 0,3 m dari sudut) dan, di lantai dasar, tidak menumpuk pintu (± 0,2 m).
+- `world.js`: atribut verteks baru `wseg` (rentang u sisi dinding) → shader meniadakan jendela terpotong sudut; tabel `uOpen` kini selalu berisi data pintu tiap rumah (kolom pertama 0/1 = tertutup/terbuka) → jendela yang menumpuk pintu ditiadakan dan **pintu tertutup digambar** (dua daun panel kayu, kusen, gagang) untuk rumah di luar jangkauan buka (85 m). `setHouseOpen(H, on)` (tanda tangan berubah).
+- `collide.js` `winOk` dan `interiors.js` (lubang dinding dalam, kusen, gorden) memakai aturan yang sama. Dulu: jendela terpotong sudut tampak seperti celah rusak tetapi bisa dilompati; jendela di belakang pintu tampak kaca tetapi padat.
+
+**Sedang dikerjakan agen (salinan kerja di scratchpad, belum masuk `web/`):** HUD ikon (`hud-v2`), karakter realistis (`characters-v3`), kendaraan + senjata + tangan PBR (`vehicles-weapons-pbr`). Aturan mesin untuk agen: Blender lewat `taskpolicy -b nice -n 19 … -t 2`, satu Chrome headless ber-vsync yang diparkir di `about:blank`.
+
+**Belum:** impostor pohon jauh & pohon dekat yang lebih nyata, interior PBR, fasad ruko, refresh peta bayangan 4096² tiap 40 m (belum diukur), unggahan buffer kerumunan bot 380 KB per frame.
+
+### 26b. Lanjutan 12 Nov: HUD ikon, interior, pohon
+- **HUD ikon** (agen `hud-v2`, sudah live): `game/hud.js` ditulis ulang (membangun DOM HUD sendiri; `frame()` tiap frame hanya kompas/panah minimap/crosshair, `update()` ±20×/dtk dan hanya menulis DOM bila nilai berubah; minimap ≤ 10×/dtk; tanpa `backdrop-filter`). Kartu senjata bersiluet (`icons.js` `silhouette(kind)`, `warmIcons()` dari `weapons.glb`), peluru, mode tembak, isi ulang; darah dengan jejak kerusakan & pratinjau sembuh; rompi/helm berikon + level; perban/P3K/granat berikon; kill feed bersiluet senjata; indikator arah tembakan; altimeter terjun; panel kendaraan dengan denah jok. Biaya HUD 0,21 → 0,014 ms per frame. `main.js`: `hud.frame(...)` tiap frame, `hud.update({...})` bila `hud.due(t)`.
+- **Ikon loot senjata** dulu terbalik (kamera atas dengan `up` −Z): kini dirender dari model detail (`renderHD`, tampak samping, laras ke kanan); cadangan LOD1 juga sudah tegak.
+- **Matahari masuk ke dalam gedung:** `buildings.customDepthMaterial` (world.js) melubangi peta bayangan di pintu & jendela sah gedung yang bisa dimasuki; `bMat.shadowSide = DoubleSide`; `refreshShadows` (main.js) merapatkan rentang kedalaman kamera bayangan (bias ±1 texel). Material interior (mode realistis) kini menerima cahaya matahari penuh → bercak cahaya jendela di lantai. Eksposur otomatis di dalam gedung 2,1 → 1,7.
+- **Tekstur interior** (interiors.js, atribut verteks `sfc`): ubin keramik (`floor_tiles_08`, diterangkan) di ruang umum/toko, lantai kayu (`laminate_floor_02`) di kamar tidur & lantai atas, detail plester di dinding; UV dari posisi dunia, lantai memakai peta normal. Unduhan: `tools/realism/fetch_interior.py` (Poly Haven CC0).
+- **Pohon:** `swayGeo(geo, round)` membuat tajuk bervolume (normal kartu daun dicampur arah keluar pusat tajuk + oklusi bagian dalam). Pohon lingkungan (context.js) memakai model pohon kawasan (LOD sedang < 350 m, kartu silang di kejauhan) menggantikan ikosahedron.
+- Partikel kena tembak di depan kamera dibatasi 22 px & dibulatkan (dulu kotak raksasa).
+
+### 26c. Karakter realistis (12 Nov, agen `characters-v3`, sudah live)
+- **Sumber:** data MakeHuman (CC0: mesh dasar, target morf, rig & bobot, pakaian, rambut, kulit) dibaca langsung oleh `tools/blender/mhdata.py` (tanpa add-on MPFB); `tools/blender/characters3.py` membentuk tubuh, memasang pakaian, memindahkan ke pose diam kerangka game, menurunkan bobot ke 17 tulang, merakit atlas tekstur, membuat LOD & GLB ber-skin. Cache unduhan: `~/.cache/senara-digital-twin` (722 MB, hanya untuk membangun ulang aset).
+- **Aset:** `web/game/assets/characters/` — `people3.json`, `m1|f1|m2|f2.glb`, tekstur WebP (4,9 MB). `person.glb` lama = cadangan (dipakai bila aset baru belum termuat dalam 6 dtk).
+- **`map/rig.js`:** `loadCharacterParts`, `buildCharacter(outfit, gear, look)`, `createCrowd` (`begin/inView/put/hide/flush/stats`), `setCharacterEnv(env)`, `characterVariants()`, `Rig.pose` tanpa alokasi + `updateWorld()`. `ShaderChunk.skinning_pars_vertex` ditambal dengan atribut `aRow` (baris tekstur tulang per instans).
+- **LOD:** tubuh 10,8–11,9k (6 terdekat < 11 m) / 3,6–4,0k (22 berikutnya < 42 m) / 1,1–1,2k (< 150 m) / ±240 segitiga; rambut, helm lv1–3, rompi, ransel, senjata punya batas jarak sendiri; jarak dikali zoom kamera; bot di luar layar tidak digambar. Pose: tiap frame < 60 m, tiap 3 frame < 150 m, tiap 6 frame di atasnya. Bayangan: bot dalam 36 m dengan geometri LOD2 (mesh bayangan kerumunan dipindah ke posisi kamera tiap frame karena `syncOne` di realism.js membuang pembuat bayangan yang jauh dari fokus).
+- **Varian:** 2 pria + 2 wanita, 4 gaya rambut, 6 warna kulit; pemain tetap ungu (sarung tangan gelap, manset emas; warna diduplikat di `OUTFIT` player.js).
+- **Kinerja (60 bot dalam 120 m):** `bots.draw` 0,64 → 0,16 ms; segitiga satu frame 2,15 → 1,60 juta; sampah `rig.js`/`bots.js`/`player.js` ±0; unggahan buffer hanya rentang terpakai & saat berubah.
+- **Belum sempurna:** rambut kartu alpha-test (tepi keras), jari kaku, helm/rompi/ransel prosedural sederhana, kaus `f1` masih memperlihatkan logo MakeHuman samar, avatar Jelajah di halaman peta masih model lama.
+
+### 26d. Kendaraan, senjata & tangan PBR (12 Nov, agen `vehicles-weapons-pbr`, sudah live)
+- **Kendaraan** (`tools/blender/vehicles.py`, `vehicles2.py` → `web/game/assets/vehicles/*.glb` + `manifest.json`): roda `wheel_v3`/`tire_v3` (ban ber-UV, pelek, cakram, baut), kaliper, lampu sungguhan, pelat bernomor, kabin (jok, setir, dasbor), normal berbobot, AO per sudut di `COLOR_0`, `make_lod1`; manifest: `gaps`, `lod1`, `trisLod1`, `cabin`, `dirt`. LOD0 7,6k–34k segitiga (loop 34k, di atas target 30k), LOD1 3k–6k.
+- **`game/vehicles.js`:** `createVehicleLook`/`matLook`/`vehPatch`/`treadTex`/`packGeom`; `prepTemplate` menggabung tiap simpul bergerak jadi ≤ 3 mesh (cat clearcoat, satu material "uni" dengan warna/kekasaran/logam/emisi per verteks, kaca) → 7–8 draw call per kendaraan di LOD0, 1 di LOD1 (> ±62 m × zoom), tidak digambar > 450 m; simpul statis dibekukan; lampu rem = uniform per kendaraan; bangkai memakai satu material hangus; `warmUp` mengompilasi shader kendaraan di 3 frame pertama. Ekspor baru `instantiateVehicle`, `loadVehicleTemplates` (dipakai `garasi.html`). `main.js`: `vehicles.setEnv(R.env, R)`.
+- **Senjata & tangan** (`tools/blender/weapons.py` → `weapons.glb`, 4,5 MB): bevel mikro, normal berbobot, AO & aus di `TEXCOORD_0`; lengan baru (lengan baju terlipat, manset emas, sarung tangan berpelindung buku jari); simpul baru `fp_forearm`, `fp_hand_open`; nama simpul & orientasi senjata tetap (siluet HUD aman). `game/weapons.js`: pustaka material orang pertama per nama material GLB (`VM_LOOK`, `vmPatch`, `vmMaterial`, `dressVm`), hanya senjata di tangan yang terpasang di adegan view-model, kilatan laras HDR, selongsong & asap ber-pool; `createEffects` = 3 draw call ber-pool (pita peluru, percikan/kilatan aditif, debu/darah; ukuran titik dibatasi). `game/nades.js`: inti ledakan HDR, cincin debu, asap.
+- **Hasil ukur agen (adegan sama, 1280×720):** draw call 358 → 247, mesh kendaraan terlihat 151 → 44, simpul kendaraan 283 → 128. Pengukuran tanpa vsync sesudah perubahan belum dilakukan.
+- **Catatan:** celah panel = garis shader dari `manifest.gaps` (hanya lintas, banteng, halilintar); lampu depan tetap level siang; AO banteng & walet dipanggang cepat (ulang: `tools/blender/vehicles.py --only banteng,walet`); pelat belakang jawara dipindah tetapi belum dicek ulang; `weapons.glb` dimuat dua kali (game & `icons.js`).
+
+### 26e. Ukur ulang & fondasi lapisan meta (13 Nov)
+- **Waktu frame tanpa vsync, 1512×900 @2× (mesin tenang, semua aset baru):**
+
+  | Adegan | Ultra 1,5 | Ultra 1,25 | Tinggi 1,0 | Hemat 1,0 |
+  |---|---|---|---|---|
+  | Menu (sebelum perbaikan) | 8,8 | 7,6 | 6,6 | 5,6 |
+  | Pesawat | 7,0 | 5,8 | 4,7 | 3,5 |
+  | Jalan + 60 bot | 6,2 | 4,9 | 3,9 | 2,9 |
+  | 6 kendaraan (orang pertama) | 6,3 | 4,9 | 4,1 | 3,2 |
+  | Rumput | 6,2 | 4,8 | 4,0 | 3,0 |
+  | Dalam rumah | 5,6 | 4,4 | 3,6 | 2,7 |
+
+  (ms per frame; batas 120 Hz = 8,3 ms.) Menu: tanpa `vehicles.update()` semua kendaraan tergambar penuh dari 900 m → disembunyikan selama menu (718 → 195 draw call).
+- **Fondasi lapisan meta** (untuk regu, lobi, misi, koin, skin): `game/hooks.js` (`matchHooks.onStart/onEnd`; `main.js` memanggilnya di `startMatch`/`finish` dengan ringkasan pertandingan), `game/profile.js` (profil di `localStorage` kunci `royale.profile.v1`: nama, koin, skin dimiliki/dipakai, regu, misi, statistik), `game/skins.js` (kerangka API: `CHAR_SKINS`, `GUN_SKINS`, `charOutfit`, `applyGunSkin`, `skinThumb`).
+- **Alat uji:** halaman Chrome headless bisa berstatus `hidden` (rAF berhenti → game tampak macet di "Menyusun kota…"); klien CDP di scratchpad memanggil `Page.bringToFront` + `Emulation.setFocusEmulationEnabled`.
+
+## 27. Lobi, Koin Sutera, misi acak (13 Nov 2026, agen `lobby-meta`, sudah live)
+
+Permintaan Steven: halaman home yang bagus, mata uang yang (sementara) didapat dari misi acak, toko skin. Semua di peramban (localStorage), tanpa server.
+
+- **`game/lobby.js`** — `createLobby(o)` → `{ focus, diff, frame, hide, showEnd }`: panggung 3D (`createStage`: regu 4 karakter berpose napas + label nama di trotoar jalan palem dekat The Prominence, koordinat data (270,3; 1668,0), kamera FOV 34 melayang pelan, bergeser saat panel terbuka, mendekat untuk pratinjau skin), seluruh UI lobi (bilah atas: nama yang bisa diubah, Koin Sutera, pengaturan; navigasi Lobi/Misi/Toko/Koleksi/Regu/Pengaturan; kartu regu; mode + tingkat kesulitan + tombol MULAI) dan layar akhir pertandingan (hasil, statistik, kemajuan misi, klaim). `#menu` dan `#end` di `royale.html` kini kosong dan diisi modul ini; id lama (`#diff`, `#sens`, `#endTitle`, `#againBtn`, …) sudah tidak ada. Kelas body `lb-on` selama lobi.
+- **`game/lobby.css`** — gaya `.lb-*` (em, 720p–4K, tanpa `backdrop-filter`). Gaya lama `.g-menu-panel`, `.g-diff`, `.g-end`, `.g-card` di `royale.css` tidak terpakai.
+- **`game/quests.js`** — `questState`, `applyMatch(summary)`, `claimQuest`, `claimAll`, `rerollDaily`, `dayKey`, `weekKey`. 3 misi harian (tiga tingkat, 100–260 koin; total sehari 460–570) + 2 mingguan (650–900 koin per misi); deterministik per hari/minggu (seed tanggal + jumlah acak ulang); satu acak ulang gratis per hari. Misi yang butuh bidang ringkasan tambahan (tembakan kepala, revive, kill per kelas senjata, jarak berkendara, …) baru muncul setelah ringkasan pertandingan pernah membawa bidang itu.
+- **`game/profile.js`** — tambah `setName`, `ensureSquad`, `setMate`, statistik karier. Rekan bot: `profile.squad[0..2] = { name, skin, variant, hair, tone, hairC }`.
+- **`main.js`** — blok menu lama diganti `createLobby({...})`; `lobby.hide()` di `startMatch`; `lobby.showEnd()` di `finish()`; cabang menu di `frame()` memanggil `lobby.frame`; bayangan dinamis aktif di fase menu (fokus `lobby.focus`); pengatur kualitas (governor) kini juga aktif di lobi.
+- **Biaya lobi:** 186 draw call, 1,51 juta segitiga; 120 FPS di 1280×720 (headless, Ultra).
+- **Tangga harga skin** (acuan hadiah misi): biasa 300, langka 800, epik 1800, legendaris 4000.
+- **Lain-lain 13 Nov:** pita emas batas kawasan (7 m, tampak seperti bidang kuning polos) di game realistis jadi garis cat 0,7 m; kendaraan disembunyikan di fase menu.
+- **Sedang dikerjakan:** mode regu 4 orang (agen `squad-mode`) dan katalog skin 8 + 8 (agen `skins`); toko/koleksi baru berisi skin bawaan sampai katalog masuk.

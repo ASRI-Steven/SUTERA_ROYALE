@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Alam Sutera Google 3D</title>
+    <meta name="description" content="Alam Sutera di Google Photorealistic 3D Maps (gmp-map-3d): batas kawasan, area luar digelapkan, landmark bisa diklik.">
+    <meta name="theme-color" content="#3D3782">
+    <link rel="stylesheet" href="map/alsut3d.css">
+    <style>
+        gmp-map-3d { position: fixed; inset: 0; }
+        .keybox { position: fixed; z-index: 40; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); padding: 22px; display: grid; gap: 12px; }
+        .keybox h2 { margin: 0; font-family: var(--display); font-weight: 600; font-size: 24px; }
+        .keybox p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+        .keybox input { height: 44px; padding: 0 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel-strong); color: var(--text); font: 500 15px/1 var(--body); }
+        .gm-raw { font: 12px/1.45 ui-monospace, Menlo, monospace; color: var(--faint); word-break: break-all; }
+        .rail.g3d { bottom: auto; }
+        .rail.g3d .rail-body { flex: none; }
+        .row-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+        @media (max-width: 760px) { .rail.g3d .rail-body { display: none; } .rail.g3d.open .rail-body { display: grid; } }
+    </style>
+</head>
+<body data-sky="day">
+    <div class="loader" id="loader" role="status" aria-live="polite">
+        <div class="loader-mark">Alam Sutera</div>
+        <div class="loader-bar"><span id="loaderBar"></span></div>
+        <p id="loaderText">Memuat Google 3D…</p>
+    </div>
+
+    <aside class="rail panel g3d" id="rail" aria-label="Panel peta Google 3D">
+        <div class="rail-head">
+            <span class="mark-dot" aria-hidden="true"></span>
+            <div class="wordmark"><b>Alam Sutera</b><span>Google Photorealistic 3D</span></div>
+            <button class="icon-btn rail-toggle" id="railToggle" type="button" aria-expanded="false" aria-controls="railBody" aria-label="Buka pengaturan tampilan">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M12 3 2 8l10 5 10-5-10-5Zm-7.6 8.8L2 13l10 5 10-5-2.4-1.2L12 15.6 4.4 11.8Zm0 5L2 18l10 5 10-5-2.4-1.2L12 20.6l-7.6-3.8Z" fill="currentColor"/></svg>
+            </button>
+        </div>
+        <div class="rail-body" id="railBody">
+            <section class="sect" aria-labelledby="hView">
+                <h3 id="hView">Tampilan</h3>
+                <div class="toggles" id="toggles"></div>
+            </section>
+            <section class="sect" aria-labelledby="hCam">
+                <h3 id="hCam">Kamera</h3>
+                <div class="row-btns">
+                    <button class="pill" type="button" id="orbit">Putar keliling</button>
+                    <button class="pill" type="button" id="north">Hadap utara</button>
+                    <button class="pill" type="button" id="home">Tampilan awal</button>
+                </div>
+            </section>
+        </div>
+        <div class="rail-foot">
+            Pakai Google Maps Platform (berbayar sesuai pemakaian). Kalau gedung tampak datar, berarti Google belum punya 3D foto-realistis untuk area itu.
+            <br><a href="index.html">← Kembali ke diorama</a> · <button class="linkish" id="forgetKey" type="button">Ganti API key</button>
+        </div>
+    </aside>
+
+    <section class="card panel" id="card" hidden aria-live="polite">
+        <button class="x" id="cardClose" type="button" aria-label="Tutup">×</button>
+        <div class="eyebrow" id="cardCat"></div>
+        <h2 id="cardTitle"></h2>
+        <dl class="tiles" id="cardTiles"></dl>
+        <div class="actions">
+            <button class="btn" id="cardGo" type="button">Dekati</button>
+            <button class="btn ghost" id="cardClose2" type="button">Tutup</button>
+        </div>
+    </section>
+
+    <form class="keybox panel" id="keybox" hidden>
+        <h2>API key Google Maps</h2>
+        <p>Tempel API key yang mengaktifkan <b>Maps JavaScript API</b>. Key hanya disimpan di browser ini, tidak ditulis ke kode. Kalau key dibatasi per alamat, izinkan <b>http://127.0.0.1:8765/*</b>.</p>
+        <input id="keyInput" type="password" autocomplete="off" placeholder="AIza…" aria-label="API key Google Maps" required>
+        <div class="actions"><button class="btn" type="submit">Simpan dan muat</button><a class="btn ghost" href="index.html">Kembali ke diorama</a></div>
+    </form>
+
+    <section class="keybox panel" id="gmErr" hidden aria-live="assertive">
+        <h2>Google Maps menolak API key ini</h2>
+        <p id="gmErrText"></p>
+        <p class="gm-raw" id="gmErrRaw"></p>
+        <div class="actions"><button class="btn" id="gmErrKey" type="button">Ganti API key</button><a class="btn ghost" href="index.html">Kembali ke diorama</a></div>
+    </section>
+
+    <div class="toast panel" id="toast" role="status" hidden></div>
+
+    <script type="module">
+    const $ = (id) => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    const KEY_STORE = 'alsut.gmaps.key';
+    // Terjemahkan kode error Google Maps (biasanya hanya muncul di console) jadi penyebab + cara memperbaiki.
+    const GM_ERR = {
+        ApiNotActivatedMapError: 'Maps JavaScript API belum diaktifkan di project Google Cloud pemilik key ini. Buka Google Cloud Console → APIs & Services → Library → aktifkan "Maps JavaScript API".',
+        BillingNotEnabledMapError: 'Billing belum aktif di project Google Cloud pemilik key ini. Aktifkan billing di Google Cloud Console → Billing.',
+        RefererNotAllowedMapError: 'Key ini dibatasi per website, dan alamat ' + location.origin + ' belum diizinkan. Di Google Cloud Console → Credentials → key ini → Website restrictions, tambahkan ' + location.origin + '/* dan http://localhost:8765/*.',
+        ApiTargetBlockedMapError: 'Key ini dibatasi per API, dan Maps JavaScript API belum ada di daftar API yang diizinkan. Tambahkan di Credentials → key ini → API restrictions.',
+        InvalidKeyMapError: 'API key tidak valid. Cek lagi key-nya (salin ulang tanpa spasi).',
+        MissingKeyMapError: 'API key kosong.',
+        ExpiredKeyMapError: 'API key sudah kedaluwarsa. Buat key baru.',
+        DeletedApiProjectMapError: 'Project Google Cloud untuk key ini sudah dihapus. Pakai key dari project lain.',
+        InvalidClientIdMapError: 'Client ID tidak valid.',
+    };
+    function showGmError(code, raw) {
+        const el = document.getElementById('gmErr');
+        if (!el || !el.hidden) return;
+        document.getElementById('gmErrText').textContent = (GM_ERR[code] || 'Google Maps menolak permintaan ini.') +
+            ' Kalau key ini diambil dari app mobile (Android/iOS), key itu memang tidak bisa dipakai di web: buat key baru dengan pembatasan Website.';
+        document.getElementById('gmErrRaw').textContent = 'Kode dari Google: ' + code + (raw ? ' · ' + raw.slice(0, 220) : '');
+        document.getElementById('loader').hidden = true;
+        el.hidden = false;
+    }
+    for (const lvl of ['error', 'warn']) {
+        const orig = console[lvl].bind(console);
+        console[lvl] = (...args) => {
+            try {
+                const m = args.map((a) => (a && a.message) || String(a)).join(' ');
+                const code = Object.keys(GM_ERR).find((k) => m.includes(k)) || (/Google Maps JavaScript API (error|warning)/.test(m) && lvl === 'error' ? 'Lainnya' : null);
+                if (code) showGmError(code, m);
+            } catch (e) { /* jangan ganggu console asli */ }
+            orig(...args);
+        };
+    }
+    const M = 0.1;
+    const CAT = {
+        belanja: ['Belanja', '#503EBA'], kuliner: ['Kuliner', '#D29F52'], kesehatan: ['Kesehatan', '#C2412F'], pendidikan: ['Pendidikan', '#1683E1'],
+        ibadah: ['Ibadah', '#7A74B0'], hotel: ['Hotel', '#295E9F'], rekreasi: ['Rekreasi', '#2E8A5B'], layanan: ['Layanan', '#434456'],
+        kantor: ['Kantor', '#3D3782'], transport: ['Transportasi', '#A4783D'],
+    };
+    const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    let toastTimer = 0;
+    function toast(msg, ms = 4200) { const el = $('toast'); el.textContent = msg; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, ms); }
+    function loadStep(p, t) { $('loaderBar').style.width = p + '%'; if (t) $('loaderText').textContent = t; }
+    function loadDone() { const el = $('loader'); el.classList.add('done'); setTimeout(() => { el.hidden = true; }, 650); }
+    function fail(msg) { $('loaderText').textContent = msg; $('loader').classList.add('error'); }
+    function getKey() {
+        const q = params.get('key');
+        if (q) { try { localStorage.setItem(KEY_STORE, q); } catch (e) { /* tetap jalan tanpa simpan */ } return q; }
+        try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; }
+    }
+    $('keybox').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const v = $('keyInput').value.trim();
+        if (!v) return;
+        try { localStorage.setItem(KEY_STORE, v); } catch (err) { toast('Browser menolak menyimpan key; key dipakai untuk sesi ini saja.'); }
+        location.search = localStorage.getItem(KEY_STORE) ? '' : '?key=' + encodeURIComponent(v);
+    });
+    document.getElementById('gmErrKey').addEventListener('click', () => { try { localStorage.removeItem(KEY_STORE); } catch (e) { /* abaikan */ } location.href = 'google3d.html'; });
+    $('forgetKey').addEventListener('click', () => { try { localStorage.removeItem(KEY_STORE); } catch (e) { /* abaikan */ } location.href = 'google3d.html'; });
+    $('railToggle').addEventListener('click', () => {
+        const open = !$('rail').classList.contains('open');
+        $('rail').classList.toggle('open', open);
+        $('railToggle').setAttribute('aria-expanded', String(open));
+    });
+
+    function loadMaps(key) {
+        return new Promise((resolve, reject) => {
+            window.gm_authFailure = () => setTimeout(() => showGmError('AuthFailure', 'gm_authFailure: key ditolak (lihat kode di atas kalau ada)'), 300);
+            window.__alsutGmReady = resolve;
+            const s = document.createElement('script');
+            s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&v=weekly&libraries=maps3d,marker&language=id&region=ID&loading=async&callback=__alsutGmReady';
+            s.async = true;
+            s.onerror = () => reject(new Error('Script Google Maps gagal dimuat (cek internet / blokir jaringan kantor).'));
+            document.head.appendChild(s);
+        });
+    }
+
+    async function main() {
+        const key = getKey();
+        if (!key) { $('loader').hidden = true; $('keybox').hidden = false; $('keyInput').focus(); return; }
+        loadStep(15, 'Memuat data kawasan…');
+        const D = await (await fetch('data/alsut-map.json')).json();
+        loadStep(35, 'Menghubungi Google Maps…');
+        await loadMaps(key);
+        const { Map3DElement, Marker3DInteractiveElement, Marker3DElement, Polyline3DElement, Polygon3DElement } = await google.maps.importLibrary('maps3d');
+        const { PinElement } = await google.maps.importLibrary('marker');
+        loadStep(70, 'Menyusun Alam Sutera…');
+
+        // Data lokal (desimeter dari titik tengah) → lat/lng.
+        const [lat0, lon0] = D.meta.center, kx = D.meta.kx, ky = D.meta.ky;
+        const LL = (x, y, alt = 0) => ({ lat: lat0 + (y * M) / ky, lng: lon0 + (x * M) / kx, altitude: alt });
+        const ringLL = (flat) => { const out = []; for (let i = 0; i + 1 < flat.length; i += 2) out.push(LL(flat[i], flat[i + 1])); return out; };
+        const boundary = ringLL(D.boundary), holes = (D.boundaryHoles || []).map(ringLL);
+        const lats = boundary.map((p) => p.lat), lngs = boundary.map((p) => p.lng);
+        const bb = { south: Math.min(...lats), north: Math.max(...lats), west: Math.min(...lngs), east: Math.max(...lngs) };
+        const center = { lat: (bb.south + bb.north) / 2, lng: (bb.west + bb.east) / 2, altitude: 0 };
+        const homeCam = { center, range: 5600, tilt: 58, heading: innerWidth >= innerHeight ? 90 : 0 };
+
+        const map = new Map3DElement({
+            ...homeCam, mode: 'HYBRID', defaultUIHidden: false, gestureHandling: 'GREEDY',
+            bounds: { south: bb.south - 0.02, north: bb.north + 0.02, west: bb.west - 0.02, east: bb.east + 0.02 },
+        });
+        document.body.prepend(map);
+        map.addEventListener('gmp-error', () => toast('Google 3D melaporkan galat. Cek key, billing, dan koneksi.'));
+
+        // Gelapkan luar kawasan: persegi besar dengan lubang berbentuk Alam Sutera.
+        const pad = 0.08;
+        const dim = new Polygon3DElement({ altitudeMode: 'CLAMP_TO_GROUND', fillColor: 'rgba(20, 18, 58, 0.58)', strokeColor: 'rgba(0, 0, 0, 0)', strokeWidth: 0 });
+        dim.path = [{ lat: bb.north + pad, lng: bb.west - pad }, { lat: bb.north + pad, lng: bb.east + pad }, { lat: bb.south - pad, lng: bb.east + pad }, { lat: bb.south - pad, lng: bb.west - pad }];
+        dim.innerPaths = [boundary.map(({ lat, lng }) => ({ lat, lng }))];
+        const edges = [boundary, ...holes].map((r) => {
+            const e = new Polyline3DElement({ altitudeMode: 'CLAMP_TO_GROUND', strokeColor: '#D29F52', strokeWidth: 7, outerColor: '#3D3782', outerWidth: 0.4, drawsOccludedSegments: true });
+            e.path = [...r, r[0]];
+            return e;
+        });
+
+        const landmarks = D.pois.filter((p) => p.lm).map((p) => {
+            const [label, color] = CAT[p.cat] || CAT.layanan;
+            const m = new Marker3DInteractiveElement({
+                position: LL(p.x, p.y, (p.h ? p.h * M : 10) + 14), altitudeMode: 'RELATIVE_TO_GROUND', extruded: true, label: p.name, title: p.name,
+            });
+            m.append(new PinElement({ background: color, borderColor: '#ffffff', glyphColor: '#ffffff' }));
+            m.addEventListener('gmp-click', () => showPoi(p, label, color));
+            return m;
+        });
+        const clusters = D.clusters.filter((c) => c.ha >= 6).map((c) => {
+            const m = new Marker3DElement({ position: LL(c.c[0], c.c[1], 30), altitudeMode: 'RELATIVE_TO_GROUND', label: c.name });
+            m.append(new PinElement({ background: '#D29F52', borderColor: '#3D3782', glyphColor: '#3D3782', scale: 0.8 }));
+            return m;
+        });
+
+        const layers = { dim: [dim], edge: edges, landmarks, clusters };
+        const state = { dim: true, edge: true, landmarks: true, clusters: false, labels: true };
+        const apply = () => {
+            for (const [k, els] of Object.entries(layers)) for (const el of els) { if (state[k] && !el.isConnected) map.append(el); if (!state[k] && el.isConnected) el.remove(); }
+            map.mode = state.labels ? 'HYBRID' : 'SATELLITE';
+        };
+        const TOG = [['dim', 'Gelapkan luar kawasan'], ['edge', 'Garis batas'], ['landmarks', 'Landmark (' + landmarks.length + ')'], ['clusters', 'Nama cluster besar (' + clusters.length + ')'], ['labels', 'Label jalan Google']];
+        $('toggles').innerHTML = TOG.map(([k, label]) => '<button class="tog" type="button" role="switch" aria-checked="' + state[k] + '" data-k="' + k + '">' + esc(label) + '<span class="sw" aria-hidden="true" style="margin-left:auto"></span></button>').join('');
+        $('toggles').addEventListener('click', (e) => {
+            const b = e.target.closest('[data-k]');
+            if (!b) return;
+            state[b.dataset.k] = !state[b.dataset.k];
+            b.setAttribute('aria-checked', String(state[b.dataset.k]));
+            apply();
+        });
+        apply();
+
+        const fly = (cam, ms = 1800) => map.flyCameraTo({ endCamera: cam, durationMillis: ms });
+        $('home').addEventListener('click', () => fly(homeCam));
+        $('north').addEventListener('click', () => fly({ center: map.center, range: map.range, tilt: map.tilt, heading: 0 }, 900));
+        $('orbit').addEventListener('click', () => map.flyCameraAround({ camera: { center: map.center, range: map.range, tilt: map.tilt, heading: map.heading }, durationMillis: 45000, repeatCount: 1 }));
+
+        let cardGo = null;
+        function showPoi(p, label, color) {
+            $('cardCat').innerHTML = '<span class="dot" style="background:' + color + '"></span>' + esc(label);
+            $('cardTitle').textContent = p.name;
+            const tiles = [['Tinggi bangunan', p.h ? '±' + Math.round(p.h * M) + ' m' : null], ['Lantai', p.lv ? String(p.lv) : null]].filter(([, v]) => v);
+            $('cardTiles').innerHTML = tiles.map(([k, v]) => '<div class="tile"><dt>' + esc(k) + '</dt><dd>' + esc(v) + '</dd></div>').join('');
+            cardGo = () => fly({ center: LL(p.x, p.y, 0), range: Math.max(380, (p.h || 0) * M * 6), tilt: 64, heading: map.heading });
+            $('card').hidden = false;
+        }
+        const closeCard = () => { $('card').hidden = true; };
+        $('cardClose').addEventListener('click', closeCard);
+        $('cardClose2').addEventListener('click', closeCard);
+        $('cardGo').addEventListener('click', () => { if (cardGo) cardGo(); });
+        loadStep(100, 'Siap');
+        setTimeout(loadDone, 400);
+    }
+    main().catch((e) => { console.error(e); fail('Google 3D gagal dimuat: ' + e.message); });
+    </script>
+</body>
+</html>

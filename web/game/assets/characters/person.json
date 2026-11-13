@@ -1,0 +1,276 @@
+{
+ "parts": [
+  {
+   "name": "hips",
+   "pivot": [
+    0.0,
+    0.98,
+    0.0
+   ],
+   "slot": "pants",
+   "tris": 204,
+   "parent": null
+  },
+  {
+   "name": "spine",
+   "pivot": [
+    0.0,
+    1.08,
+    0.0
+   ],
+   "slot": "shirt",
+   "tris": 132,
+   "parent": "hips"
+  },
+  {
+   "name": "chest",
+   "pivot": [
+    0.0,
+    1.28,
+    0.0
+   ],
+   "slot": "shirt",
+   "tris": 264,
+   "parent": "spine"
+  },
+  {
+   "name": "neck",
+   "pivot": [
+    0.0,
+    1.55,
+    0.0
+   ],
+   "slot": "skin",
+   "tris": 48,
+   "parent": "chest"
+  },
+  {
+   "name": "head",
+   "pivot": [
+    0.0,
+    1.62,
+    0.0
+   ],
+   "slot": "skin",
+   "tris": 394,
+   "parent": "neck"
+  },
+  {
+   "name": "armL",
+   "pivot": [
+    0.2,
+    1.49,
+    0.0
+   ],
+   "slot": "shirt",
+   "tris": 120,
+   "parent": "chest"
+  },
+  {
+   "name": "armR",
+   "pivot": [
+    -0.2,
+    1.49,
+    0.0
+   ],
+   "slot": "shirt",
+   "tris": 120,
+   "parent": "chest"
+  },
+  {
+   "name": "foreL",
+   "pivot": [
+    0.2,
+    1.21,
+    0.0
+   ],
+   "slot": "sleeve",
+   "tris": 120,
+   "parent": "armL"
+  },
+  {
+   "name": "foreR",
+   "pivot": [
+    -0.2,
+    1.21,
+    0.0
+   ],
+   "slot": "sleeve",
+   "tris": 120,
+   "parent": "armR"
+  },
+  {
+   "name": "handL",
+   "pivot": [
+    0.2,
+    0.96,
+    0.0
+   ],
+   "slot": "skin",
+   "tris": 68,
+   "parent": "foreL"
+  },
+  {
+   "name": "handR",
+   "pivot": [
+    -0.2,
+    0.96,
+    0.0
+   ],
+   "slot": "skin",
+   "tris": 68,
+   "parent": "foreR"
+  },
+  {
+   "name": "thighL",
+   "pivot": [
+    0.1,
+    0.93,
+    0.0
+   ],
+   "slot": "pants",
+   "tris": 152,
+   "parent": "hips"
+  },
+  {
+   "name": "thighR",
+   "pivot": [
+    -0.1,
+    0.93,
+    0.0
+   ],
+   "slot": "pants",
+   "tris": 152,
+   "parent": "hips"
+  },
+  {
+   "name": "shinL",
+   "pivot": [
+    0.1,
+    0.5,
+    0.0
+   ],
+   "slot": "pants",
+   "tris": 120,
+   "parent": "thighL"
+  },
+  {
+   "name": "shinR",
+   "pivot": [
+    -0.1,
+    0.5,
+    0.0
+   ],
+   "slot": "pants",
+   "tris": 120,
+   "parent": "thighR"
+  },
+  {
+   "name": "footL",
+   "pivot": [
+    0.1,
+    0.08,
+    0.0
+   ],
+   "slot": "shoes",
+   "tris": 120,
+   "parent": "shinL"
+  },
+  {
+   "name": "footR",
+   "pivot": [
+    -0.1,
+    0.08,
+    0.0
+   ],
+   "slot": "shoes",
+   "tris": 120,
+   "parent": "shinR"
+  },
+  {
+   "name": "hair",
+   "pivot": [
+    0.0,
+    1.62,
+    0.0
+   ],
+   "slot": "hair",
+   "tris": 260,
+   "bone": "head"
+  },
+  {
+   "name": "hair_long",
+   "pivot": [
+    0.0,
+    1.62,
+    0.0
+   ],
+   "slot": "hair",
+   "tris": 296,
+   "bone": "head"
+  },
+  {
+   "name": "cap",
+   "pivot": [
+    0.0,
+    1.62,
+    0.0
+   ],
+   "slot": "cap",
+   "tris": 260,
+   "bone": "head"
+  },
+  {
+   "name": "helmet",
+   "pivot": [
+    0.0,
+    1.62,
+    0.0
+   ],
+   "slot": "gear",
+   "tris": 274,
+   "bone": "head"
+  },
+  {
+   "name": "vest",
+   "pivot": [
+    0.0,
+    1.28,
+    0.0
+   ],
+   "slot": "gear",
+   "tris": 232,
+   "bone": "chest"
+  },
+  {
+   "name": "pack",
+   "pivot": [
+    0.0,
+    1.28,
+    0.0
+   ],
+   "slot": "pack",
+   "tris": 232,
+   "bone": "chest"
+  },
+  {
+   "name": "stripe",
+   "pivot": [
+    0.0,
+    1.28,
+    0.0
+   ],
+   "slot": "trim",
+   "tris": 32,
+   "bone": "chest"
+  }
+ ],
+ "gunMount": [
+  -0.13,
+  1.34,
+  0.24
+ ],
+ "bodyTris": 2442,
+ "height": 1.84,
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X. Origin tiap objek = pivot sendi (pose istirahat). Warna verteks putih = diwarnai slot; cap berwarna tetap."
+}

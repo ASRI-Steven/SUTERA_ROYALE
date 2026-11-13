@@ -1,0 +1,9 @@
+bff/.env
+bff/bin/
+data/osm/*.pbf
+data/osm/*.geojsonseq
+.DS_Store
+__pycache__/
+*.pyc
+*.tmp-main
+node_modules/

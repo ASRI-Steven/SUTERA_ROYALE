@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sutera Royale</title>
+    <meta name="description" content="Battle royale orisinal di peta 3D Alam Sutera: 1 pemain melawan 100 bot.">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="map/alsut3d.css">
+    <link rel="stylesheet" href="game/royale.css">
+    <link rel="stylesheet" href="game/lobby.css">
+    <!-- ?v=…: alamat modul baru supaya browser tidak memakai modul versi lama dari cache (server kini mengirim Cache-Control: no-cache) -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "./game/audio.js": "./game/audio.js?v=20261111",
+                "./game/bots.js": "./game/bots.js?v=20261111",
+                "./game/hud.js": "./game/hud.js?v=20261111",
+                "./game/loot.js": "./game/loot.js?v=20261111",
+                "./game/nades.js": "./game/nades.js?v=20261111",
+                "./game/nav.js": "./game/nav.js?v=20261111",
+                "./game/player.js": "./game/player.js?v=20261111",
+                "./game/vehicles.js": "./game/vehicles.js?v=20261111",
+                "./game/weapons.js": "./game/weapons.js?v=20261111",
+                "./game/zone.js": "./game/zone.js?v=20261111",
+                "./map/collide.js": "./map/collide.js?v=20261111",
+                "./map/context.js": "./map/context.js?v=20261111",
+                "./map/grass.js": "./map/grass.js?v=20261111",
+                "./map/interiors.js": "./map/interiors.js?v=20261111",
+                "./map/mapview.js": "./map/mapview.js?v=20261111",
+                "./map/rig.js": "./map/rig.js?v=20261111",
+                "./map/walk.js": "./map/walk.js?v=20261111",
+                "./map/world.js": "./map/world.js?v=20261111"
+            }
+        }
+    </script>
+</head>
+<body class="g-menu" data-sky="day">
+    <div id="scene" aria-label="Arena Sutera Royale"></div>
+
+    <div class="loader" id="loader" role="status" aria-live="polite">
+        <div class="loader-mark">Sutera Royale</div>
+        <div class="loader-bar"><span id="loaderBar"></span></div>
+        <p id="loaderText">Menyiapkan arena…</p>
+    </div>
+
+    <!-- lobi (home): bilah atas, navigasi, misi, regu, tombol mulai, panel toko/koleksi/pengaturan — dibuat game/lobby.js -->
+    <section class="lb" id="menu" aria-label="Lobi Sutera Royale"></section>
+
+    <!-- isi HUD (kompas, minimap, kartu senjata, darah, dst.) dibuat game/hud.js -->
+    <div class="g-hud" id="hud" hidden></div>
+
+    <section class="g-pause" id="pause" hidden>
+        <div class="g-card">
+            <h2>Jeda</h2>
+            <p>Klik untuk lanjut bermain. Mouse kembali terkunci ke game.</p>
+            <button class="g-play" id="resumeBtn" type="button">Lanjut</button>
+            <a class="g-back" href="index.html">Keluar ke peta digital twin</a>
+        </div>
+    </section>
+
+    <!-- hasil pertandingan, statistik, kemajuan misi & hadiah — dibuat game/lobby.js -->
+    <section class="lb lb-end" id="end" hidden aria-label="Hasil pertandingan"></section>
+
+    <script>
+      // modul gagal dimuat (mis. cache browser masih menyimpan versi lama) → tampilkan di layar muat, jangan diam saja
+      addEventListener('error', (e) => {
+        const l = document.getElementById('loader'), t = document.getElementById('loaderText');
+        if (!l || !t || l.classList.contains('done')) return;
+        t.textContent = 'Gagal memuat: ' + (e.message || (e.target && (e.target.src || e.target.href)) || 'skrip') + ' · coba muat ulang penuh (Cmd+Shift+R)';
+        l.classList.add('error');
+      }, true);
+    </script>
+    <script type="module" src="game/main.js?v=20261111"></script>
+</body>
+</html>

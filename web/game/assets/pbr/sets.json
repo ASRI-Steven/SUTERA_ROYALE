@@ -1,0 +1,44 @@
+{
+ "asphalt_04": {
+  "dimensions_mm": [
+   4039.9999618530273,
+   4039.9999618530273
+  ]
+ },
+ "pavement_03": {
+  "dimensions_mm": [
+   1999.9996423721313,
+   1999.9996423721313
+  ]
+ },
+ "concrete_pavement": {
+  "dimensions_mm": [
+   1800.0000715255737,
+   1800.0000715255737
+  ]
+ },
+ "leafy_grass": {
+  "dimensions_mm": [
+   2000,
+   2000
+  ]
+ },
+ "forrest_ground_01": {
+  "dimensions_mm": [
+   2000,
+   2000
+  ]
+ },
+ "painted_plaster_wall": {
+  "dimensions_mm": [
+   2000,
+   2000
+  ]
+ },
+ "clay_roof_tiles_02": {
+  "dimensions_mm": [
+   2500,
+   2500
+  ]
+ }
+}
