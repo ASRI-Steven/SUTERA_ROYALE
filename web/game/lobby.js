@@ -322,9 +322,12 @@ export function createLobby(o) {
           <li><span>Gerak</span><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> jalan · <kbd>Shift</kbd> lari · <kbd>Spasi</kbd> lompat · <kbd>C</kbd> jongkok · <kbd>Z</kbd> tiarap</p></li>
           <li><span>Tembak</span><p><kbd>Klik kiri</kbd> tembak · <kbd>Klik kanan</kbd> bidik · <kbd>R</kbd> isi ulang</p></li>
           <li><span>Senjata</span><p><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> atau gulir · <kbd>G</kbd> granat (tahan = lebih jauh) · <kbd>T</kbd> ganti granat</p></li>
-          <li><span>Obat</span><p><kbd>4</kbd> perban · <kbd>5</kbd> P3K</p></li>
-          <li><span>Aksi</span><p><kbd>F</kbd> ambil / naik kendaraan / terjun / buka payung · <kbd>Tab</kbd> tas · <kbd>V</kbd> kamera 1/3 · <kbd>M</kbd> peta · <kbd>Esc</kbd> jeda</p></li>
-          <li><span>Kendaraan</span><p><kbd>W</kbd><kbd>S</kbd> gas/rem · <kbd>A</kbd><kbd>D</kbd> setir · <kbd>Spasi</kbd> rem tangan · <kbd>Shift</kbd> boost · <kbd>H</kbd> klakson · <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>4</kbd> pindah kursi</p></li>
+          <li><span>Obat</span><p><kbd>4</kbd> perban (sampai 75 HP) · <kbd>5</kbd> P3K · <kbd>6</kbd> minuman energi (darah naik pelan-pelan sampai 100)</p></li>
+          <li><span>Aksi</span><p><kbd>F</kbd> ambil / naik kendaraan / terjun / buka payung · tahan <kbd>F</kbd> pulihkan rekan yang tumbang · <kbd>Tab</kbd> tas · <kbd>V</kbd> kamera 1/3 · <kbd>M</kbd> peta · <kbd>Esc</kbd> jeda / tutup tas &amp; peta</p></li>
+          <li><span>Terjun</span><p><kbd>W</kbd> + kamera datar melayang jauh · <kbd>W</kbd> + kamera menunduk menukik · <kbd>A</kbd><kbd>D</kbd> geser · <kbd>S</kbd> mengerem (payung: turun lebih pelan)</p></li>
+          <li><span>Tas</span><p><kbd>Tab</kbd> buka · klik barang untuk mengambil · <kbd>Klik kanan</kbd> barang di inventaris untuk membuang (senjata, peluru, obat, granat, jeriken, rompi, helm, tas) · tas lv.1–3 menambah kapasitas</p></li>
+          <li><span>Kendaraan</span><p><kbd>W</kbd><kbd>S</kbd> gas/rem · <kbd>A</kbd><kbd>D</kbd> setir · <kbd>Spasi</kbd> rem tangan · <kbd>Shift</kbd> boost (bensin lebih boros) · <kbd>B</kbd> isi bensin dari jeriken (saat berhenti) · <kbd>H</kbd> klakson · <kbd>F</kbd> turun · <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>4</kbd> pindah kursi</p></li>
+          <li><span>Jeriken</span><p>Di tanah meledak setelah kena 3 peluru, atau langsung bila terkena ledakan granat / kendaraan</p></li>
         </ul>
         <div class="lb-set-row"><a class="lb-btn ghost" href="index.html">${ic('map', 'lb-i-s')}Peta digital twin</a><button type="button" class="lb-btn ghost danger" data-act="reset">Atur ulang profil</button></div>`;
     },

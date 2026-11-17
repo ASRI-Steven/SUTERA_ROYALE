@@ -1121,6 +1121,7 @@ export function createBots(ctx, n = 50) {
         const r = applyItem(b, a.item, { bot: true });
         if (r && !r.keep) loot.remove(a.item);
         else { a.skip1 = a.skip0; a.skip0 = a.item; } // masih ada (tidak perlu / sisa peti): jangan didatangi lagi
+        if (r && r.swap) loot.add(r.swap.type, x, y, { z: b.pos.y > 0.5 ? b.pos.y : 0, hp: r.swap.hp }); // pelindung lama bot jatuh ke tanah
         if (r && r.dropped) { const up = b.pos.y > 0.5; loot.add('w_' + r.dropped.kind, x + (up ? 0 : 0.6), y + (up ? 0 : 0.6), { z: up ? b.pos.y : 0 }); }
         if (r) { a.lootN++; equipBest(b); }
       }

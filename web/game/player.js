@@ -8,7 +8,7 @@
 // 1/2/3 ganti senjata, Ctrl+1..4 pindah kursi (1 = sopir; kendaraan tanpa sopir meluncur lalu berhenti).
 import * as THREE from 'three';
 import { WEAPONS, NADES, createViewModel } from './weapons.js';
-import { applyItem, propGeometry, crateEntries, takeCrateEntry, crateEmpty, ITEMS, bagWeight, bagCap } from './loot.js';
+import { applyItem, propGeometry, crateEntries, takeCrateEntry, crateEmpty, ITEMS, bagWeight, bagCap, armorHp, armorMax, armorText } from './loot.js';
 import { itemIcon } from './icons.js';
 import { buildCharacter } from '../map/rig.js';
 import { applyEquipped } from './skins.js';
@@ -137,6 +137,7 @@ export function createPlayer(ctx) {
         case 'KeyV': st.vfp = !st.vfp; hud.flash(st.vfp ? 'Kamera kursi' : 'Kamera belakang'); break;
         case 'KeyM': ctx.toggleMap(); break;
         case 'KeyR': reload(); break;
+        case 'KeyB': refuel(); break; // isi bensin dari jeriken
         case 'Digit1': vSelect(0); break;
         case 'Digit2': vSelect(1); break;
         case 'Digit3': vSelect(2); break;
@@ -266,7 +267,18 @@ export function createPlayer(ctx) {
     st.healDur = dur;
     st.healEnd = ctx.now() + dur;
     st.reloadEnd = 0;
-    vm.heal(kind === 'drink' ? 'band' : kind, dur); // animasi membalut perban / menyuntik P3K (minuman: sementara memakai animasi perban)
+    vm.heal(kind, dur); // animasi membalut perban / menyuntik P3K / membuka kaleng lalu minum
+  }
+  // ---------- Bensin: isi tangki dari jeriken (B, 3 dtk, kendaraan harus berhenti; satu jeriken = +60 %) ----------
+  function refuel() {
+    const v = me.vehicle;
+    if (!v || st.fuelEnd) return;
+    if (!(me.fuel > 0)) { hud.toast('Tidak punya jeriken bensin'); return; }
+    if (v.fuel >= 99.5) { hud.toast('Tangki sudah penuh'); return; }
+    if (Math.abs(v.speed) > 1.5) { hud.toast('Berhenti dulu untuk mengisi bensin'); return; }
+    st.fuelEnd = ctx.now() + 3;
+    st.fuelV = v;
+    hud.flash('Mengisi bensin…');
   }
   // ---------- Senjata di kendaraan ----------
   function driverGun() { // slot SMG (diutamakan) atau pistol, −1 kalau tidak punya
@@ -378,7 +390,7 @@ export function createPlayer(ctx) {
     take(it);
   }
   // ---------- Panel loot (seperti PUBG): kiri inventaris, kanan isi peti / barang di sekitar, bergambar ----------
-  const ENTRY_TYPE = { weapon: (k) => 'w_' + k, ammo: (k) => 'a_' + k, heal: (k) => 'h_' + k, vest: (k) => 'v' + k, helmet: (k) => 'm' + k, nade: (k) => 'g_' + k, bag: (k) => 'b' + k };
+  const ENTRY_TYPE = { weapon: (k) => 'w_' + k, ammo: (k) => 'a_' + k, heal: (k) => 'h_' + k, vest: (k) => 'v' + k, helmet: (k) => 'm' + k, nade: (k) => 'g_' + k, bag: (k) => 'b' + k, fuel: () => 'jerry' };
   function vicinity() { const L = []; loot.near(me.pos.x, -me.pos.z, 2.6, (it) => { if (it.def.kind !== 'crate' && Math.abs((it.z || 0) - me.pos.y) < 1.3) L.push(it); }); return L.slice(0, 12); }
   function itemName(it) { return it.name || it.def.name || (it.def.w && WEAPONS[it.def.w].name) || it.type; }
   function lootModel() {
@@ -387,12 +399,21 @@ export function createPlayer(ctx) {
     for (const [k, n] of Object.entries(me.ammo)) if (n > 0) items.push({ type: 'a_' + k, n, name: (ITEMS['a_' + k] ? ITEMS['a_' + k].name : k).replace(/ ×\d+$/, '') });
     for (const k of ['band', 'kit', 'drink']) if (me.heals[k] > 0) items.push({ type: 'h_' + k, n: me.heals[k], name: k === 'kit' ? 'P3K' : k === 'drink' ? 'Minuman energi' : 'Perban' });
     for (const [k, n] of Object.entries(me.nades || {})) if (n > 0) items.push({ type: 'g_' + k, n, name: NADES[k] ? NADES[k].name : k });
-    const gear = [{ type: me.vest ? 'v' + me.vest : null, name: me.vest ? 'Rompi lv.' + me.vest : 'Tanpa rompi' }, { type: me.helmet ? 'm' + me.helmet : null, name: me.helmet ? 'Helm lv.' + me.helmet : 'Tanpa helm' }, { type: me.bag ? 'b' + me.bag : null, name: me.bag ? 'Tas lv.' + me.bag : 'Tanpa tas' }];
+    if (me.fuel > 0) items.push({ type: 'jerry', n: me.fuel, name: 'Jeriken bensin' });
+    const gear = [{ type: me.vest ? 'v' + me.vest : null, name: me.vest ? armorText('vest', me.vest, me.vestHp) : 'Tanpa rompi' }, { type: me.helmet ? 'm' + me.helmet : null, name: me.helmet ? armorText('helmet', me.helmet, me.helmetHp) : 'Tanpa helm' }, { type: me.bag ? 'b' + me.bag : null, name: me.bag ? 'Tas lv.' + me.bag : 'Tanpa tas' }];
     const loot2 = st.crate ? crateEntries(st.crate.contents).map((e) => { const type = ENTRY_TYPE[e.t] ? ENTRY_TYPE[e.t](e.k) : 'crate'; return { type, name: e.text, rar: (ITEMS[type] || {}).rar || 0 }; })
       : vicinity().map((it) => ({ type: it.type, name: itemName(it), rar: it.def.rar || 0 }));
     return { title: st.crate ? 'Peti jarahan' : 'Di sekitar', guns, items, gear, loot: loot2, bagW: Math.round(bagWeight(me)), bagCap: bagCap(me) };
   }
   // buang barang dari inventaris ke tanah (klik kanan di panel): 'w:<slot>' senjata, 'a_<jenis>' satu pak peluru, 'h_<jenis>' penyembuh, 'g_<jenis>' granat
+  // taruh rompi / helm / tas di tanah dekat kaki; rompi & helm membawa sisa daya tahannya (hp)
+  function putGear(type, hp) {
+    const d = ITEMS[type];
+    if (!d) return;
+    const up = me.pos.y > 0.5, a = Math.random() * Math.PI * 2, r = up ? 0 : 0.75, extra = { z: up ? me.pos.y : 0 };
+    if (d.kind !== 'bag' && hp !== undefined && hp < armorMax(d.kind, d.lvl)) { extra.hp = hp; extra.name = armorText(d.kind, d.lvl, hp); }
+    loot.add(type, me.pos.x + Math.cos(a) * r, -me.pos.z + Math.sin(a) * r, extra);
+  }
   function lootDrop(key) {
     if (!me.alive || me.down || me.state !== 'ground') return;
     const up = me.pos.y > 0.5, a = Math.random() * Math.PI * 2, r = up ? 0 : 0.75; // di lantai atas: tepat di kaki (jangan jatuh ke luar lantai)
@@ -422,6 +443,24 @@ export function createPlayer(ctx) {
       me.heals[k]--;
       put(key);
       name = ITEMS[key].name;
+    } else if (/^[vm][1-3]$/.test(key)) { // rompi / helm yang sedang dipakai
+      const k = key[0] === 'v' ? 'vest' : 'helmet';
+      if ((me[k] | 0) !== +key[1]) return;
+      name = armorText(k, me[k], me[k + 'Hp']);
+      putGear(key, armorHp(me, k));
+      me[k] = 0; me[k + 'Hp'] = undefined;
+    } else if (/^b[1-3]$/.test(key)) { // tas: hanya kalau isinya masih muat tanpa tas
+      const lvl = me.bag | 0;
+      if (lvl !== +key[1]) return;
+      me.bag = 0;
+      if (bagWeight(me) > bagCap(me) + 0.01) { me.bag = lvl; hud.toast('Isi tas terlalu banyak · kurangi dulu sampai ' + bagCap({ bag: 0 })); return; }
+      putGear(key);
+      name = ITEMS[key].name;
+    } else if (key === 'jerry') {
+      if (!(me.fuel > 0)) return;
+      me.fuel--;
+      put('jerry');
+      name = ITEMS.jerry.name;
     } else if (key.startsWith('g_')) {
       const k = key.slice(2);
       if (!ITEMS[key] || !(me.nades && me.nades[k] > 0)) return;
@@ -482,8 +521,9 @@ export function createPlayer(ctx) {
   function take(it, auto) {
     const replaceSlot = me.cur === 0 || me.cur === 1 ? me.cur : 0;
     const r = applyItem(me, it, { replaceSlot });
-    if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' || it.def.kind === 'ammo' || it.def.kind === 'nade' ? 'Tas penuh' : 'Sudah punya yang setara atau lebih baik'); return; }
+    if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' || it.def.kind === 'ammo' || it.def.kind === 'nade' || it.def.kind === 'fuel' ? 'Tas penuh' : 'Sudah punya yang setara atau lebih baik'); return; }
     if (!r.keep) loot.remove(it);
+    if (r.swap) putGear(r.swap.type, r.swap.hp); // rompi / helm / tas lama jatuh ke tanah
     if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0 }); }
     audio.pickup();
     me.looted = (me.looted || 0) + 1; // statistik pertandingan (misi)
@@ -774,6 +814,18 @@ export function createPlayer(ctx) {
   // ---------- Di kursi kendaraan: isi ulang, siaga senjata, busur tembak, menembak ----------
   function seated(dt, now) {
     const v = me.vehicle, w = weapon(), driver = isDriver();
+    if (st.fuelEnd) { // sedang mengisi bensin: batal kalau kendaraan bergerak / pindah kendaraan
+      if (st.fuelV !== v || Math.abs(v.speed) > 2.5) { st.fuelEnd = 0; hud.toast('Pengisian bensin batal'); }
+      else if (now >= st.fuelEnd) { st.fuelEnd = 0; if (me.fuel > 0) { me.fuel--; v.fuel = Math.min(100, v.fuel + 60); audio.pickup(); hud.toast('Bensin terisi'); } }
+    }
+    if (driver) { // peringatan bensin (sekali per keadaan)
+      const fs = v.fuel <= 0 ? 2 : v.fuel < 15 ? 1 : 0;
+      if (fs !== st.fuelWarn || st.fuelWarnV !== v) {
+        if (fs === 2) hud.message('Bensin habis', me.fuel > 0 ? 'Tekan B untuk mengisi dari jeriken' : 'Cari jeriken bensin atau tinggalkan kendaraan', 'warn');
+        else if (fs === 1 && (st.fuelWarnV !== v || st.fuelWarn === 0)) hud.flash('Bensin hampir habis');
+        st.fuelWarn = fs; st.fuelWarnV = v;
+      }
+    }
     if (st.reloadEnd && now >= st.reloadEnd) { // isi ulang selesai (sama seperti di darat)
       const wi = st.reloadFor, def = wi && WEAPONS[wi.kind];
       if (def && wi === (w && w.inst)) { const got = Math.min(def.mag - wi.mag, me.ammo[def.ammo]); wi.mag += got; me.ammo[def.ammo] -= got; }

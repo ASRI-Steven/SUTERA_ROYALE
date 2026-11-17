@@ -69,6 +69,10 @@ export function createNades(ctx) {
   function blast(n) {
     const p = n.p;
     explode(p.x, -p.z, p.y + 0.25, n.def.r, n.def.dmg, n.owner, null);
+    boomFx(p);
+  }
+  // efek ledakan saja (bola api, asap, bunyi) di titik p — dipakai juga untuk jeriken bensin yang meledak
+  function boomFx(p) {
     // bola api: inti HDR (jauh di atas ambang bloom) yang cepat padam + lidah api jingga di sekelilingnya
     if (fx.flash) fx.flash({ x: p.x, y: p.y + 0.6, z: p.z }, 7, 0.14, 14, 9, 4);
     for (let i = 0; i < 40; i++) { const k = i < 12 ? 5.5 : 1.7; glow.emit(p.x + (Math.random() - 0.5), p.y + 0.3 + Math.random() * 0.8, p.z + (Math.random() - 0.5), (Math.random() - 0.5) * 12, Math.random() * 9 + 2, (Math.random() - 0.5) * 12, 2 + Math.random() * 2.5, 0.4, (i < 12 ? 0.16 : 0.3) + Math.random() * 0.35, k, k * (0.55 + Math.random() * 0.25), k * 0.2, 1); }
@@ -162,5 +166,5 @@ export function createNades(ctx) {
     glow.update(dt);
   }
 
-  return { throwNade, update, aim, lob, smokeBlocks, get active() { return list.length; }, get clouds() { return clouds; } };
+  return { throwNade, update, aim, lob, smokeBlocks, boomFx, get active() { return list.length; }, get clouds() { return clouds; } };
 }

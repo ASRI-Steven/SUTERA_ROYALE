@@ -14,7 +14,7 @@ import { makeMapImage, BigMap } from '../map/mapview.js';
 import { WEAPONS, createEffects, spreadDir, falloff } from './weapons.js';
 import { createZone } from './zone.js';
 import { createBorder } from './border.js';
-import { createLoot, bagWeight, bagCap } from './loot.js';
+import { createLoot, bagWeight, bagCap, armorHp, armorPct } from './loot.js';
 import { createBots, DIFFICULTY } from './bots.js';
 import { createPlayer } from './player.js';
 import { createHud } from './hud.js';
@@ -149,7 +149,7 @@ function start(D, realAssets) {
   vehicles.spawnAll();
   const makeAgent = (name, isPlayer) => ({
     name, isPlayer, alive: true, state: 'plane', pos: new THREE.Vector3(0, ALT, 0), vel: new THREE.Vector2(), yaw: 0, vy: 0, grounded: false, crouch: false,
-    hp: 100, vest: 0, helmet: 0, bag: 0, weapons: [null, null, null], cur: -1, ammo: { light: 0, rifle: 0, shell: 0, sniper: 0, magnum: 0 }, heals: { band: 0, kit: 0, drink: 0 }, boost: 0, nades: { frag: 0, smoke: 0 },
+    hp: 100, vest: 0, helmet: 0, bag: 0, weapons: [null, null, null], cur: -1, ammo: { light: 0, rifle: 0, shell: 0, sniper: 0, magnum: 0 }, heals: { band: 0, kit: 0, drink: 0 }, boost: 0, fuel: 0, nades: { frag: 0, smoke: 0 },
     kills: 0, dmg: 0, lastShot: 0, reloadEnd: 0, healEnd: 0, moveSpeed: 0, moveYaw: 0, pose: {},
     team: 0, sq: null, slot: 0, down: false, downN: 0, reviveT: 0, reviver: null, reviving: null, // regu & tumbang/pulih
   });
@@ -219,6 +219,7 @@ function start(D, realAssets) {
       const hit = hitAgents(shooter, origin, d, tw);
       const vh = vehicles.ray(origin, d, hit ? hit.t : tw, shooter);
       end.copy(origin).addScaledVector(d, vh ? vh.t : hit ? hit.t : tw);
+      if (loot.cans.length) shootCans(origin, d, vh ? vh.t : hit ? hit.t : tw, shooter);
       if (i % 3 === 0) fx.tracer(tracerFrom || (shooter.isPlayer ? origin : gunTip), end, shooter.isPlayer ? 1 : 0.85);
       if (vh) { // kendaraan: pengendara/penumpang motor & jip terbuka kena langsung, kaca mobil kadang tembus ke yang duduk di dekatnya
         const dm = def.dmg * falloff(def, vh.t), drv = vh.who;
@@ -235,12 +236,53 @@ function start(D, realAssets) {
       } else if (tw < def.maxRange) fx.burst(end, rayOut.b === -1 ? 'dust' : 'wall', 6);
     }
   }
+  // ---------- Jeriken bensin di tanah: kena CAN_HITS peluru → meledak (ledakan berantai ke jeriken di dekatnya) ----------
+  const CAN_HITS = 3, CAN_R2 = 0.36 * 0.36, canP = new THREE.Vector3();
+  function shootCans(o, d, maxT, shooter) {
+    let best = null, bt = maxT;
+    for (const it of loot.cans) {
+      const cx = it.x - o.x, cy = (it.z || 0) + 0.22 - o.y, cz = -it.y - o.z, t = cx * d.x + cy * d.y + cz * d.z;
+      if (t < 0 || t > bt) continue;
+      if (cx * cx + cy * cy + cz * cz - t * t < CAN_R2) { best = it; bt = t; }
+    }
+    if (!best) return;
+    best.hits = (best.hits || 0) + 1;
+    canP.copy(o).addScaledVector(d, bt);
+    fx.burst(canP, 'spark', 6);
+    if (best.hits >= CAN_HITS) blowCan(best, shooter);
+  }
+  let canChain = 0; // kedalaman ledakan berantai (dibatasi supaya tumpukan jeriken tidak meledak tanpa akhir dalam satu frame)
+  function blowCan(it, attacker) {
+    if (!it.alive || canChain > 16) return;
+    loot.remove(it);
+    const x = it.x, y = it.y, h = (it.z || 0) + 0.3;
+    nades.boomFx(canP.set(x, h, -y).clone());
+    canChain++;
+    explode(x, y, h, 6.5, 120, attacker, null); // explode() ikut memicu jeriken lain di dekatnya (berantai)
+    canChain--;
+  }
+  // ledakan apa pun (granat, kendaraan, jeriken lain) memicu jeriken di tanah dalam 70 % jari-jarinya, kalau tidak terhalang gedung
+  function blastCans(x, y, h, R, attacker) {
+    if (!loot.cans.length) return;
+    const r = R * 0.7;
+    for (const o of loot.cans.slice()) {
+      if (!o.alive) continue;
+      const oz = (o.z || 0) + 0.3;
+      if (Math.hypot(o.x - x, o.y - y, oz - h) > r || !col.los(x, y, h + 0.6, o.x, o.y, oz)) continue;
+      blowCan(o, attacker);
+    }
+  }
   function damage(t, amount, part, attacker, w) {
     if (!t.alive || phase === 'end' && t.isPlayer) return;
     if (attacker && attacker !== t && attacker.team === t.team) return; // tanpa tembak kawan (peluru, granat, kendaraan); granat sendiri tetap melukai diri
     let dmg = amount;
-    if (part === 'head' && t.helmet) dmg *= [1, 0.7, 0.6, 0.45][t.helmet];
-    if (part === 'body' && t.vest) dmg *= [1, 0.7, 0.6, 0.45][t.vest];
+    const ak = part === 'head' ? 'helmet' : part === 'body' ? 'vest' : null;
+    if (ak && t[ak]) { // pelindung menahan sebagian kerusakan dan ikut rusak; daya tahan habis → hancur
+      dmg *= [1, 0.7, 0.6, 0.45][t[ak]];
+      const left = armorHp(t, ak) - amount;
+      if (left <= 0) { t[ak] = 0; t[ak + 'Hp'] = undefined; if (t.isPlayer) hud.flash(ak === 'vest' ? 'Rompi hancur' : 'Helm hancur'); }
+      else t[ak + 'Hp'] = left;
+    }
     if (attacker && !attacker.isPlayer && part !== 'blast' && part !== 'run') dmg *= t.isPlayer ? DIFFICULTY[diff].dmgToPlayer : 0.5; // antar-bot dilunakkan supaya ronde tidak cepat habis
     if (t.down && part !== 'bleed') dmg *= 0.6; // yang tumbang lebih tahan (perlu beberapa tembakan untuk menghabisi)
     t.hp -= dmg;
@@ -322,6 +364,7 @@ function start(D, realAssets) {
       damage(a, maxDmg * Math.pow(1 - d / R, 0.7), 'blast', attacker, w);
     }
     for (const v of vehicles.list) if (v !== src) { const d = Math.hypot(v.x - x, v.y - y); if (d < R) vehicles.hit(v, 650 * (1 - d / R), attacker, 'blast'); }
+    blastCans(x, y, h, R, attacker);
     const dc = Math.hypot(camera.position.x - x, camera.position.z - bz);
     if (dc < 70) player.shake(1.3 * (1 - dc / 70));
   }
@@ -342,8 +385,8 @@ function start(D, realAssets) {
     if (!t.isPlayer && attacker !== me && t.team !== me.team && ((t.hitByMe && now - t.hitByMe < 12) || finisher === me)) stat.assists++;
     aliveCount--;
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
-    const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, bag: t.bag | 0 };
-    if (c.bag || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
+    const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, vestHp: t.vestHp, helmetHp: t.helmetHp, bag: t.bag | 0, fuel: t.fuel | 0 };
+    if (c.bag || c.fuel || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
     if (attacker && attacker.isPlayer) audio.kill(); // spanduk kill pemain ditampilkan hud.feed
     // regu: anggota terakhir yang berdiri jatuh → yang tumbang ikut tersingkir; regu habis → peringkat regu
     const sq = t.sq;
@@ -789,14 +832,14 @@ function start(D, realAssets) {
           squads: squadsLeft, squad: squadRows(), spec: spec && !me.alive ? spec.name : '', specSlot: spec ? spec.slot : 0,
           down: me.down && me.alive ? me.hp / DOWN_HP : -1, downLeft: me.down ? me.hp / Math.max(0.01, me.bleed) : 0,
           revive: rv ? rv.reviveT / REVIVE_T : rb ? me.reviveT / REVIVE_T : 0, reviveLeft: rv ? REVIVE_T - rv.reviveT : rb ? REVIVE_T - me.reviveT : 0, reviveName: rv ? rv.name : rb ? rb.name : '', reviveBy: !!rb,
-          state: me.state, place: placeName, alive: aliveCount, kills: me.kills, hp: me.hp, vest: me.vest, helmet: me.helmet, band: me.heals.band, kit: me.heals.kit, drink: me.heals.drink | 0, boost: me.boost || 0, bag: me.bag | 0, bagPct: bagWeight(me) / bagCap(me) * 100,
+          state: me.state, place: placeName, alive: aliveCount, kills: me.kills, hp: me.hp, vest: me.vest, helmet: me.helmet, vestPct: armorPct('vest', me.vest, me.vestHp), helmPct: armorPct('helmet', me.helmet, me.helmetHp), band: me.heals.band, kit: me.heals.kit, drink: me.heals.drink | 0, boost: me.boost || 0, bag: me.bag | 0, bagPct: bagWeight(me) / bagCap(me) * 100,
           weapons: me.weapons, cur: me.cur, ammo: me.ammo, nades: me.nades, nadeSel: pst.nadeSel, nadeHold: !!pst.nade, zone, outside: me.state === 'ground' ? zone.outside(me.pos.x, -me.pos.z) : -1,
           reload: pst.reloadEnd && w ? Math.max(0.01, 1 - (pst.reloadEnd - now) / w.def.reload) : 0, reloadLeft: pst.reloadEnd ? pst.reloadEnd - now : 0, // isi ulang: 0 = tidak, >0 = kemajuan
           heal: pst.healEnd ? pst.healKind : '', healK: pst.healEnd ? 1 - (pst.healEnd - now) / (pst.healDur || 3.5) : 0, healLeft: pst.healEnd ? pst.healEnd - now : 0,
           breath: pst.swim && (pst.dive || pst.breath < 0.999) ? pst.breath : -1, // napas saat menyelam (−1 = tidak ditampilkan)
           prompt: me.state === 'ground' && me.alive && !me.down ? pst.prompt : null, vehArmed: vArmed,
           hidden: me.state === 'ground' && (me.prone || me.crouch) && grass.at(me.pos.x, -me.pos.z) > 0.35 ? (me.prone ? 'prone' : 'crouch') : '',
-          veh: mv ? { name: mv.def.name, kmh: Math.round(Math.abs(mv.speed) * 3.6), max: mv.def.maxSpeed * 3.6, hp: mv.hp, hpMax: mv.def.hp, boost: pst.sprint && mv.driver === me && mv.input.throttle > 0, burning: !mv.alive, seat: me.seat, occ: mv.occ, seats: mv.tpl.seats, cz: mv.cz, L: mv.L, W: mv.W } : null,
+          veh: mv ? { fuel: mv.fuel, fueling: pst.fuelEnd ? Math.max(0, Math.min(1, 1 - (pst.fuelEnd - now) / 3)) : 0, cans: me.fuel | 0, name: mv.def.name, kmh: Math.round(Math.abs(mv.speed) * 3.6), max: mv.def.maxSpeed * 3.6, hp: mv.hp, hpMax: mv.def.hp, boost: pst.sprint && mv.driver === me && mv.input.throttle > 0, burning: !mv.alive, seat: me.seat, occ: mv.occ, seats: mv.tpl.seats, cz: mv.cz, L: mv.L, W: mv.W } : null,
           pins: F.state === 'ground' || F.state === 'drive' ? matePins(vehicles.pins(F.pos.x, -F.pos.z, 260, F.vehicle)) : matePins([]),
           planeT: flight ? flight.t : 0, planeOpen: flight ? flight.open : 0, planeClose: flight ? flight.close : 0, alt: me.pos.y,
           x: F.pos.x, y: -F.pos.z, heading: pst.yaw, mapRange: F.state === 'ground' ? 240 : F.state === 'drive' ? 380 : F.state === 'dead' ? 240 : 900, circles: zoneCircles(), marks: waypoint ? [{ ...waypoint, color: '#D29F52' }] : [],

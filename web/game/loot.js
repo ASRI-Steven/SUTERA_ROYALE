@@ -48,6 +48,7 @@ export const ITEMS = {
   v1: { kind: 'vest', lvl: 1, rar: 0, name: 'Rompi lv.1' }, v2: { kind: 'vest', lvl: 2, rar: 1, name: 'Rompi lv.2' }, v3: { kind: 'vest', lvl: 3, rar: 3, name: 'Rompi lv.3' },
   m1: { kind: 'helmet', lvl: 1, rar: 0, name: 'Helm lv.1' }, m2: { kind: 'helmet', lvl: 2, rar: 1, name: 'Helm lv.2' }, m3: { kind: 'helmet', lvl: 3, rar: 3, name: 'Helm lv.3' },
   b1: { kind: 'bag', lvl: 1, rar: 0, name: 'Tas lv.1' }, b2: { kind: 'bag', lvl: 2, rar: 1, name: 'Tas lv.2' }, b3: { kind: 'bag', lvl: 3, rar: 3, name: 'Tas lv.3' },
+  jerry: { kind: 'fuel', rar: 1, name: 'Jeriken bensin' }, // isi bensin kendaraan (B) · di tanah: meledak setelah kena 3 peluru
   crate: { kind: 'crate', rar: 2, name: 'Peti jarahan' },
 };
 for (const [k, v] of Object.entries(ITEMS)) if (v.kind === 'weapon') v.name = WEAPONS[v.w].name;
@@ -57,12 +58,13 @@ export const NADE_CAP = 3;
 // Yang masuk tas: peluru, penyembuh, granat. Senjata, rompi, helm, dan tas itu sendiri dipakai di badan (tidak berbobot).
 // Kapasitas: tanpa tas 100, tas lv.1 200, lv.2 300, lv.3 400. Bot tidak memakai sistem ini (tetap batas per jenis).
 export const BAG_CAP = [100, 200, 300, 400];
-export const ITEM_W = { ammo: { light: 0.4, rifle: 0.5, shell: 1.2, sniper: 1.5, magnum: 0.8 }, heal: { band: 2, kit: 10, drink: 4 }, nade: { frag: 12, smoke: 10 } };
+export const ITEM_W = { ammo: { light: 0.4, rifle: 0.5, shell: 1.2, sniper: 1.5, magnum: 0.8 }, heal: { band: 2, kit: 10, drink: 4 }, nade: { frag: 12, smoke: 10 }, fuel: 15 };
 export function bagWeight(a) {
   let w = 0;
   for (const k of Object.keys(a.ammo || {})) w += (a.ammo[k] || 0) * (ITEM_W.ammo[k] || 0.5);
   for (const k of Object.keys(a.heals || {})) w += (a.heals[k] || 0) * (ITEM_W.heal[k] || 2);
   for (const k of Object.keys(a.nades || {})) w += (a.nades[k] || 0) * (ITEM_W.nade[k] || 10);
+  w += (a.fuel || 0) * ITEM_W.fuel;
   return w;
 }
 export const bagCap = (a) => BAG_CAP[Math.max(0, Math.min(3, a.bag | 0))];
@@ -89,6 +91,7 @@ function itemGeo(type) {
   if (it.kind === 'ammo') { const c = { light: '#c9a227', rifle: '#5f8f3a', shell: '#b0342b', sniper: '#3a3f2c', magnum: '#8a5a2a' }[it.ammo]; return colored([[box(0.24, 0.13, 0.16), c], [box(0.245, 0.03, 0.165, 0.1), it.ammo === 'sniper' ? '#D29F52' : '#2a2a2a']]); }
   if (it.kind === 'nade') return gunGeometry(it.nade).scale(1.6, 1.6, 1.6).rotateX(Math.PI / 2).translate(0, 0.055, 0); // granat Blender, rebah
   if (type === 'h_band') return colored([[new THREE.CylinderGeometry(0.06, 0.06, 0.1, 14).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#efe6d6'], [new THREE.CylinderGeometry(0.03, 0.03, 0.102, 10).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#c8bda8']]);
+  if (type === 'jerry') return colored([[box(0.3, 0.36, 0.14), '#b5332a'], [box(0.31, 0.03, 0.145, 0.19), '#7d211b'], [box(0.12, 0.05, 0.04, 0.385, -0.04), '#2a2a2e'], [new THREE.CylinderGeometry(0.03, 0.03, 0.06, 10).translate(0.1, 0.39, 0), '#e0c040']]);
   if (type === 'h_drink') return colored([[new THREE.CylinderGeometry(0.045, 0.045, 0.17, 14).translate(0, 0.085, 0), '#2f7fd6'], [new THREE.CylinderGeometry(0.046, 0.046, 0.05, 14).translate(0, 0.085, 0), '#f2c14e'], [new THREE.CylinderGeometry(0.04, 0.045, 0.012, 14).translate(0, 0.176, 0), '#d9dde3']]);
   if (type === 'h_kit') return colored([[box(0.34, 0.14, 0.24), '#2f9b5a'], [box(0.18, 0.012, 0.05, 0.146), '#ffffff'], [box(0.05, 0.012, 0.18, 0.146), '#ffffff']]);
   if (it.kind === 'vest') { const c = ['#c9b48a', '#66704a', '#2f3136'][it.lvl - 1]; return colored([[box(0.46, 0.09, 0.5), c], [box(0.46, 0.02, 0.06, 0.1, 0, 0.12), '#1d1d1f'], [box(0.12, 0.03, 0.12, 0.11, 0.1, -0.08), '#1d1d1f']]); }
@@ -126,7 +129,7 @@ export function createLoot(scene, { D, col }) {
   rings.frustumCulled = false;
   rings.renderOrder = 6;
   scene.add(rings);
-  const items = [], grid = new Map();
+  const items = [], grid = new Map(), cans = []; // cans: jeriken bensin yang masih ada di tanah (dicek tiap tembakan)
   const key = (x, y) => (Math.floor(x / CELL) + 2048) * 4096 + (Math.floor(y / CELL) + 2048);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0), c = new THREE.Color();
   // isi ulang instans dengan barang hidup dalam radius VIS dari (x, y)
@@ -150,6 +153,7 @@ export function createLoot(scene, { D, col }) {
   function add(type, x, y, extra = {}) {
     const it = { id: items.length, type, def: ITEMS[type], x, y, z: 0, rot: Math.random() * Math.PI * 2, alive: true, ...extra }; // z = tinggi lantai
     items.push(it);
+    if (type === 'jerry') cans.push(it);
     const k = key(x, y);
     (grid.get(k) || grid.set(k, []).get(k)).push(it);
     touch(x, y);
@@ -158,6 +162,7 @@ export function createLoot(scene, { D, col }) {
   function remove(it) {
     if (!it.alive) return;
     it.alive = false;
+    if (it.type === 'jerry') { const ci = cans.indexOf(it); if (ci >= 0) cans.splice(ci, 1); }
     const arr = grid.get(key(it.x, it.y));
     if (arr) arr.splice(arr.indexOf(it), 1);
     touch(it.x, it.y);
@@ -176,7 +181,7 @@ export function createLoot(scene, { D, col }) {
     ['a_magnum', 3], ['a_sniper', 1.6], ['g_frag', 4], ['g_smoke', 3],
     ['a_light', 11], ['a_rifle', 11], ['a_shell', 6], ['h_band', 12], ['h_kit', 4], ['h_drink', 8],
     ['v1', 6], ['v2', 4], ['v3', 1.2], ['m1', 6], ['m2', 4], ['m3', 1.2],
-    ['b1', 7], ['b2', 4], ['b3', 1.5],
+    ['b1', 7], ['b2', 4], ['b3', 1.5], ['jerry', 5],
   ];
   const AMMO_FOR = { pistol: 'a_light', smg: 'a_light', shotgun: 'a_shell', ar: 'a_rifle', dmr: 'a_rifle', sniper: 'a_sniper', lmg: 'a_rifle', revolver: 'a_magnum', burst: 'a_rifle', pdw: 'a_light', dbs: 'a_shell' };
   function spot(x, y) { const f = col.findFree(x, y, 6, 0.35); return f; }
@@ -224,7 +229,7 @@ export function createLoot(scene, { D, col }) {
     }
   }
   return {
-    items, add, remove, near, AMMO_FOR,
+    items, cans, add, remove, near, AMMO_FOR,
     scatter,
     crate(x, y, contents, z = 0) { if (z > 0.5) return add('crate', x, y, { contents, z }); const sp = col.findFree(x, y, 8, 0.4) || [x, y]; return add('crate', sp[0], sp[1], { contents }); }, // z: mati di lantai atas
     // pulsa cincin cahaya barang; barang yang digambar diperbarui saat kamera pindah > 10 m atau barang di dekatnya berubah
@@ -236,6 +241,14 @@ export function createLoot(scene, { D, col }) {
 }
 
 // ---------- Inventaris (dipakai pemain & bot) ----------
+// Daya tahan pelindung: tiap peluru yang ditahan mengurangi daya tahan sebesar kerusakan mentahnya; habis → hancur.
+// agent.vestHp / agent.helmetHp (undefined = masih utuh); barang di tanah: it.hp; peti: contents.vestHp / helmetHp.
+export const ARMOR_HP = { vest: [0, 200, 220, 250], helmet: [0, 80, 150, 230] };
+export const armorMax = (kind, lvl) => ARMOR_HP[kind][lvl] || 0;
+export const armorHp = (a, kind) => (a[kind] ? a[kind + 'Hp'] ?? armorMax(kind, a[kind]) : 0);
+export const armorPct = (kind, lvl, hp) => (lvl ? Math.max(1, Math.round((hp ?? armorMax(kind, lvl)) / armorMax(kind, lvl) * 100)) : 0);
+const armorText = (kind, lvl, hp) => (kind === 'vest' ? 'Rompi lv.' : 'Helm lv.') + lvl + (armorPct(kind, lvl, hp) < 100 ? ' (' + armorPct(kind, lvl, hp) + '%)' : '');
+export { armorText };
 // agent: { weapons [slot0, slot1, pistol], cur, ammo {light,rifle,shell}, heals {band,kit}, vest, helmet }
 // opt.replaceSlot: slot yang diganti kalau dua slot utama penuh (pemain = senjata di tangan; bot = yang tier-nya lebih rendah)
 export function giveWeapon(agent, kind, opt = {}) {
@@ -267,9 +280,10 @@ export function applyItem(agent, it, opt = {}) { // → teks hasil atau null kal
     }
     if (d.kind === 'nade') { agent.nades ||= {}; if (bagFit(agent, ITEM_W.nade[d.nade] || 10) < 1) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
     if (d.kind === 'heal') { if (bagFit(agent, ITEM_W.heal[d.heal] || 2) < 1) return null; agent.heals[d.heal] = (agent.heals[d.heal] || 0) + 1; return { text: d.name }; }
-    if (d.kind === 'bag') { if ((agent.bag | 0) >= d.lvl) return null; agent.bag = d.lvl; return { text: d.name }; }
+    if (d.kind === 'bag') { const old = agent.bag | 0; if (old >= d.lvl) return null; agent.bag = d.lvl; return { text: d.name, swap: old ? { type: 'b' + old } : null }; } // tas lama jatuh ke tanah
+    if (d.kind === 'fuel') { if (bagFit(agent, ITEM_W.fuel) < 1) return null; agent.fuel = (agent.fuel || 0) + 1; return { text: d.name }; }
   }
-  if (d.kind === 'bag') return null; // bot tidak memakai tas
+  if (d.kind === 'bag' || d.kind === 'fuel') return null; // bot tidak memakai tas / jeriken
   if (d.kind === 'ammo') { agent.ammo[d.ammo] = Math.min(AMMO_CAP[d.ammo] || 300, (agent.ammo[d.ammo] || 0) + (it.n || d.n)); return { text: it.name || d.name }; } // it.n / it.name: peluru yang dibuang pemain (jumlah bisa kurang dari satu pak)
   if (d.kind === 'nade') { agent.nades ||= {}; if ((agent.nades[d.nade] || 0) >= NADE_CAP) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
   if (d.kind === 'heal') {
@@ -280,17 +294,19 @@ export function applyItem(agent, it, opt = {}) { // → teks hasil atau null kal
     return { text: d.name };
   }
   if (d.kind === 'vest' || d.kind === 'helmet') {
-    if (agent[d.kind] >= d.lvl) return null;
-    agent[d.kind] = d.lvl;
-    return { text: d.name };
+    // ambil kalau tingkatnya lebih tinggi, atau setingkat tapi lebih utuh; yang lama jatuh ke tanah dengan sisa daya tahannya
+    const k = d.kind, hp = it.hp ?? armorMax(k, d.lvl), cur = agent[k] | 0, curHp = armorHp(agent, k);
+    if (cur > d.lvl || (cur === d.lvl && curHp >= hp)) return null;
+    agent[k] = d.lvl; agent[k + 'Hp'] = hp;
+    return { text: armorText(k, d.lvl, hp), swap: cur ? { type: (k === 'vest' ? 'v' : 'm') + cur, hp: curHp } : null };
   }
   if (d.kind === 'crate') {
     const c = it.contents, got = [];
     for (const k of Object.keys(AMMO_TXT)) if (c.ammo[k]) { agent.ammo[k] = Math.min(AMMO_CAP[k] || 300, (agent.ammo[k] || 0) + c.ammo[k]); got.push(AMMO_TXT[k]); c.ammo[k] = 0; }
     if (c.nades) for (const k of Object.keys(NADES)) while (c.nades[k] > 0 && (agent.nades[k] || 0) < NADE_CAP) { agent.nades[k] = (agent.nades[k] || 0) + 1; c.nades[k]--; got.push(NADES[k].short.toLowerCase()); }
     for (const k of ['band', 'kit']) while (c.heals[k] > 0 && agent.heals[k] < (k === 'kit' ? 3 : 10)) { agent.heals[k]++; c.heals[k]--; got.push(k === 'kit' ? 'P3K' : 'perban'); }
-    if (c.vest > agent.vest) { agent.vest = c.vest; got.push('rompi lv.' + c.vest); }
-    if (c.helmet > agent.helmet) { agent.helmet = c.helmet; got.push('helm lv.' + c.helmet); }
+    if (c.vest > agent.vest) { agent.vest = c.vest; agent.vestHp = c.vestHp; got.push('rompi lv.' + c.vest); }
+    if (c.helmet > agent.helmet) { agent.helmet = c.helmet; agent.helmetHp = c.helmetHp; got.push('helm lv.' + c.helmet); }
     c.weapons = c.weapons.filter((wk) => {
       const empty = WEAPONS[wk].slot === 2 ? !agent.weapons[2] : !agent.weapons[0] || !agent.weapons[1];
       const better = WEAPONS[wk].slot !== 2 && agent.weapons[0] && agent.weapons[1] && Math.min(TIER[agent.weapons[0].kind], TIER[agent.weapons[1].kind]) < TIER[wk];
@@ -311,9 +327,10 @@ export function crateEntries(c) {
   for (const k of Object.keys(AMMO_TXT)) if (c.ammo[k] > 0) L.push({ t: 'ammo', k, text: AMMO_TXT[k][0].toUpperCase() + AMMO_TXT[k].slice(1) + ' ×' + c.ammo[k] });
   if (c.nades) for (const k of Object.keys(NADES)) if (c.nades[k] > 0) L.push({ t: 'nade', k, text: NADES[k].name + ' ×' + c.nades[k] });
   for (const k of ['band', 'kit', 'drink']) if (c.heals[k] > 0) L.push({ t: 'heal', k, text: (k === 'kit' ? 'P3K' : k === 'drink' ? 'Minuman energi' : 'Perban') + ' ×' + c.heals[k] });
-  if (c.vest) L.push({ t: 'vest', k: c.vest, text: 'Rompi lv.' + c.vest });
-  if (c.helmet) L.push({ t: 'helmet', k: c.helmet, text: 'Helm lv.' + c.helmet });
+  if (c.vest) L.push({ t: 'vest', k: c.vest, text: armorText('vest', c.vest, c.vestHp) });
+  if (c.helmet) L.push({ t: 'helmet', k: c.helmet, text: armorText('helmet', c.helmet, c.helmetHp) });
   if (c.bag) L.push({ t: 'bag', k: c.bag, text: 'Tas lv.' + c.bag });
+  if (c.fuel > 0) L.push({ t: 'fuel', k: 'jerry', text: 'Jeriken bensin ×' + c.fuel });
   return L;
 }
 // ambil satu baris isi peti → { text, slot, dropped } atau null (tas penuh / sudah lebih baik); rompi/helm ditukar
@@ -326,11 +343,17 @@ export function takeCrateEntry(agent, c, e, opt = {}) {
     dst[e.k] = (dst[e.k] || 0) + n; src[e.k] -= n;
     return { text: (e.t === 'ammo' ? AMMO_TXT[e.k] : e.t === 'nade' ? NADES[e.k].name.toLowerCase() : e.k === 'kit' ? 'P3K' : e.k === 'drink' ? 'minuman energi' : 'perban') + ' ×' + n };
   }
+  if (e.t === 'fuel') { if (!agent.isPlayer) return null; const n = Math.min(bagFit(agent, ITEM_W.fuel), c.fuel || 0); if (n <= 0) return null; agent.fuel = (agent.fuel || 0) + n; c.fuel -= n; return { text: 'jeriken bensin ×' + n }; }
   if (e.t === 'bag') { if (!agent.isPlayer || (agent.bag | 0) >= c.bag) return null; const old = agent.bag | 0; agent.bag = c.bag; c.bag = old; return { text: 'tas lv.' + agent.bag }; }
   if (e.t === 'ammo') { const n = Math.min((AMMO_CAP[e.k] || 300) - (agent.ammo[e.k] || 0), c.ammo[e.k]); if (n <= 0) return null; agent.ammo[e.k] = (agent.ammo[e.k] || 0) + n; c.ammo[e.k] -= n; return { text: AMMO_TXT[e.k] + ' ×' + n }; }
   if (e.t === 'nade') { const n = Math.min(NADE_CAP - (agent.nades[e.k] || 0), c.nades[e.k]); if (n <= 0) return null; agent.nades[e.k] = (agent.nades[e.k] || 0) + n; c.nades[e.k] -= n; return { text: NADES[e.k].name.toLowerCase() + ' ×' + n }; }
   if (e.t === 'heal') { const n = Math.min((e.k === 'kit' ? 3 : 10) - agent.heals[e.k], c.heals[e.k]); if (n <= 0) return null; agent.heals[e.k] += n; c.heals[e.k] -= n; return { text: (e.k === 'kit' ? 'P3K' : 'perban') + ' ×' + n }; }
-  if (e.t === 'vest' || e.t === 'helmet') { if (agent[e.t] >= c[e.t]) return null; const old = agent[e.t]; agent[e.t] = c[e.t]; c[e.t] = old; return { text: (e.t === 'vest' ? 'rompi' : 'helm') + ' lv.' + agent[e.t] }; }
+  if (e.t === 'vest' || e.t === 'helmet') { // tukar dengan isi peti (yang lama, beserta sisa daya tahannya, masuk ke peti)
+    const k = e.t, h = k + 'Hp', cHp = c[h] ?? armorMax(k, c[k]), old = agent[k] | 0, oldHp = armorHp(agent, k);
+    if (old > c[k] || (old === c[k] && oldHp >= cHp)) return null;
+    agent[k] = c[k]; agent[h] = cHp; c[k] = old; c[h] = old ? oldHp : undefined;
+    return { text: armorText(k, agent[k], cHp).toLowerCase() };
+  }
   return null;
 }
-export const crateEmpty = (c) => !c.weapons.length && !Object.values(c.ammo).some((v) => v > 0) && !(c.nades && Object.values(c.nades).some((v) => v > 0)) && !c.heals.band && !c.heals.kit && !c.heals.drink && !c.vest && !c.helmet && !c.bag;
+export const crateEmpty = (c) => !c.weapons.length && !Object.values(c.ammo).some((v) => v > 0) && !(c.nades && Object.values(c.nades).some((v) => v > 0)) && !c.heals.band && !c.heals.kit && !c.heals.drink && !c.vest && !c.helmet && !c.bag && !c.fuel;

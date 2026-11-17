@@ -29,6 +29,7 @@ const GLYPHS = {
   helm: '<path d="M4 13.5C4 8.3 7.6 4.6 12 4.6s8 3.7 8 8.9v2.2H4z"/><path d="M6.2 16.8h1.7c.3 2 1.8 3.2 4.1 3.2s3.8-1.2 4.1-3.2h1.7c-.3 3-2.5 4.9-5.8 4.9s-5.5-1.9-5.8-4.9z" opacity=".6"/>',
   vest: '<path fill-rule="evenodd" d="M7.2 3.2h2.3c.4 1.4 1.3 2.2 2.5 2.2s2.1-.8 2.5-2.2h2.3l2.7 3.4-1.2 2.2v9.9c0 .9-.7 1.6-1.6 1.6H7.3c-.9 0-1.6-.7-1.6-1.6V8.8L4.5 6.6zM11.55 7.6v12.7h.9V7.6zM7.4 10.3v1.3h2.9v-1.3zm6.3 0v1.300h2.900v-1.300zm0 3.500v3.400h2.900v-3.400z"/>',
   band: '<g transform="rotate(-45 12 12)"><path fill-rule="evenodd" d="M4.5 8h15a3.5 3.5 0 0 1 3.500 3.500v1a3.500 3.500 0 0 1-3.500 3.500h-15A3.500 3.500 0 0 1 1 12.500v-1A3.500 3.500 0 0 1 4.500 8zm4.700 1.500v5h5.600v-5z"/><rect x="9.200" y="9.500" width="5.600" height="5" opacity=".5"/></g>',
+  fuel: '<path fill-rule="evenodd" d="M5 4.5c0-.8.7-1.500 1.500-1.500h6c.8 0 1.500.7 1.500 1.500V11h1.200c1 0 1.800.8 1.800 1.800v4.400a.9.9 0 0 0 1.800 0V9.600l-1.900-1.900 1.100-1.100 2.300 2.300c.3.300.5.700.5 1.100v7.200a2.700 2.700 0 0 1-5.400 0v-4.400h-1.400V21H5zm2 1.500V10h5V6z"/>',
   bag: '<path fill-rule="evenodd" d="M9 3.5h6c.8 0 1.500.7 1.500 1.500v1.200c1.700.5 3 2.100 3 4v8.300c0 1.100-.9 2-2 2h-11c-1.100 0-2-.9-2-2v-8.300c0-1.900 1.300-3.500 3-4V5c0-.8.7-1.500 1.500-1.500zm.5 2v.5h5v-.5zm-2 8v4h9v-4z"/>',
   drink: '<path d="M8.5 2.5h7l1 3.2v14.1c0 1-.8 1.7-1.7 1.7H9.200c-1 0-1.700-.8-1.700-1.700V5.700z"/>',
   kit: '<path fill-rule="evenodd" d="M9 4.5h6c.8 0 1.5.7 1.5 1.5v1.500h2.300c1 0 1.700.800 1.700 1.700v8.600c0 1-.700 1.700-1.700 1.700H5.200c-1 0-1.700-.700-1.700-1.700V9.200c0-.900.700-1.700 1.700-1.700h2.300V6c0-.800.700-1.500 1.500-1.500zm.300 1.800v1.200h5.400V6.300zm1.500 4.400v1.900H8.900V15h1.900v1.900h2.400V15h1.900v-2.400h-1.900v-1.900z"/>',
@@ -63,8 +64,8 @@ const EMPTY = ['Senjata utama', 'Senjata utama', 'Pistol', 'Granat'];
 const modeOf = (d) => (d.bolt ? 'BOLT' : d.burst ? 'SEMBUR ' + d.burst : d.auto ? 'AUTO' : d.pellets ? (d.mag <= 2 ? 'GANDA' : 'POMPA') : 'SEMI');
 const NADE_KEYS = Object.keys(NADES);
 const VEH_KEYS = {
-  drv: '<kbd>F</kbd> turun <kbd>Spasi</kbd> rem tangan <kbd>Shift</kbd> boost <kbd>H</kbd> klakson <kbd>V</kbd> kamera · klik kiri: pistol/SMG',
-  pass: '<kbd>F</kbd> turun · klik kiri tembak · klik kanan bidik <kbd>R</kbd> isi ulang <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> senjata <kbd>V</kbd> kamera',
+  drv: '<kbd>F</kbd> turun <kbd>Spasi</kbd> rem tangan <kbd>Shift</kbd> boost <kbd>B</kbd> isi bensin <kbd>H</kbd> klakson <kbd>V</kbd> kamera · klik kiri: pistol/SMG',
+  pass: '<kbd>F</kbd> turun <kbd>B</kbd> isi bensin · klik kiri tembak · klik kanan bidik <kbd>R</kbd> isi ulang <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> senjata <kbd>V</kbd> kamera',
 };
 const WHY = { zone: 'tersingkir di luar zona', fall: 'jatuh dari kendaraan', crash: 'tewas dalam tabrakan', blast: 'terkena ledakan', run: 'tertabrak kendaraan', drown: 'tenggelam' };
 const WHY_IC = { zone: 'zone', fall: 'fall', crash: 'veh', blast: 'blast', run: 'veh', drown: 'drown' };
@@ -140,6 +141,7 @@ const TEMPLATE = SPRITE + `
   <div class="hv-info">
     <div class="hv-head"><span data-h="vehName"></span><em data-h="vehRole"></em></div>
     <div class="hv-hp">${ic('veh')}<div class="hv-bar"><i data-h="vehHp"></i></div><b data-h="vehHpT"></b></div>
+    <div class="hv-hp hv-fuel" data-h="vehFuelBox" title="Bensin">${ic('fuel')}<div class="hv-bar"><i data-h="vehFuel"></i></div><b data-h="vehFuelT"></b></div>
     <div class="hv-keys" data-h="vehKeys"></div>
   </div>
   <div class="hv-seats" data-h="vehSeats"></div>
@@ -365,7 +367,7 @@ export function createHud() {
       const gun = (g) => (g.type ? `<div class="lp-gun lp-drop" data-drop="w:${g.slot}" title="Klik kanan untuk membuang"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small></div></div>`
         : `<div class="lp-gun lp-empty"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span><small>${g.slot === 2 ? 'Slot pistol kosong' : 'Slot senjata kosong'}</small></div>`);
       const bag = (it) => `<div class="lp-item lp-drop" data-drop="${esc(it.type)}" title="${esc(it.name)} — klik kanan untuk membuang">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
-      const gear = (g) => `<div class="lp-item lp-gear${g.type ? '' : ' lp-empty'}">${img(g.type)}<small>${esc(g.name)}</small></div>`;
+      const gear = (g) => `<div class="lp-item lp-gear${g.type ? ' lp-drop' : ' lp-empty'}"${g.type ? ` data-drop="${esc(g.type)}" title="${esc(g.name)} — klik kanan untuk membuang"` : ''}>${img(g.type)}<small>${esc(g.name)}</small></div>`;
       const card = (it, i) => `<button type="button" class="lp-card" data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
       lpEl.innerHTML = `<div class="lp-box">
         <section class="lp-col lp-inv"><h3>Inventaris</h3>${model.guns.map(gun).join('')}<div class="lp-row">${model.gear.map(gear).join('')}</div>
@@ -519,8 +521,8 @@ export function createHud() {
         set('breathS', v <= 0 ? 2 : v <= 12 ? 1 : 0, (k) => { el.breath.className = 'h-breath' + (k === 2 ? ' out' : k === 1 ? ' low' : ''); el.breathT.textContent = k === 2 ? 'Kehabisan napas! Naik (Spasi)' : 'Napas'; });
       });
       // ---- pelindung & obat ----
-      set('helm', s.helmet | 0, (v) => { el.helm.className = 'ha' + (v ? ' on lv' + v : ''); el.helm.children[1].textContent = v ? 'Lv' + v : ''; });
-      set('vest', s.vest | 0, (v) => { el.vest.className = 'ha' + (v ? ' on lv' + v : ''); el.vest.children[1].textContent = v ? 'Lv' + v : ''; });
+      // tingkat + sisa daya tahan (persen hanya tampil kalau sudah rusak)
+      for (const [k, lv, pc] of [['helm', s.helmet | 0, s.helmPct], ['vest', s.vest | 0, s.vestPct]]) set(k, lv + '|' + (pc | 0), () => { el[k].className = 'ha' + (lv ? ' on lv' + lv : '') + (lv && pc <= 30 ? ' worn' : ''); el[k].children[1].textContent = lv ? 'Lv' + lv + (pc < 100 ? ' ' + (pc | 0) + '%' : '') : ''; });
       set('band', s.band | 0, (v) => { el.bandN.textContent = v; el.band.classList.toggle('on', v > 0); });
       set('kit', s.kit | 0, (v) => { el.kitN.textContent = v; el.kit.classList.toggle('on', v > 0); });
       set('bagPct', Math.max(0, Math.min(100, Math.round(s.bagPct || 0))), (v) => { el.bagN.textContent = v + '%'; el.bagP.style.transform = 'scaleY(' + v / 100 + ')'; el.bag.classList.toggle('full', v >= 100); el.bag.classList.toggle('high', v >= 80 && v < 100); });
@@ -614,6 +616,15 @@ export function createHud() {
         const hpk = Math.max(0, Math.round(v.hp / v.hpMax * 100));
         set('vehHp', hpk + (v.burning ? 'b' : ''), () => { el.vehHp.style.transform = 'scaleX(' + hpk / 100 + ')'; el.vehHp.className = v.burning || hpk <= 25 ? 'low' : hpk <= 50 ? 'mid' : ''; el.vehHpT.textContent = hpk + '%'; el.veh.classList.toggle('burning', !!v.burning); });
         set('vehBoost', !!v.boost, (b) => { el.veh.classList.toggle('boost', b); });
+        { // bensin: persen + jumlah jeriken yang dibawa; saat mengisi batangnya naik sesuai kemajuan
+          const fk = Math.max(0, Math.min(100, Math.round(v.fuel === undefined ? 100 : v.fuel))), fg = v.fueling > 0 ? Math.round(v.fueling * 20) : -1;
+          set('vehFuel', fk + '|' + fg + '|' + (v.cans | 0), () => {
+            el.vehFuel.style.transform = 'scaleX(' + fk / 100 + ')';
+            el.vehFuel.className = fk <= 15 ? 'low' : fk <= 35 ? 'mid' : '';
+            el.vehFuelT.textContent = fg >= 0 ? 'isi ' + fg * 5 + '%' : fk + '%' + (v.cans ? ' +' + v.cans : '');
+            el.vehFuelBox.classList.toggle('dry', fk <= 0);
+          });
+        }
       }
       // ---- minimap (≤ 10×/dtk; panah pemain = elemen DOM yang berputar tiap frame) ----
       if (mapImg && mapCtx && tNow - mapT >= 100) {

@@ -239,7 +239,7 @@ body.g-menu #scene canvas { filter: saturate(1.05) brightness(.92); }
 .h-air.chute .st { color: var(--hg); } .ha-info small { font-size: .62em; color: var(--g-dim); } .h-air.chute small { visibility: hidden; }
 
 /* ----- kendaraan (kanan bawah): kartu tegak supaya tidak menabrak dok tengah ----- */
-.h-veh { position: absolute; right: 1.1em; bottom: 1.2em; width: 17.5em; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "head head" "gauge seats" "hp hp" "keys keys"; align-items: center; gap: .5em .8em;
+.h-veh { position: absolute; right: 1.1em; bottom: 1.2em; width: 17.5em; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "head head" "gauge seats" "hp hp" "fuel fuel" "keys keys"; align-items: center; gap: .5em .8em;
     padding: .7em .85em .75em; border-radius: .9em; background: var(--hp); border: 1px solid var(--hl); contain: layout style; }
 .hv-info { display: contents; }
 .hv-gauge { grid-area: gauge; position: relative; justify-self: center; width: 7.4em; height: 6.2em; display: grid; place-items: center; }
@@ -254,6 +254,8 @@ body.g-menu #scene canvas { filter: saturate(1.05) brightness(.92); }
 .hv-bar { flex: 1; height: .5em; border-radius: 1em; background: rgba(0, 0, 0, .45); overflow: hidden; }
 .hv-bar i { display: block; height: 100%; background: linear-gradient(90deg, #8fe0b0, #4fbf86); transform-origin: 0 50%; transition: transform .2s; }
 .hv-bar i.mid { background: linear-gradient(90deg, #ffd78a, #e3a740); } .hv-bar i.low { background: linear-gradient(90deg, #ff8a7a, #e0453a); }
+.ha.worn b { color: #ff9486; }
+.hv-hp.hv-fuel { grid-area: fuel; } .hv-fuel .hv-bar i { background: linear-gradient(90deg, #ffe09a, #f2c14e); } .hv-fuel b { min-width: 4.2em; } .hv-fuel.dry b { color: #ff9486; }
 .hv-hp b { font-size: .78em; min-width: 2.6em; text-align: right; font-variant-numeric: tabular-nums; }
 .hv-keys { grid-area: keys; display: flex; flex-wrap: wrap; align-items: center; gap: .3em .4em; font-size: .66em; line-height: 1.3; color: var(--g-dim); } .hv-keys kbd { font-size: .86em; }
 .hv-seats { grid-area: seats; position: relative; width: 3.4em; height: 5.6em; border-radius: 1em 1em .6em .6em; background: rgba(0, 0, 0, .35); border: 1px solid var(--hl); }

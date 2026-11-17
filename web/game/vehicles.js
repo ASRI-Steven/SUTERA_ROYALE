@@ -37,6 +37,7 @@ export const TYPES = {
 };
 // kursi = tata letak fisik: motor 2 (pengendara + pembonceng), mobil 2 pintu 2, mobil 4 pintu 4, trem = bangkunya
 const SEATS = { lintas: 4, banteng: 4, walet: 2, loop: 12, halilintar: 2, jawara: 2 };
+const FUEL_RATE = 0.4, FUEL_BOOST = 2.5; // % bensin per detik saat gas; pengali saat boost (tangki penuh: ±4 menit gas, ±100 dtk boost)
 const NO_INPUT = { throttle: 0, steer: 0, handbrake: true, boost: false };
 // tanpa pengemudi (turun / tewas / hangus): rem penuh dengan cengkeraman ban penuh — berhenti ±1 dtk, lurus, tidak
 // menyelonong menyamping seperti rem tangan (yang dulu menabrak orang yang baru turun)
@@ -684,7 +685,7 @@ export function createVehicles(ctx) {
       wheels: tpl.wheels.map((w) => ({ node: obj.getObjectByName(w.name), front: w.front })).filter((w) => w.node), steerNode: obj.getObjectByName('steer'),
       paint: inst.paint, farMat: inst.far, glass: inst.glass, color, hi: inst.hi, lod1: inst.lod1, far: false,
       L: tpl.length, W: tpl.width, H: tpl.height, cz: tpl.cz, wheelR: tpl.wheelR,
-      x, y, yaw, vx: 0, vy: 0, speed: 0, steerA: 0, steerN: 0, hp: T.hp, alive: true, burnT: 0, wreck: false, wreckT: 0,
+      x, y, yaw, vx: 0, vy: 0, speed: 0, steerA: 0, steerN: 0, hp: T.hp, fuel: 35 + Math.random() * 65, alive: true, // fuel: bensin 0–100 % burnT: 0, wreck: false, wreckT: 0,
       driver: null, occ: tpl.seats.map(() => null), lastDriver: null, claim: null, killer: null, input: { ...NO_INPUT }, sleep: true, // occ[0] = driver
       pitch: 0, roll: 0, leanA: 0, accel: 0, latAcc: 0, skid: 0, wheelRot: 0, lastCrash: 0, smokeT: 0, fireT: 0, rpm: 0, braking: false, ejectAt: 0,
     };
@@ -806,15 +807,19 @@ export function createVehicles(ctx) {
     frame(v);
     let vf = v.vx * v.fx + v.vy * v.fy, vl = v.vx * v.rx + v.vy * v.ry;
     const onRoad = roadAt(v.x, v.y), boost = inp.boost && inp.throttle > 0;
+    // Bensin (hanya dihitung saat pemain yang menyetir; bot tidak pernah kehabisan): gas menghabiskan FUEL_RATE %/dtk,
+    // boost FUEL_BOOST× lebih boros. Tangki kosong → mesin mati (tidak bisa menambah laju; rem & setir tetap jalan).
+    const metered = !!(v.driver && v.driver.isPlayer), eng = metered && v.fuel <= 0 ? 0 : 1;
+    if (metered && eng && Math.abs(inp.throttle) > 0.05) v.fuel = Math.max(0, v.fuel - dt * FUEL_RATE * (boost ? FUEL_BOOST : 1));
     const top = T.maxSpeed * (onRoad ? 1 : T.offroad) * (boost ? 1.12 : 1);
     let a = 0;
     v.braking = false;
     if (inp.throttle > 0.05) {
       if (vf < -0.5) { a = T.brake * inp.throttle; v.braking = true; }
-      else a = T.accel * (boost ? 1.45 : 1) * Math.max(0, 1 - Math.pow(Math.max(0, vf) / top, 2)) * inp.throttle;
+      else a = T.accel * eng * (boost ? 1.45 : 1) * Math.max(0, 1 - Math.pow(Math.max(0, vf) / top, 2)) * inp.throttle;
     } else if (inp.throttle < -0.05) {
       if (vf > 0.5) { a = -T.brake * -inp.throttle; v.braking = true; }
-      else a = -T.accel * 0.55 * Math.max(0, 1 - Math.pow(Math.max(0, -vf) / T.reverse, 2)) * -inp.throttle;
+      else a = -T.accel * eng * 0.55 * Math.max(0, 1 - Math.pow(Math.max(0, -vf) / T.reverse, 2)) * -inp.throttle;
     }
     vf += a * dt;
     if (inp.park) { vf -= Math.sign(vf) * Math.min(Math.abs(vf), Math.max(T.brake, 12) * dt); if (Math.abs(vf) > 1) v.braking = true; }

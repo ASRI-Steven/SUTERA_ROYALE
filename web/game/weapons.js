@@ -608,7 +608,18 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     barrel.position.y = 0; liquid.position.y = -0.01; needle.position.y = -0.063; rod.position.y = 0.06; thumb.position.y = 0.086;
     plunger.add(rod, thumb); syringe.add(barrel, liquid, needle, plunger);
     syringe.userData.liquid = liquid; }
-  heal.add(foreL, foreR, handL, handR, wrap, roll, tail, kit, syringe);
+  // kaleng minuman energi (origin = pusat kaleng): badan, pita warna, tutup, cincin pembuka yang berengsel
+  const can = new THREE.Group(), canTab = new THREE.Group();
+  { const alu = new THREE.MeshStandardMaterial({ color: '#cfd4da', metalness: 0.85, roughness: 0.28 });
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.115, 20), new THREE.MeshStandardMaterial({ color: '#1f6fd6', metalness: 0.55, roughness: 0.35 }));
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0314, 0.0314, 0.03, 20), new THREE.MeshStandardMaterial({ color: '#ffd23f', metalness: 0.4, roughness: 0.4 }));
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.031, 0.008, 20), alu), bot = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.026, 0.008, 20), alu);
+    top.position.y = 0.0615; bot.position.y = -0.0615; band.position.y = 0.012;
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.002, 0.024), alu); ring.position.z = 0.012; // cincin: engsel di tengah tutup
+    canTab.add(ring); canTab.position.set(0, 0.0665, -0.006);
+    can.add(body, band, top, bot, canTab);
+    can.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); }
+  heal.add(foreL, foreR, handL, handR, wrap, roll, tail, kit, syringe, can);
   // granat di tangan: grup genggam (origin = pusat badan granat) berisi tangan Blender fp_hand_nade + model granat;
   // tanpa GLB → lengan & tangan prosedural
   const nadeRig = new THREE.Group(), nadeFore = limb(0.034, 0.045), nadeHand = glovedHand(), nadeGrip = new THREE.Group(), nadeMesh = {};
@@ -748,12 +759,18 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const wrist = tA.copy(W0).add(tmp.set(-0.05 * kitPhase, -0.06 * kitPhase - drop, -0.02 * kitPhase));
     const elbow = tB.copy(E0).add(tmp.set(0, -drop, 0));
     if (kind === 'kit' && u > 0.44 && u < 0.56) { const k = Math.sin((u - 0.44) / 0.12 * Math.PI); wrist.y -= 0.1 * k; elbow.y -= 0.1 * k; }
+    const popK = ease((u - 0.25) / 0.04); // cincin kaleng ditarik
+    if (kind === 'drink') { // tangan kiri: naik ke atas kaleng untuk menarik cincin, lalu turun keluar layar
+      const tk = ease((u - 0.14) / 0.09) * (1 - ease((u - 0.3) / 0.08));
+      wrist.set(-0.08, -0.56, -0.35).lerp(tC.set(0.015, -0.115 + 0.03 * popK, -0.385 + 0.035 * popK), tk); wrist.y -= drop;
+      elbow.y -= 0.25 * (1 - tk);
+    }
     placeLimb(foreL, elbow, tC.copy(wrist).lerp(elbow, 0.02));
     placeHand(handL, wrist, elbow, kitPhase > 0.5 ? 0 : -1.2);
     const axis = tD.copy(elbow).sub(wrist), len = axis.length(); axis.normalize();
     const n1 = new THREE.Vector3().crossVectors(axis, UPV).normalize(), n2 = new THREE.Vector3().crossVectors(n1, axis).normalize();
     const handRpos = new THREE.Vector3();
-    roll.visible = tail.visible = wrap.visible = kit.visible = syringe.visible = false;
+    roll.visible = tail.visible = wrap.visible = kit.visible = syringe.visible = can.visible = false;
     if (kind === 'band') {
       const p0 = 0.1, wrapU = Math.max(0, Math.min(1, (u - 0.2) / 0.62)), p = p0 + wrapU * 0.22; // dari dekat pergelangan ke arah siku
       if (u < 0.2) handRpos.copy(ER).lerp(tC.copy(wrist).addScaledVector(axis, p0 * len).addScaledVector(n2, 0.07), ease((u - 0.08) / 0.12));
@@ -772,6 +789,17 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       roll.quaternion.setFromUnitVectors(UPV, axis); roll.rotateY(wrapU * 40);
       tail.visible = roll.visible && u > 0.2 && u < 0.86;
       if (tail.visible) { const end = tC.copy(wrist).addScaledVector(axis, p * len).addScaledVector(n2, 0.046); placeLimb(tail, roll.position, end); tail.scale.x = 1; tail.scale.z = 1; }
+    } else if (kind === 'drink') {
+      // minuman: kaleng diangkat tangan kanan → tangan kiri menarik cincin → kaleng ke mulut, dimiringkan makin tinggi sambil diteguk → turun
+      const H = [0.1, -0.2, -0.4], M = [0.02, -0.13, -0.27], cp = new THREE.Vector3();
+      track(u, [K(0, ER), K(0.07, ER), K(0.16, H), K(0.33, H), K(0.42, M), K(0.82, M), K(0.9, H), K(1, ER)], cp);
+      const sip = ease((u - 0.34) / 0.09) * (1 - ease((u - 0.82) / 0.07)), prog = Math.max(0, Math.min(1, (u - 0.42) / 0.4));
+      cp.y += -0.012 * Math.sin(Math.max(0, Math.min(1, (u - 0.25) / 0.06)) * Math.PI) + 0.005 * Math.sin(u * 38) * sip - drop; // sentakan saat dibuka + tegukan
+      can.visible = u > 0.07 && u < 0.95 && up > 0.01;
+      can.position.copy(cp);
+      can.rotation.set(sip * (0.95 + 0.55 * prog + 0.05 * Math.sin(u * 38)), 0.3, 0); // mulut kaleng mengarah ke kamera
+      canTab.rotation.x = -1.9 * popK;
+      handRpos.copy(cp).add(tmp.set(0.042, -0.012, 0.022));
     } else {
       // P3K: kotak di tangan kiri, tutup terbuka, ambil suntikan, kotak turun, suntik lengan, buang
       kit.visible = u < 0.56 && up > 0.01;
