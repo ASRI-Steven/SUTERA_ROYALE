@@ -7,7 +7,7 @@
 // main.js: createLobby(…) → { focus, frame(dt, t), hide(), showEnd() }.
 import * as THREE from 'three';
 import { buildCharacter, characterVariants } from '../map/rig.js';
-import { profile, saveProfile, owns, buy, equip, setName, ensureSquad, setMate } from './profile.js';
+import { profile, saveProfile, owns, buy, equip, setName, ensureSquad, setMate, partySlots, setParty } from './profile.js';
 import { RARITY, CHAR_SKINS, GUN_SKINS, skinById, charOutfit, applyGunSkin, skinThumb } from './skins.js';
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
@@ -90,8 +90,10 @@ function createStage({ scene, camera, col, sunDir }) {
     ch.root.traverse((o) => { if (o.geometry && o.geometry.isInstancedBufferGeometry) o.geometry.dispose(); if (o.isSkinnedMesh && o.skeleton && o.skeleton.dispose) o.skeleton.dispose(); });
   }
   // (bangun ulang) anggota i; skinId: pratinjau skin lain tanpa menyimpannya
+  const active = (i) => i === 0 || partySlots()[i - 1]; // slot rekan kosong: tidak ada karakter di panggung
   function build(i, skinId) {
     if (members[i]) dispose(members[i].ch);
+    if (!active(i)) { members[i] = null; return; }
     const m = memberOf(i), sk = skinLook(skinId || m.skin), sl2 = SLOTS[i];
     const outfit = { ...BASE_OUTFIT, skin: m.tone, hair: m.hairC, ...(sk.outfit || {}) };
     const look = { variant: variants.includes(m.variant) ? m.variant : variants[0], hair: m.hair, ...(sk.look || {}) };
@@ -113,6 +115,7 @@ function createStage({ scene, camera, col, sunDir }) {
   const focus = new THREE.Vector3().copy(S), _v = new THREE.Vector3();
   // titik layar (px) di atas kepala anggota i untuk label nama; false kalau di belakang kamera
   function headXY(i, out) {
+    if (!members[i]) return false;
     const hb = members[i].ch.rig.b.head;
     _v.setFromMatrixPosition(hb.matrixWorld);
     _v.y += 0.34;
@@ -121,20 +124,29 @@ function createStage({ scene, camera, col, sunDir }) {
     out[0] = (_v.x + 1) * 0.5 * innerWidth; out[1] = (1 - _v.y) * 0.5 * innerHeight;
     return true;
   }
+  let aimMode = 'squad';
   function aim(mode, i = 0) {
+    if ((mode === 'member' || mode === 'gun') && !members[i]) mode = 'squad';
+    aimMode = mode;
     if (mode === 'member' || mode === 'gun') { // 'gun': lebih dekat ke senjata di tangan (pratinjau skin senjata)
       const p = members[i].ch.root.position, gun = mode === 'gun';
       Object.assign(tgt, { dist: gun ? 2.7 : 4.0, h: gun ? 1.2 : 1.34, lookY: gun ? 1.0 : 1.0, fx: p.x - S.x, fz: p.z - S.z, fov: 34 });
     }
-    else Object.assign(tgt, { dist: 7.4, h: 1.42, lookY: 1.06, fx: rx * 0.55 - ux * 0.3, fz: rz * 0.55 - uz * 0.3, fov: 34 });
+    else { // seluruh regu: bidik titik tengah anggota yang ada, makin sedikit orang makin dekat
+      let n = 0, ax = 0, ab = 0;
+      for (let k = 0; k < 4; k++) if (members[k]) { n++; ax += SLOTS[k][0]; ab += SLOTS[k][1]; }
+      n = n || 1; ax /= n; ab = ab / n * 0.5;
+      Object.assign(tgt, { dist: 5.0 + 0.8 * (n - 1), h: 1.42, lookY: 1.06, fx: rx * ax - ux * ab, fz: rz * ax - uz * ab, fov: 34 });
+    }
   }
   aim('squad');
   return {
     group: g, focus, members,
     build, aim, headXY,
+    refit() { if (aimMode === 'squad') aim('squad'); }, // anggota bertambah/berkurang: bingkai ulang kamera
     setOffset(v) { tgt.off = v; },
     preview(skinId) { build(0, skinId); },
-    gunPreview(id) { for (const m of members) if (m.gun) gunSkin(m.ch, m.gun, id); },
+    gunPreview(id) { for (const m of members) if (m && m.gun) gunSkin(m.ch, m.gun, id); },
     frame(dt, t) {
       const k = 1 - Math.exp(-dt * 3.4);
       for (const key in cur) cur[key] += (tgt[key] - cur[key]) * k;
@@ -151,6 +163,7 @@ function createStage({ scene, camera, col, sunDir }) {
       }
       for (let i = 0; i < 4; i++) { // napas & pergeseran berat badan
         const m = members[i];
+        if (!m) continue;
         m.ch.root.rotation.y = m.yaw + Math.sin(t * 0.43 + i * 1.7) * 0.035;
         m.ch.rig.pose(m.pose, dt);
       }
@@ -199,14 +212,14 @@ export function createLobby(o) {
     <aside class="lb-mini" data-mini></aside>
     <div class="lb-squad" data-squad></div>
     <div class="lb-go">
-      <div class="lb-mode"><span>Mode</span><b>Regu · 4 orang</b><em>25 regu · 100 petarung</em></div>
+      <div class="lb-mode"><span>Mode</span><b data-modeb>Solo</b><em data-modee>26 regu · 100 petarung</em></div>
       <div class="lb-diff" data-level="${diff}">
         <div class="lb-diff-h"><span>Kesulitan bot</span><p data-diffnote></p></div>
         <div class="lb-seg" role="radiogroup" aria-label="Tingkat kesulitan bot">
           ${Object.keys(DIFF).map((k) => `<button type="button" role="radio" data-diff="${k}" aria-checked="${k === diff}">${esc(DIFF[k].label)}</button>`).join('')}
         </div>
       </div>
-      <button class="lb-start" type="button" id="playBtn">${ic('play')}<b>Mulai</b><span>Terjun bersama regu</span></button>
+      <button class="lb-start" type="button" id="playBtn">${ic('play')}<b>Mulai</b><span data-startsub>Terjun sendirian</span></button>
     </div>
     <section class="lb-panel" data-panel aria-hidden="true">
       <header><h2 data-ptitle></h2><button class="lb-chip lb-ico" type="button" data-go="" aria-label="Tutup panel">${ic('x')}</button></header>
@@ -293,8 +306,10 @@ export function createLobby(o) {
           <div class="lb-mate-s"><span>Skin</span>${bot ? `<select data-mskin="${i}" aria-label="Skin anggota ${i + 1}">${mine.map((k) => `<option value="${k.id}"${k.id === skinId ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}</select>` : `<button type="button" class="lb-btn ghost" data-go="koleksi">${esc(s.name)}</button>`}</div>
           <button type="button" class="lb-chip lb-ico" data-look="${i}" aria-label="Lihat anggota ${i + 1}">${ic('eye')}</button></div>`;
       };
-      return `<p class="lb-lead">Kamu terjun bersama tiga rekan bot. Mereka mengikutimu, ikut menembak, dan bisa menghidupkanmu kembali. Beri mereka nama dan pilihkan skin yang sudah kamu miliki.</p>
-        <div class="lb-mates">${row(0, profile.name, profile.equipped.character, false)}${sq.map((m, i) => row(i + 1, m.name, m.skin, true)).join('')}</div>
+      const on = partySlots();
+      const add = (i) => `<div class="lb-mate lb-mate-add"><span class="lb-ava">+</span><div class="lb-mate-m"><label>Slot ${i + 1} kosong</label></div><button type="button" class="lb-btn ghost" data-add="${i}">Tambah anggota</button></div>`;
+      return `<p class="lb-lead">Kamu mulai sendirian. Isi slot kosong dengan rekan bot: mereka mengikutimu, ikut menembak, dan bisa menghidupkanmu kembali. Beri mereka nama dan pilihkan skin yang sudah kamu miliki.</p>
+        <div class="lb-mates">${row(0, profile.name, profile.equipped.character, false)}${sq.map((m, i) => (on[i] ? row(i + 1, m.name, m.skin, true) : add(i + 1))).join('')}</div>
         <p class="lb-foot">Skin rekan diambil dari koleksimu. Skin baru bisa dibeli di Toko.</p>
         <div class="lb-sec"><h3>Karier</h3><span>tersimpan di peramban ini</span></div>
         <div class="lb-career">${career().map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('')}</div>`;
@@ -326,9 +341,15 @@ export function createLobby(o) {
   const tagEls = $$('.lb-nt'), tagXY = [0, 0], tagLast = [0, 0, 0, 0, 0, 0, 0, 0];
   function drawSquad() {
     const sq = ensureSquad(), me = skinById(profile.equipped.character) || CHAR_SKINS[0];
-    tagEls.forEach((el, i) => { el.querySelector('b').textContent = i === 0 ? profile.name : sq[i - 1].name; });
-    const card = (i, name, s, bot) => `<button type="button" class="lb-m" data-look="${i}" style="--rc:${rar(s).color}"><span class="lb-ava">${i + 1}</span><span class="lb-m-t"><b>${esc(name)}</b><small>${esc(s.name)}</small></span><em>${bot ? 'Bot' : 'Kamu'}</em></button>`;
-    $('[data-squad]').innerHTML = card(0, profile.name, me, false) + sq.map((m, i) => card(i + 1, m.name, skinById(m.skin) || CHAR_SKINS[0], true)).join('');
+    const on = partySlots(), n = 1 + on.filter(Boolean).length;
+    tagEls.forEach((el, i) => { el.querySelector('b').textContent = i === 0 ? profile.name : sq[i - 1].name; el.hidden = i > 0 && !on[i - 1]; });
+    // kartu anggota; rekan bot bisa dikeluarkan (×); slot kosong = tombol + (tambah bot / pemain online)
+    const card = (i, name, s, bot) => `<span class="lb-mw"><button type="button" class="lb-m" data-look="${i}" style="--rc:${rar(s).color}"><span class="lb-ava">${i + 1}</span><span class="lb-m-t"><b>${esc(name)}</b><small>${esc(s.name)}</small></span><em>${bot ? 'Bot' : 'Kamu'}</em></button>${bot ? `<button type="button" class="lb-m-x" data-kick="${i}" aria-label="Keluarkan ${esc(name)} dari regu" title="Keluarkan dari regu">×</button>` : ''}</span>`;
+    const empty = (i) => `<span class="lb-mw"><button type="button" class="lb-m lb-m-add" data-add="${i}" aria-label="Tambah anggota regu di slot ${i + 1}"><span class="lb-ava">+</span><span class="lb-m-t"><b>Tambah</b><small>Bot / online</small></span></button></span>`;
+    $('[data-squad]').innerHTML = card(0, profile.name, me, false) + sq.map((m, i) => (on[i] ? card(i + 1, m.name, skinById(m.skin) || CHAR_SKINS[0], true) : empty(i + 1))).join('');
+    $('[data-modeb]').textContent = n === 1 ? 'Solo' : 'Regu · ' + n + ' orang';
+    $('[data-modee]').textContent = (n === 4 ? 25 : 26) + ' regu · 100 petarung';
+    $('[data-startsub]').textContent = n === 1 ? 'Terjun sendirian' : 'Terjun bersama regu';
   }
   function drawDiff() {
     for (const b of $$('[data-diff]')) b.setAttribute('aria-checked', String(b.dataset.diff === diff));
@@ -431,6 +452,17 @@ export function createLobby(o) {
     if (d.claim) { const [scope, i] = d.claim.split(':'), got = claimQuest(scope, +i); if (got) toast(`${coin}<b>+${fmt(got)}</b> Koin Sutera`, 'gold'); refresh(); return; }
     if (d.buy) { confirmBuy(d.buy); return; }
     if (d.equip) { const s = skinById(d.equip), slot = d.equip.startsWith('gun_') ? 'weapon' : 'character'; if (s && equip(slot, d.equip)) { toast(`${ic('check')}<b>${esc(s.name)}</b> dipakai`); stage.build(0); stage.gunPreview(profile.equipped.weapon); } refresh(); return; }
+    if (d.add !== undefined) { // slot kosong: pilih pengisi (bot sekarang; pemain online belum ada servernya)
+      const i = +d.add;
+      modal(`<h3>Tambah anggota</h3><p>Pilih siapa yang mengisi slot ${i + 1} regumu.</p>
+        <div class="lb-opts">
+          <button type="button" class="lb-opt" data-act="addbot" data-id="${i}" autofocus><b>Rekan bot</b><small>Mengikutimu, ikut menembak, dan bisa menghidupkanmu kembali.</small></button>
+          <button type="button" class="lb-opt" disabled><b>Pemain online</b><small>Belum tersedia — game ini belum punya server multipemain.</small></button>
+        </div>
+        <div class="lb-dlg-a"><button type="button" class="lb-btn ghost" data-act="cancel">Batal</button></div>`);
+      return;
+    }
+    if (d.kick !== undefined) { const i = +d.kick; setParty(i - 1, false); lookI = -1; stage.build(i); stage.aim('squad'); refresh(); return; }
     if (d.look !== undefined) { const i = +d.look; lookI = lookI === i ? -1 : i; stage.aim(lookI < 0 ? 'squad' : 'member', i); return; } // klik lagi = kembali melihat seluruh regu
     switch (d.act) {
       case 'claimall': { const got = claimAll(); if (got) toast(`${coin}<b>+${fmt(got)}</b> Koin Sutera`, 'gold'); refresh(); break; }
@@ -441,6 +473,7 @@ export function createLobby(o) {
       case 'dobuy': { const s = skinById(d.id); if (modalClose) modalClose(); if (s && buy(s.id, s.price)) { toast(`${ic('check')}<b>${esc(s.name)}</b> jadi milikmu`, 'gold'); selSkin = s.id; } else toast('Koin belum cukup', 'warn'); refresh(); break; }
       case 'reset': modal(`<h3>Atur ulang profil?</h3><p>Koin, skin yang dibeli, misi, dan nama regu dihapus dari peramban ini. Tidak bisa dibatalkan.</p><div class="lb-dlg-a"><button type="button" class="lb-btn ghost" data-act="cancel" autofocus>Batal</button><button type="button" class="lb-btn danger" data-act="doreset">Hapus</button></div>`); break;
       case 'doreset': try { localStorage.removeItem('royale.profile.v1'); } catch (er) { /* abaikan */ } location.reload(); break;
+      case 'addbot': { const i = +d.id; if (modalClose) modalClose(); if (setParty(i - 1, true)) { stage.build(i); if (panel === 'regu') stage.aim('member', i); else stage.refit(); toast(`${ic('check')}<b>${esc(ensureSquad()[i - 1].name)}</b> bergabung ke regu`); } refresh(); break; }
       case 'cancel': if (modalClose) modalClose(); break;
       default:
     }

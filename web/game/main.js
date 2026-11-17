@@ -27,7 +27,7 @@ import { createGovernor } from './governor.js';
 import { matchHooks } from './hooks.js';
 import { initSkins } from './skins.js';
 import { createLobby } from './lobby.js';
-import { profile } from './profile.js';
+import { profile, partySlots } from './profile.js';
 
 const $ = (id) => document.getElementById(id);
 const D2R = Math.PI / 180, BOTS = 99, TEAM = 4, ALT = 620, PLANE_SPEED = 85; // 100 petarung = 25 regu berisi 4 (pemain + 3 bot rekan, 24 regu bot)
@@ -398,6 +398,7 @@ function start(D, realAssets) {
   mySquad.members.forEach((a, i) => { // nama rekan dari profil (lobi); kosong → nama bawaan bot
     if (a.isPlayer) return;
     a.ally = true;
+    a.name0 = a.name; // nama bot asli (dipakai lagi kalau slotnya dikosongkan di lobi)
     const p = profile.squad && profile.squad[i - 1];
     if (p && p.name) a.name = String(p.name).slice(0, 14);
   });
@@ -617,8 +618,26 @@ function start(D, realAssets) {
       if (paused) { player.st.firing = false; player.st.ads = false; }
     }
   });
+  // Regu pemain mengikuti lobi: mulai sendirian, slot rekan diisi bot lewat tombol +. Bot rekan yang slotnya kosong
+  // tidak dihapus — mereka jadi satu regu lawan tersendiri, supaya jumlah petarung tetap 100.
+  function applyParty() {
+    const on = partySlots(), out = [];
+    mySquad.members = mySquad.members.filter((a, i) => { if (a.isPlayer || on[i - 1]) return true; out.push(a); return false; });
+    mySquad.members.forEach((a, i) => { a.slot = i; });
+    mates.length = 0; sqRows.length = 0;
+    for (const m of mySquad.members) { if (!m.isPlayer) mates.push(m); sqRows.push({ name: m.isPlayer ? 'Kamu' : m.name, slot: m.slot, st: 'ok', hp: 100, t: 0, you: m.isPlayer }); }
+    if (out.length) {
+      const sq = { id: squads.length, members: out, leader: null, aliveN: 0, standN: 0, rank: 0, focus: null, focusAt: -99 };
+      squads.push(sq);
+      out.forEach((a, i) => { a.team = sq.id; a.sq = sq; a.slot = i; a.ally = false; a.name = a.name0 || a.name; });
+      refreshSquad(sq);
+      squadsLeft++;
+    }
+    refreshSquad(mySquad);
+  }
   function startMatch() {
     phase = 'play';
+    applyParty();
     lobby.hide();
     hud.show(true);
     flight = makeFlight();
@@ -631,7 +650,7 @@ function start(D, realAssets) {
     startedAt = now;
     audio.engineLevel(1);
     if (matchHooks.onStart) matchHooks.onStart({ diff });
-    hud.message('SUTERA ROYALE', 'Regu 4 orang · bot ' + DIFFICULTY[diff].label.toLowerCase() + ' · tekan F untuk terjun · M = peta');
+    hud.message('SUTERA ROYALE', (mySquad.members.length > 1 ? 'Regu ' + mySquad.members.length + ' orang' : 'Solo') + ' · bot ' + DIFFICULTY[diff].label.toLowerCase() + ' · tekan F untuk terjun · M = peta');
   }
   function finish(win) {
     if (phase !== 'play') return;
@@ -642,7 +661,7 @@ function start(D, realAssets) {
     audio.windLevel(0);
     // ringkasan pertandingan untuk lapisan meta (misi, koin): lihat game/hooks.js
     if (matchHooks.onEnd) matchHooks.onEnd({
-      win, rank: win ? 1 : deathRank, total: squads.length, squadMode: true, squadSize: TEAM, players: BOTS + 1, diff,
+      win, rank: win ? 1 : deathRank, total: squads.length, squadMode: true, squadSize: mySquad.members.length, players: BOTS + 1, diff,
       kills: me.kills, knocks: stat.knocks, assists: stat.assists, revives: stat.revives, headshots: stat.headshots, damage: Math.round(me.dmg),
       surviveSec: Math.round((me.alive ? endAt : (me.diedAt || endAt)) - startedAt), matchSec: Math.round(endAt - startedAt), longestKillM: Math.round(stat.longestKillM),
       lootCount: me.looted || 0, onFootM: Math.round(stat.onFootM), drivenM: Math.round(stat.drivenM), healsUsed: stat.healsUsed, roadKills: stat.roadKills, nadeKills: stat.nadeKills, weaponKills: { ...stat.weaponKills },
