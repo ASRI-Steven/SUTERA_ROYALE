@@ -1006,3 +1006,78 @@ Permintaan Steven: halaman home yang bagus, mata uang yang (sementara) didapat d
 - **Tangga harga skin** (acuan hadiah misi): biasa 300, langka 800, epik 1800, legendaris 4000.
 - **Lain-lain 13 Nov:** pita emas batas kawasan (7 m, tampak seperti bidang kuning polos) di game realistis jadi garis cat 0,7 m; kendaraan disembunyikan di fase menu.
 - **Sedang dikerjakan:** mode regu 4 orang (agen `squad-mode`) dan katalog skin 8 + 8 (agen `skins`); toko/koleksi baru berisi skin bawaan sampai katalog masuk.
+
+## 28. Kontrol terjun, inventaris, lobi solo, bensin, pelindung, aksesori senjata (17 Nov 2026, Jason + Claude)
+
+Branch **`feat/terjun-inventaris-batas-lobi-solo`** (sudah di-push, belum digabung ke `main`), enam commit di atas `b1a37f6`:
+
+| Commit | Isi |
+|---|---|
+| `c8c1f0e` | Kontrol terjun, buang barang, Esc panel loot, dinding batas kawasan |
+| `d0bcff3` | Lobi mulai solo dengan slot tambah anggota |
+| `e4a99bf` | Tumbang/pulih, bobot tas, minuman energi, Esc di peta, F saja untuk keluar kendaraan, terjun melayang/menukik |
+| `84c77df` | Bensin kendaraan, jeriken, daya tahan pelindung, animasi minum |
+| `f003820` | Aksesori senjata (magasin panjang, scope 2×/4×), seret-lepas di inventaris |
+| `bc96952` | Aksesori di tas, scope 8×, teropong bawaan Elang/Rajawali jadi aksesori |
+
+Semua perubahan di sisi peramban (`web/game/*.js`, `web/map/rig.js`); BFF tidak disentuh. Menjalankan: `cd bff && go build -o bin/alsut3d-bff ./cmd/server && ./bin/alsut3d-bff` → `http://127.0.0.1:8765/royale.html` (`bff/.env` disalin dari `.env.example`, `DB_HOST` kosong). File JS dilayani `no-cache`, jadi cukup muat ulang paksa setelah mengubah kode.
+
+### 28.1 Terjun & parasut (`player.js` `air()`, `map/rig.js`)
+- **A/D** geser samping kekuatan penuh (28 m/dtk terjun bebas, 13 payung) + badan/payung miring (`st.airLean`); **S** mengerem.
+- **W saat terjun bebas** mengikuti pitch kamera: datar = melayang (maju 38, turun 38 m/dtk); menunduk = menukik (maju turun sampai 14, turun sampai 70). Tanpa W: maju ±5, turun 46.
+- **Payung:** W condong ke depan (maju 13, turun 11), S lutut diangkat + turun lebih pelan (6 m/dtk); pose di `rig.js` (`m.cd`, `cfw`/`cbr`).
+
+### 28.2 Panel tas, peta, kunci penunjuk (`player.js`, `hud.js`, `main.js`)
+- **Esc di panel tas** hanya menutup panel (tanpa layar Jeda). Peramban menolak kunci-ulang penunjuk sesaat setelah Esc → `st.wantLock`, `st.escAt`, `escRelock`, `relockLoop()`; kamera tetap mengikuti mouse selama belum terkunci. **Esc juga menutup peta besar** (`ctx.mapOpen/closeMap`).
+- **Klik kanan** barang di inventaris = buang ke tanah (`lootDrop(key)`; kunci `w:<slot>`, `a_<jenis>`, `h_<jenis>`, `g_<jenis>`, `jerry`, `v<lv>`/`m<lv>`/`b<lv>`, `x_<aksesori>`, `x:<slot>:<aksesori>`).
+- **Di kendaraan hanya F yang turun** (E tidak lagi).
+
+### 28.3 Dinding batas kawasan (`game/border.js`, baru)
+Tirai emas tembus pandang setinggi 5 m di sepanjang batas, hanya tampak dalam ±42 m dari kamera; pesan "Batas kawasan — tidak bisa dilewati" saat pemain menempel.
+
+### 28.4 Lobi solo (`lobby.js`, `lobby.css`, `profile.js`)
+- Mulai dengan satu karakter; kartu **"+"** membuka modal "Tambah anggota" (rekan bot aktif; "Pemain online" masih nonaktif); × mengeluarkan anggota. `profile.party = [bool×3]`, `partySlots()`, `setParty(i,on)`; `applyParty()` di `startMatch()` (bot rekan yang tidak dipakai jadi regu musuh terpisah).
+- **Lobi online belum dibuat.** Rencananya di `~/Claude-Orchestrate/SUTERA_ROYALE/plan-lobi-online.md` (opsi terpilih: SSE + HTTP POST, room di memori `bff/internal/lobby`, flag `LOBBY_ENABLED`). Keputusan terbuka: D1 tombol Mulai saat ≥2 manusia, D2 WebSocket bila sinkron pertandingan menyusul, D3 lokasi server (`LISTEN_ADDR` terbuka ikut membuka endpoint keluhan).
+
+### 28.5 Tumbang & pulih (`main.js`: `DOWNS = true`, `REVIVE_HP = 20`)
+Anggota regu tumbang dulu selama masih ada rekan berdiri; dipulihkan dengan menahan F (darah 20); yang tumbang bisa ditembak (kerusakan ×0,6). Main sendirian = langsung mati.
+
+### 28.6 Tas berbobot (`loot.js`; hanya pemain, bot tetap batas per jenis)
+- `BAG_CAP = [100, 200, 300, 400]` (tanpa tas, lv.1–3; barang `b1`–`b3`).
+- `ITEM_W`: peluru ringan 0,4 · senapan 0,5 · shotgun 1,2 · runduk 1,5 · magnum 0,8 per butir; perban 2, P3K 10, minuman 4; granat 12, asap 10; jeriken 15; aksesori 5.
+- `bagWeight`, `bagCap`, `bagFit`; peluru diambil sebanyak yang muat. Persen isi tas di HUD dan kepala panel.
+- Tas lama jatuh saat ditukar; tas hanya bisa dibuang kalau isinya ≤ 100.
+
+### 28.7 Minuman energi (`h_drink`, tombol 6)
+4 dtk, +40 tenaga (`BOOST_DRINK`, maks 100); selama ada tenaga darah naik 1 HP/dtk sampai 100 (perban tetap berhenti di 75). Animasi sendiri di `weapons.js` `animHeal(..., 'drink')`: kaleng, tarik cincin, minum.
+
+### 28.8 Bensin & jeriken (`vehicles.js`, `player.js`, `main.js`, `nades.js`)
+- `v.fuel` 0–100 %, awal acak 35–100. `FUEL_RATE = 0.4` %/dtk saat gas, `FUEL_BOOST = 2.5`×. Hanya dihitung saat pemain menyetir; kosong → mesin mati (rem & setir tetap).
+- **Jeriken** (`jerry`): **B** di kendaraan yang berhenti, 3 dtk, +60 %. Di tanah: `CAN_HITS = 3` peluru → meledak (radius 6,5 m, 120); ledakan apa pun dalam 70 % jari-jarinya juga memicunya (`blastCans`, terhalang gedung, berantai maks 16). `nades.boomFx(p)` = efek ledakan saja.
+
+### 28.9 Daya tahan rompi & helm (`loot.js`, `main.js` `damage()`)
+- `ARMOR_HP = { vest: [0,200,220,250], helmet: [0,80,150,230] }`; `agent.vestHp`/`helmetHp` (undefined = utuh), barang di tanah `it.hp`, peti `contents.vestHp/helmetHp`.
+- Tiap peluru yang ditahan mengurangi daya tahan sebesar kerusakan mentahnya; habis → hancur. Berlaku juga untuk bot.
+- Pelindung setingkat bisa diambil kalau lebih utuh; yang lama jatuh ke tanah (`r.swap`) dengan sisa daya tahannya.
+
+### 28.10 Aksesori senjata (`weapons.js` `ATTACH`, `loot.js`, `player.js`, `hud.js`; hanya pemain)
+- `inst.att = { mag, scope }`. **Magasin panjang** (`x_mag`): isi ×1,5 (`magCap(inst)`), semua senjata kecuali Kobra & Gada. **Scope** `x_s2` (FOV 38), `x_s4` (FOV 20), `x_s8` (FOV 76/zoom, zoom 4–8 lewat gulir saat membidik, `inst.zoom`). 2×: SMG, senapan, Elang, Rajawali; 4×: Garuda, Petir, Gempa, Elang, Rajawali; 8×: Elang, Rajawali. `hasScope` (tampilan teropong penuh) = scope ≥ 4.
+- **Ambil:** terpasang ke senjata yang cocok (yang dipegang dulu); kalau tidak ada, masuk tas (`me.atts`); terpasang otomatis saat senjata cocok diambil dari tanah.
+- **Panel:** seret label aksesori ke senjata lain (`moveAtt`), ke tas (`stashAtt`), ke kolom kanan (buang); seret dari tas / "Di sekitar" ke senjata (`bagTo`, `takeTo`); klik kanan melepas.
+- **Senjata dibuang/ditukar:** `shedAtts()`: aksesori pindah ke senjata pengganti kalau cocok & kosong, selain itu jatuh terpisah.
+- **Model:** scope 2×/4× = tabung prosedural di atas pisir (`buildScope`, `SCOPE_DY`). **Elang & Rajawali:** `WEAPONS.dmr/sniper.rail`: segitiga teropong bawaan dipisah saat `upgradeGun` (`G.builtin`) dan baru tampil kalau scope terpasang; tanpa scope FOV bidik 55.
+
+### 28.11 Daftar Kontrol di lobi
+`lobby.js` (tab Pengaturan): baris Obat, Aksi, Terjun, Tas, Aksesori, Kendaraan, Jeriken diperbarui.
+
+### 28.12 Sudah diuji vs belum
+- **Dilihat langsung di game:** scope 2× di Garuda (dipegang & membidik), Elang & Rajawali tanpa scope (dipegang & membidik), satu kaleng per pemakaian minuman.
+- **Diuji lewat kode di peramban (bukan dimainkan):** bobot tas, tukar pelindung + daya tahan, pasang/ganti/simpan aksesori, ambil jeriken.
+- **Belum diuji di pertandingan:** tumbang/pulih, kontrol & pose terjun, dinding batas, kunci-ulang penunjuk setelah Esc, bensin berkurang + isi dengan B, ledakan jeriken, hancurnya pelindung, seret-lepas di panel, gulir scope 8×, scope 4×/8× terpasang, posisi akhir animasi minum.
+
+### 28.13 Batasan & sisa pekerjaan
+- Bot tidak memakai bensin, tas, minuman, jeriken, atau aksesori.
+- Peti jarahan tidak menyimpan aksesori (yang terpasang maupun di tas).
+- Magasin panjang belum mengubah model senjata; Rajawali tanpa scope menyisakan serpihan dudukan di atas rel.
+- Angka keseimbangan (bensin, daya tahan, bobot, peluang muncul barang) adalah tebakan awal.
+- `.claude/` (penanda skill `/plan`) sengaja tidak di-commit.
