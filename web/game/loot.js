@@ -44,13 +44,30 @@ export const ITEMS = {
   a_light: { kind: 'ammo', ammo: 'light', n: 30, rar: 0, name: 'Peluru ringan ×30' }, a_rifle: { kind: 'ammo', ammo: 'rifle', n: 30, rar: 0, name: 'Peluru senapan ×30' },
   a_shell: { kind: 'ammo', ammo: 'shell', n: 10, rar: 0, name: 'Peluru shotgun ×10' },
   h_band: { kind: 'heal', heal: 'band', rar: 0, name: 'Perban' }, h_kit: { kind: 'heal', heal: 'kit', rar: 2, name: 'Kotak P3K' },
+  h_drink: { kind: 'heal', heal: 'drink', rar: 1, name: 'Minuman energi' }, // menambah tenaga: darah naik pelan-pelan sampai 100 (hanya pemain)
   v1: { kind: 'vest', lvl: 1, rar: 0, name: 'Rompi lv.1' }, v2: { kind: 'vest', lvl: 2, rar: 1, name: 'Rompi lv.2' }, v3: { kind: 'vest', lvl: 3, rar: 3, name: 'Rompi lv.3' },
   m1: { kind: 'helmet', lvl: 1, rar: 0, name: 'Helm lv.1' }, m2: { kind: 'helmet', lvl: 2, rar: 1, name: 'Helm lv.2' }, m3: { kind: 'helmet', lvl: 3, rar: 3, name: 'Helm lv.3' },
+  b1: { kind: 'bag', lvl: 1, rar: 0, name: 'Tas lv.1' }, b2: { kind: 'bag', lvl: 2, rar: 1, name: 'Tas lv.2' }, b3: { kind: 'bag', lvl: 3, rar: 3, name: 'Tas lv.3' },
   crate: { kind: 'crate', rar: 2, name: 'Peti jarahan' },
 };
 for (const [k, v] of Object.entries(ITEMS)) if (v.kind === 'weapon') v.name = WEAPONS[v.w].name;
 export const TIER = { pistol: 1, revolver: 1.5, shotgun: 2, dbs: 2, smg: 2, pdw: 2.2, ar: 3, burst: 3, lmg: 3.2, dmr: 3, sniper: 3.6 };
 export const NADE_CAP = 3;
+// ---------- Tas pemain: kapasitas menurut bobot ----------
+// Yang masuk tas: peluru, penyembuh, granat. Senjata, rompi, helm, dan tas itu sendiri dipakai di badan (tidak berbobot).
+// Kapasitas: tanpa tas 100, tas lv.1 200, lv.2 300, lv.3 400. Bot tidak memakai sistem ini (tetap batas per jenis).
+export const BAG_CAP = [100, 200, 300, 400];
+export const ITEM_W = { ammo: { light: 0.4, rifle: 0.5, shell: 1.2, sniper: 1.5, magnum: 0.8 }, heal: { band: 2, kit: 10, drink: 4 }, nade: { frag: 12, smoke: 10 } };
+export function bagWeight(a) {
+  let w = 0;
+  for (const k of Object.keys(a.ammo || {})) w += (a.ammo[k] || 0) * (ITEM_W.ammo[k] || 0.5);
+  for (const k of Object.keys(a.heals || {})) w += (a.heals[k] || 0) * (ITEM_W.heal[k] || 2);
+  for (const k of Object.keys(a.nades || {})) w += (a.nades[k] || 0) * (ITEM_W.nade[k] || 10);
+  return w;
+}
+export const bagCap = (a) => BAG_CAP[Math.max(0, Math.min(3, a.bag | 0))];
+// berapa buah barang berbobot w yang masih muat (toleransi pembulatan)
+const bagFit = (a, w) => Math.max(0, Math.floor((bagCap(a) - bagWeight(a)) / w + 1e-6));
 const RAR = ['#ffffff', '#5aa9ff', '#a58bff', '#ffcf6b'];
 
 function colored(list) {
@@ -72,8 +89,10 @@ function itemGeo(type) {
   if (it.kind === 'ammo') { const c = { light: '#c9a227', rifle: '#5f8f3a', shell: '#b0342b', sniper: '#3a3f2c', magnum: '#8a5a2a' }[it.ammo]; return colored([[box(0.24, 0.13, 0.16), c], [box(0.245, 0.03, 0.165, 0.1), it.ammo === 'sniper' ? '#D29F52' : '#2a2a2a']]); }
   if (it.kind === 'nade') return gunGeometry(it.nade).scale(1.6, 1.6, 1.6).rotateX(Math.PI / 2).translate(0, 0.055, 0); // granat Blender, rebah
   if (type === 'h_band') return colored([[new THREE.CylinderGeometry(0.06, 0.06, 0.1, 14).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#efe6d6'], [new THREE.CylinderGeometry(0.03, 0.03, 0.102, 10).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#c8bda8']]);
+  if (type === 'h_drink') return colored([[new THREE.CylinderGeometry(0.045, 0.045, 0.17, 14).translate(0, 0.085, 0), '#2f7fd6'], [new THREE.CylinderGeometry(0.046, 0.046, 0.05, 14).translate(0, 0.085, 0), '#f2c14e'], [new THREE.CylinderGeometry(0.04, 0.045, 0.012, 14).translate(0, 0.176, 0), '#d9dde3']]);
   if (type === 'h_kit') return colored([[box(0.34, 0.14, 0.24), '#2f9b5a'], [box(0.18, 0.012, 0.05, 0.146), '#ffffff'], [box(0.05, 0.012, 0.18, 0.146), '#ffffff']]);
   if (it.kind === 'vest') { const c = ['#c9b48a', '#66704a', '#2f3136'][it.lvl - 1]; return colored([[box(0.46, 0.09, 0.5), c], [box(0.46, 0.02, 0.06, 0.1, 0, 0.12), '#1d1d1f'], [box(0.12, 0.03, 0.12, 0.11, 0.1, -0.08), '#1d1d1f']]); }
+  if (it.kind === 'bag') { const c = ['#c9b48a', '#66704a', '#2f3136'][it.lvl - 1], k = 0.82 + it.lvl * 0.09; return colored([[box(0.34 * k, 0.4 * k, 0.2 * k), c], [box(0.26 * k, 0.16 * k, 0.07 * k, 0.11 * k, 0, 0.13 * k), '#1d1d1f'], [box(0.36 * k, 0.05 * k, 0.21 * k, 0.375 * k), '#D29F52'], [box(0.05 * k, 0.3 * k, 0.03 * k, 0.2 * k, 0.1 * k, -0.11 * k), '#1d1d1f'], [box(0.05 * k, 0.3 * k, 0.03 * k, 0.2 * k, -0.1 * k, -0.11 * k), '#1d1d1f']]); }
   if (it.kind === 'helmet') { const c = ['#c9b48a', '#66704a', '#2f3136'][it.lvl - 1]; return colored([[new THREE.SphereGeometry(0.15, 16, 9, 0, Math.PI * 2, 0, Math.PI * 0.55), c], [new THREE.TorusGeometry(0.145, 0.012, 6, 18).rotateX(Math.PI / 2).translate(0, 0.02, 0), '#1d1d1f']]); }
   return colored([[box(0.62, 0.42, 0.46), '#3D3782'], [box(0.63, 0.06, 0.47, 0.3), '#D29F52'], [box(0.08, 0.43, 0.47, 0.21, 0.2), '#D29F52'], [box(0.08, 0.43, 0.47, 0.21, -0.2), '#D29F52']]);
 }
@@ -155,8 +174,9 @@ export function createLoot(scene, { D, col }) {
     ['w_pistol', 9], ['w_smg', 7], ['w_shotgun', 6], ['w_ar', 6], ['w_dmr', 2],
     ['w_revolver', 3.5], ['w_pdw', 4], ['w_dbs', 3], ['w_burst', 3], ['w_lmg', 1.2], ['w_sniper', 0.7],
     ['a_magnum', 3], ['a_sniper', 1.6], ['g_frag', 4], ['g_smoke', 3],
-    ['a_light', 11], ['a_rifle', 11], ['a_shell', 6], ['h_band', 12], ['h_kit', 4],
+    ['a_light', 11], ['a_rifle', 11], ['a_shell', 6], ['h_band', 12], ['h_kit', 4], ['h_drink', 8],
     ['v1', 6], ['v2', 4], ['v3', 1.2], ['m1', 6], ['m2', 4], ['m3', 1.2],
+    ['b1', 7], ['b2', 4], ['b3', 1.5],
   ];
   const AMMO_FOR = { pistol: 'a_light', smg: 'a_light', shotgun: 'a_shell', ar: 'a_rifle', dmr: 'a_rifle', sniper: 'a_sniper', lmg: 'a_rifle', revolver: 'a_magnum', burst: 'a_rifle', pdw: 'a_light', dbs: 'a_shell' };
   function spot(x, y) { const f = col.findFree(x, y, 6, 0.35); return f; }
@@ -237,9 +257,23 @@ export function giveWeapon(agent, kind, opt = {}) {
 export function applyItem(agent, it, opt = {}) { // → teks hasil atau null kalau tidak diambil
   const d = it.def;
   if (d.kind === 'weapon') { const r = giveWeapon(agent, d.w, it.mag != null ? { ...opt, mag: it.mag } : opt); return r ? { text: d.name, slot: r.slot, dropped: r.dropped } : null; }
+  if (agent.isPlayer) { // pemain: dibatasi bobot tas, bukan jumlah per jenis
+    if (d.kind === 'ammo') { // ambil sebanyak yang muat; sisanya tetap di tanah
+      const n = it.n || d.n, take = Math.min(n, bagFit(agent, ITEM_W.ammo[d.ammo] || 0.5)), base = d.name.replace(/ ×\d+$/, '');
+      if (take <= 0) return null;
+      agent.ammo[d.ammo] = (agent.ammo[d.ammo] || 0) + take;
+      if (take < n) { it.n = n - take; it.name = base + ' ×' + it.n; return { text: base + ' ×' + take, keep: true }; }
+      return { text: it.name || d.name };
+    }
+    if (d.kind === 'nade') { agent.nades ||= {}; if (bagFit(agent, ITEM_W.nade[d.nade] || 10) < 1) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
+    if (d.kind === 'heal') { if (bagFit(agent, ITEM_W.heal[d.heal] || 2) < 1) return null; agent.heals[d.heal] = (agent.heals[d.heal] || 0) + 1; return { text: d.name }; }
+    if (d.kind === 'bag') { if ((agent.bag | 0) >= d.lvl) return null; agent.bag = d.lvl; return { text: d.name }; }
+  }
+  if (d.kind === 'bag') return null; // bot tidak memakai tas
   if (d.kind === 'ammo') { agent.ammo[d.ammo] = Math.min(AMMO_CAP[d.ammo] || 300, (agent.ammo[d.ammo] || 0) + (it.n || d.n)); return { text: it.name || d.name }; } // it.n / it.name: peluru yang dibuang pemain (jumlah bisa kurang dari satu pak)
   if (d.kind === 'nade') { agent.nades ||= {}; if ((agent.nades[d.nade] || 0) >= NADE_CAP) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
   if (d.kind === 'heal') {
+    if (d.heal === 'drink') return null; // bot tidak memakai minuman energi
     const cap = d.heal === 'kit' ? 3 : 10;
     if (agent.heals[d.heal] >= cap) return null;
     agent.heals[d.heal]++;
@@ -276,18 +310,27 @@ export function crateEntries(c) {
   c.weapons.forEach((wk) => L.push({ t: 'weapon', k: wk, text: WEAPONS[wk].name }));
   for (const k of Object.keys(AMMO_TXT)) if (c.ammo[k] > 0) L.push({ t: 'ammo', k, text: AMMO_TXT[k][0].toUpperCase() + AMMO_TXT[k].slice(1) + ' ×' + c.ammo[k] });
   if (c.nades) for (const k of Object.keys(NADES)) if (c.nades[k] > 0) L.push({ t: 'nade', k, text: NADES[k].name + ' ×' + c.nades[k] });
-  for (const k of ['band', 'kit']) if (c.heals[k] > 0) L.push({ t: 'heal', k, text: (k === 'kit' ? 'P3K' : 'Perban') + ' ×' + c.heals[k] });
+  for (const k of ['band', 'kit', 'drink']) if (c.heals[k] > 0) L.push({ t: 'heal', k, text: (k === 'kit' ? 'P3K' : k === 'drink' ? 'Minuman energi' : 'Perban') + ' ×' + c.heals[k] });
   if (c.vest) L.push({ t: 'vest', k: c.vest, text: 'Rompi lv.' + c.vest });
   if (c.helmet) L.push({ t: 'helmet', k: c.helmet, text: 'Helm lv.' + c.helmet });
+  if (c.bag) L.push({ t: 'bag', k: c.bag, text: 'Tas lv.' + c.bag });
   return L;
 }
 // ambil satu baris isi peti → { text, slot, dropped } atau null (tas penuh / sudah lebih baik); rompi/helm ditukar
 export function takeCrateEntry(agent, c, e, opt = {}) {
   if (e.t === 'weapon') { const r = giveWeapon(agent, e.k, opt); if (!r) return null; c.weapons.splice(c.weapons.indexOf(e.k), 1); return { text: WEAPONS[e.k].name, slot: r.slot, dropped: r.dropped }; }
+  if (agent.isPlayer && (e.t === 'ammo' || e.t === 'nade' || e.t === 'heal')) { // pemain: sebanyak yang muat di tas (bobot)
+    const src = e.t === 'ammo' ? c.ammo : e.t === 'nade' ? c.nades : c.heals, dst = e.t === 'ammo' ? agent.ammo : e.t === 'nade' ? (agent.nades ||= {}) : agent.heals;
+    const n = Math.min(bagFit(agent, ITEM_W[e.t][e.k] || 1), src[e.k] || 0);
+    if (n <= 0) return null;
+    dst[e.k] = (dst[e.k] || 0) + n; src[e.k] -= n;
+    return { text: (e.t === 'ammo' ? AMMO_TXT[e.k] : e.t === 'nade' ? NADES[e.k].name.toLowerCase() : e.k === 'kit' ? 'P3K' : e.k === 'drink' ? 'minuman energi' : 'perban') + ' ×' + n };
+  }
+  if (e.t === 'bag') { if (!agent.isPlayer || (agent.bag | 0) >= c.bag) return null; const old = agent.bag | 0; agent.bag = c.bag; c.bag = old; return { text: 'tas lv.' + agent.bag }; }
   if (e.t === 'ammo') { const n = Math.min((AMMO_CAP[e.k] || 300) - (agent.ammo[e.k] || 0), c.ammo[e.k]); if (n <= 0) return null; agent.ammo[e.k] = (agent.ammo[e.k] || 0) + n; c.ammo[e.k] -= n; return { text: AMMO_TXT[e.k] + ' ×' + n }; }
   if (e.t === 'nade') { const n = Math.min(NADE_CAP - (agent.nades[e.k] || 0), c.nades[e.k]); if (n <= 0) return null; agent.nades[e.k] = (agent.nades[e.k] || 0) + n; c.nades[e.k] -= n; return { text: NADES[e.k].name.toLowerCase() + ' ×' + n }; }
   if (e.t === 'heal') { const n = Math.min((e.k === 'kit' ? 3 : 10) - agent.heals[e.k], c.heals[e.k]); if (n <= 0) return null; agent.heals[e.k] += n; c.heals[e.k] -= n; return { text: (e.k === 'kit' ? 'P3K' : 'perban') + ' ×' + n }; }
   if (e.t === 'vest' || e.t === 'helmet') { if (agent[e.t] >= c[e.t]) return null; const old = agent[e.t]; agent[e.t] = c[e.t]; c[e.t] = old; return { text: (e.t === 'vest' ? 'rompi' : 'helm') + ' lv.' + agent[e.t] }; }
   return null;
 }
-export const crateEmpty = (c) => !c.weapons.length && !Object.values(c.ammo).some((v) => v > 0) && !(c.nades && Object.values(c.nades).some((v) => v > 0)) && !c.heals.band && !c.heals.kit && !c.vest && !c.helmet;
+export const crateEmpty = (c) => !c.weapons.length && !Object.values(c.ammo).some((v) => v > 0) && !(c.nades && Object.values(c.nades).some((v) => v > 0)) && !c.heals.band && !c.heals.kit && !c.heals.drink && !c.vest && !c.helmet && !c.bag;

@@ -8,7 +8,7 @@
 // 1/2/3 ganti senjata, Ctrl+1..4 pindah kursi (1 = sopir; kendaraan tanpa sopir meluncur lalu berhenti).
 import * as THREE from 'three';
 import { WEAPONS, NADES, createViewModel } from './weapons.js';
-import { applyItem, propGeometry, crateEntries, takeCrateEntry, crateEmpty, ITEMS } from './loot.js';
+import { applyItem, propGeometry, crateEntries, takeCrateEntry, crateEmpty, ITEMS, bagWeight, bagCap } from './loot.js';
 import { itemIcon } from './icons.js';
 import { buildCharacter } from '../map/rig.js';
 import { applyEquipped } from './skins.js';
@@ -18,6 +18,7 @@ const D2R = Math.PI / 180;
 const EYE = 1.62, EYE_CROUCH = 1.12, EYE_PRONE = 0.42, RAD = 0.35, GRAV = 18;
 const SPEED = { walk: 4.1, sprint: 6.6, crouch: 2.1, ads: 2.6, prone: 1.15, swim: 2.2, swimFast: 3.1, dive: 1.8 };
 const SWIM_Y = -1.3, BREATH = 25, WADE_D = 1.2, WATER_S = 0.08; // kepala di permukaan; napas (dtk); < 1,2 m = mengarungi; tinggi permukaan air
+const BOOST_MAX = 100, BOOST_DRINK = 40; // tenaga (minuman energi): 1 tenaga = 1 HP, habis 1 per detik
 const OUTFIT = { shirt: '#503EBA', sleeve: '#503EBA', pants: '#2b2940', skin: '#c68c66', hair: '#231c18', shoes: '#1c1b22', gear: '#4c5340', pack: '#3a3d34', trim: '#D29F52',
   glove: '#25232c', cuff: '#D29F52', inner: '#d9d5cc' }; // sarung tangan & manset = tangan orang pertama (game/weapons.js)
 const clamp = THREE.MathUtils.clamp;
@@ -112,7 +113,9 @@ export function createPlayer(ctx) {
   addEventListener('keydown', (e) => {
     if (!ctx.playing()) return;
     // panel loot ditutup dengan Esc tapi mouse belum terkunci lagi: tombol apa pun (selain Esc) menguncinya
-    if (st.wantLock) { if (locked()) st.wantLock = false; else if (e.code !== 'Escape' && !st.lootUI && !e.repeat) { softLockAt = performance.now(); ctx.lock(); } }
+    if (st.wantLock) { if (locked()) st.wantLock = false; else if (e.code !== 'Escape' && e.code !== 'KeyM' && !st.lootUI && !e.repeat && !(ctx.mapOpen && ctx.mapOpen())) { softLockAt = performance.now(); ctx.lock(); } }
+    // Esc saat peta besar (M) terbuka: tutup peta saja — sama seperti panel loot, mouse dikunci lagi setelah Esc dilepas
+    if (e.code === 'Escape' && ctx.mapOpen && ctx.mapOpen()) { e.preventDefault(); if (!e.repeat) { ctx.closeMap(); escRelock = true; st.wantLock = true; st.escAt = performance.now(); relockLoop(); } return; }
     if (!me.alive) { // tersingkir, rekan masih main: Spasi/F/D/→ = rekan berikutnya, A/← = sebelumnya, M = peta
       if (e.repeat || !ctx.specNext) return;
       if (e.code === 'Space' || e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'KeyD' || e.code === 'ArrowRight') { e.preventDefault(); ctx.specNext(1); }
@@ -129,7 +132,7 @@ export function createPlayer(ctx) {
       if (e.ctrlKey && /^Digit[1-9]$/.test(e.code)) { e.preventDefault(); if (!e.repeat) ctx.switchSeat(+e.code.slice(5) - 1); return; } // Ctrl+1..9 pindah kursi
       if (e.repeat) return;
       switch (e.code) {
-        case 'KeyF': case 'KeyE': ctx.exitVehicle(); break;
+        case 'KeyF': ctx.exitVehicle(); break; // hanya F (E tidak lagi keluar kendaraan)
         case 'KeyH': ctx.horn(); break;
         case 'KeyV': st.vfp = !st.vfp; hud.flash(st.vfp ? 'Kamera kursi' : 'Kamera belakang'); break;
         case 'KeyM': ctx.toggleMap(); break;
@@ -162,6 +165,7 @@ export function createPlayer(ctx) {
       case 'KeyX': select(-1); break;
       case 'Digit4': heal('band'); break;
       case 'Digit5': heal('kit'); break;
+      case 'Digit6': heal('drink'); break;
       case 'KeyV': st.tpp = !st.tpp; hud.flash(st.tpp ? 'Orang ketiga' : 'Orang pertama'); break;
       case 'KeyI': if (!st.reloadEnd && !st.healEnd) vm.inspect(); break; // periksa senjata
       case 'KeyG': nadeStart(); break; // tahan = bidik (lintasan), lepas = lempar
@@ -254,12 +258,15 @@ export function createPlayer(ctx) {
   }
   function heal(kind) {
     if (me.state !== 'ground' || st.swim || !me.heals[kind] || st.healEnd || st.nade) return;
-    if (kind === 'band' && me.hp >= 75) { hud.toast('Perban hanya sampai 75 HP'); return; }
-    if (me.hp >= 100) return;
+    if (kind === 'band' && me.hp >= 75) { hud.toast(me.heals.drink > 0 ? 'Perban hanya sampai 75 HP · minum minuman energi (6)' : 'Perban hanya sampai 75 HP'); return; }
+    if (kind === 'drink') { if ((me.boost || 0) >= BOOST_MAX - 1) { hud.toast('Tenaga sudah penuh'); return; } }
+    else if (me.hp >= 100) return;
+    const dur = kind === 'kit' ? 6 : kind === 'drink' ? 4 : 3.5;
     st.healKind = kind;
-    st.healEnd = ctx.now() + (kind === 'kit' ? 6 : 3.5);
+    st.healDur = dur;
+    st.healEnd = ctx.now() + dur;
     st.reloadEnd = 0;
-    vm.heal(kind, kind === 'kit' ? 6 : 3.5); // animasi membalut perban / menyuntik P3K
+    vm.heal(kind === 'drink' ? 'band' : kind, dur); // animasi membalut perban / menyuntik P3K (minuman: sementara memakai animasi perban)
   }
   // ---------- Senjata di kendaraan ----------
   function driverGun() { // slot SMG (diutamakan) atau pistol, −1 kalau tidak punya
@@ -371,19 +378,19 @@ export function createPlayer(ctx) {
     take(it);
   }
   // ---------- Panel loot (seperti PUBG): kiri inventaris, kanan isi peti / barang di sekitar, bergambar ----------
-  const ENTRY_TYPE = { weapon: (k) => 'w_' + k, ammo: (k) => 'a_' + k, heal: (k) => 'h_' + k, vest: (k) => 'v' + k, helmet: (k) => 'm' + k, nade: (k) => 'g_' + k };
+  const ENTRY_TYPE = { weapon: (k) => 'w_' + k, ammo: (k) => 'a_' + k, heal: (k) => 'h_' + k, vest: (k) => 'v' + k, helmet: (k) => 'm' + k, nade: (k) => 'g_' + k, bag: (k) => 'b' + k };
   function vicinity() { const L = []; loot.near(me.pos.x, -me.pos.z, 2.6, (it) => { if (it.def.kind !== 'crate' && Math.abs((it.z || 0) - me.pos.y) < 1.3) L.push(it); }); return L.slice(0, 12); }
   function itemName(it) { return it.name || it.def.name || (it.def.w && WEAPONS[it.def.w].name) || it.type; }
   function lootModel() {
     const guns = [0, 1, 2].map((s) => { const w = me.weapons[s]; return w ? { slot: s, type: 'w_' + w.kind, name: WEAPONS[w.kind].name, mag: w.mag, cap: WEAPONS[w.kind].mag, ammo: me.ammo[WEAPONS[w.kind].ammo] || 0 } : { slot: s }; });
     const items = [];
     for (const [k, n] of Object.entries(me.ammo)) if (n > 0) items.push({ type: 'a_' + k, n, name: (ITEMS['a_' + k] ? ITEMS['a_' + k].name : k).replace(/ ×\d+$/, '') });
-    for (const k of ['band', 'kit']) if (me.heals[k] > 0) items.push({ type: 'h_' + k, n: me.heals[k], name: k === 'kit' ? 'P3K' : 'Perban' });
+    for (const k of ['band', 'kit', 'drink']) if (me.heals[k] > 0) items.push({ type: 'h_' + k, n: me.heals[k], name: k === 'kit' ? 'P3K' : k === 'drink' ? 'Minuman energi' : 'Perban' });
     for (const [k, n] of Object.entries(me.nades || {})) if (n > 0) items.push({ type: 'g_' + k, n, name: NADES[k] ? NADES[k].name : k });
-    const gear = [{ type: me.vest ? 'v' + me.vest : null, name: me.vest ? 'Rompi lv.' + me.vest : 'Tanpa rompi' }, { type: me.helmet ? 'm' + me.helmet : null, name: me.helmet ? 'Helm lv.' + me.helmet : 'Tanpa helm' }];
+    const gear = [{ type: me.vest ? 'v' + me.vest : null, name: me.vest ? 'Rompi lv.' + me.vest : 'Tanpa rompi' }, { type: me.helmet ? 'm' + me.helmet : null, name: me.helmet ? 'Helm lv.' + me.helmet : 'Tanpa helm' }, { type: me.bag ? 'b' + me.bag : null, name: me.bag ? 'Tas lv.' + me.bag : 'Tanpa tas' }];
     const loot2 = st.crate ? crateEntries(st.crate.contents).map((e) => { const type = ENTRY_TYPE[e.t] ? ENTRY_TYPE[e.t](e.k) : 'crate'; return { type, name: e.text, rar: (ITEMS[type] || {}).rar || 0 }; })
       : vicinity().map((it) => ({ type: it.type, name: itemName(it), rar: it.def.rar || 0 }));
-    return { title: st.crate ? 'Peti jarahan' : 'Di sekitar', guns, items, gear, loot: loot2 };
+    return { title: st.crate ? 'Peti jarahan' : 'Di sekitar', guns, items, gear, loot: loot2, bagW: Math.round(bagWeight(me)), bagCap: bagCap(me) };
   }
   // buang barang dari inventaris ke tanah (klik kanan di panel): 'w:<slot>' senjata, 'a_<jenis>' satu pak peluru, 'h_<jenis>' penyembuh, 'g_<jenis>' granat
   function lootDrop(key) {
@@ -462,7 +469,7 @@ export function createPlayer(ctx) {
     const it = st.crate, e = it && crateEntries(it.contents)[i];
     if (!e) return false;
     const r = takeCrateEntry(me, it.contents, e, { replaceSlot: me.cur === 0 || me.cur === 1 ? me.cur : 0 });
-    if (!r) { hud.toast(e.t === 'weapon' ? 'Slot senjata penuh' : e.t === 'vest' || e.t === 'helmet' ? 'Sudah punya yang setara atau lebih baik' : 'Tas penuh untuk barang ini'); return false; }
+    if (!r) { hud.toast(e.t === 'weapon' ? 'Slot senjata penuh' : e.t === 'vest' || e.t === 'helmet' || e.t === 'bag' ? 'Sudah punya yang setara atau lebih baik' : 'Tas penuh'); return false; }
     if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0 }); }
     audio.pickup();
     me.looted = (me.looted || 0) + 1;
@@ -475,7 +482,7 @@ export function createPlayer(ctx) {
   function take(it, auto) {
     const replaceSlot = me.cur === 0 || me.cur === 1 ? me.cur : 0;
     const r = applyItem(me, it, { replaceSlot });
-    if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' ? 'Tas penuh untuk barang ini' : 'Sudah punya yang setara atau lebih baik'); return; }
+    if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' || it.def.kind === 'ammo' || it.def.kind === 'nade' ? 'Tas penuh' : 'Sudah punya yang setara atau lebih baik'); return; }
     if (!r.keep) loot.remove(it);
     if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0 }); }
     audio.pickup();
@@ -697,9 +704,15 @@ export function createPlayer(ctx) {
     }
     if (st.healEnd && now >= st.healEnd) {
       me.heals[st.healKind]--;
-      me.hp = st.healKind === 'kit' ? 100 : Math.min(75, me.hp + 15);
+      if (st.healKind === 'drink') me.boost = Math.min(BOOST_MAX, (me.boost || 0) + BOOST_DRINK); // tenaga: darah naik pelan-pelan (lihat di bawah)
+      else me.hp = st.healKind === 'kit' ? 100 : Math.min(75, me.hp + 15);
       st.healEnd = 0;
       audio.heal();
+    }
+    if (me.boost > 0 && me.alive) { // tenaga dari minuman energi: turun 1/dtk; selama ada, darah naik 1 HP/dtk sampai 100 (tidak saat tumbang)
+      const d = Math.min(me.boost, dt);
+      me.boost -= d;
+      if (!me.down && me.hp < 100) me.hp = Math.min(100, me.hp + d);
     }
     if ((st.firing || st.burstLeft > 0) && !st.sprinting && !st.nade && !me.down && !st.revive) fire(now);
     if (st.nade) { if (st.swim) nadeAbort(); else if (ctx.nadeAim) { const [o, v] = nadeThrowVec(now); ctx.nadeAim(o, v); } } // pratinjau lintasan granat
@@ -716,8 +729,11 @@ export function createPlayer(ctx) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
     const chuteOn = me.state === 'chute';
     if (!chuteOn && me.pos.y < 120) { me.state = 'chute'; audio.click(); }
-    const hs = chuteOn ? (iz > 0 ? 13 : 6) : (iz > 0 ? 28 : 14), dive = !chuteOn && iz > 0 ? clamp(-st.pitch, 0, 1) : 0;
-    const vsT = chuteOn ? (iz > 0 ? 11 : iz < 0 ? 6 : 9) : 46 + dive * 24; // payung + S: mengerem, turun lebih pelan
+    // Terjun bebas + W: arah pandang menentukan gaya. Memandang datar = melayang jauh (maju 38, turun 38 m/dtk);
+    // memandang ke bawah = menukik (maju turun sampai 14, turun sampai 70 m/dtk). Tanpa W: jatuh biasa 46 m/dtk.
+    const dive = !chuteOn && iz > 0 ? clamp(-st.pitch, 0, 1) : 0;
+    const hs = chuteOn ? (iz > 0 ? 13 : 6) : (iz > 0 ? 38 - 24 * dive : 14);
+    const vsT = chuteOn ? (iz > 0 ? 11 : iz < 0 ? 6 : 9) : iz > 0 ? 38 + 32 * dive : 46; // payung + S: mengerem, turun lebih pelan
     st.airVs = st.airVs ? st.airVs + (vsT - st.airVs) * (1 - Math.exp(-dt * 3)) : vsT; // perubahan laju turun dihaluskan
     const vs = st.airVs;
     fwd.set(Math.sin(st.yaw), 0, Math.cos(st.yaw));
@@ -725,7 +741,7 @@ export function createPlayer(ctx) {
     // A/D: geser samping kekuatan penuh, tidak tergantung W (gabungan maju+samping dibatasi ke kecepatan maksimum)
     const cap = chuteOn ? 13 : 28;
     let fs = iz < 0 ? 0 : Math.max(0.35, iz) * hs, ss = ix * cap; // S = rem: laju maju jadi nol (tanpa tombol tetap melayang maju pelan)
-    { const m = Math.hypot(fs, ss); if (m > cap) { fs *= cap / m; ss *= cap / m; } }
+    { const m = Math.hypot(fs, ss), lim = Math.max(cap, fs); if (m > lim) { fs *= lim / m; ss *= lim / m; } }
     const tx = fwd.x * fs + right.x * ss, tz = fwd.z * fs + right.z * ss;
     st.airLean = (st.airLean || 0) + (ix * (chuteOn ? 0.3 : 0.5) - (st.airLean || 0)) * (1 - Math.exp(-dt * 5)); // badan miring ke arah geser
     const k = 1 - Math.exp(-dt * (iz < 0 ? 3.5 : 1.8)); // mengerem lebih sigap daripada menambah laju

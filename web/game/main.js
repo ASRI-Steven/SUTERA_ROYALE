@@ -14,7 +14,7 @@ import { makeMapImage, BigMap } from '../map/mapview.js';
 import { WEAPONS, createEffects, spreadDir, falloff } from './weapons.js';
 import { createZone } from './zone.js';
 import { createBorder } from './border.js';
-import { createLoot } from './loot.js';
+import { createLoot, bagWeight, bagCap } from './loot.js';
 import { createBots, DIFFICULTY } from './bots.js';
 import { createPlayer } from './player.js';
 import { createHud } from './hud.js';
@@ -31,8 +31,8 @@ import { profile, partySlots } from './profile.js';
 
 const $ = (id) => document.getElementById(id);
 const D2R = Math.PI / 180, BOTS = 99, TEAM = 4, ALT = 620, PLANE_SPEED = 85; // 100 petarung = 25 regu berisi 4 (pemain + 3 bot rekan, 24 regu bot)
-const DOWNS = false; // tumbang & dipulihkan rekan + menonton rekan setelah tersingkir (tahap berikutnya; false = tersingkir langsung seperti biasa)
-const DOWN_HP = 100, BLEED = [30, 22, 14], REVIVE_T = 5, REVIVE_R = 2.0; // tumbang: darah habis dalam 30/22/14 dtk (makin sering makin cepat); pulihkan: tahan 5 dtk dalam 2 m
+const DOWNS = true; // tumbang & dipulihkan rekan + menonton rekan setelah tersingkir (false = tersingkir langsung)
+const DOWN_HP = 100, REVIVE_HP = 20, BLEED = [30, 22, 14], REVIVE_T = 5, REVIVE_R = 2.0; // tumbang: darah habis dalam 30/22/14 dtk (makin sering makin cepat); pulihkan: tahan 5 dtk dalam 2 m
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const mmss = (s) => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 function loadStep(p, text) { $('loaderBar').style.width = p + '%'; if (text) $('loaderText').textContent = text; }
@@ -149,7 +149,7 @@ function start(D, realAssets) {
   vehicles.spawnAll();
   const makeAgent = (name, isPlayer) => ({
     name, isPlayer, alive: true, state: 'plane', pos: new THREE.Vector3(0, ALT, 0), vel: new THREE.Vector2(), yaw: 0, vy: 0, grounded: false, crouch: false,
-    hp: 100, vest: 0, helmet: 0, weapons: [null, null, null], cur: -1, ammo: { light: 0, rifle: 0, shell: 0, sniper: 0, magnum: 0 }, heals: { band: 0, kit: 0 }, nades: { frag: 0, smoke: 0 },
+    hp: 100, vest: 0, helmet: 0, bag: 0, weapons: [null, null, null], cur: -1, ammo: { light: 0, rifle: 0, shell: 0, sniper: 0, magnum: 0 }, heals: { band: 0, kit: 0, drink: 0 }, boost: 0, nades: { frag: 0, smoke: 0 },
     kills: 0, dmg: 0, lastShot: 0, reloadEnd: 0, healEnd: 0, moveSpeed: 0, moveYaw: 0, pose: {},
     team: 0, sq: null, slot: 0, down: false, downN: 0, reviveT: 0, reviver: null, reviving: null, // regu & tumbang/pulih
   });
@@ -292,7 +292,7 @@ function start(D, realAssets) {
   function revive(t, by) {
     const i = downed.indexOf(t);
     if (i >= 0) downed.splice(i, 1);
-    t.down = false; t.hp = 25; t.prone = false; t.reviveT = 0; t.reviver = null; t.downBy = null;
+    t.down = false; t.hp = REVIVE_HP; t.prone = false; // pulih dengan darah 20% t.reviveT = 0; t.reviver = null; t.downBy = null;
     if (by) { by.reviving = null; if (by.isPlayer) stat.revives++; }
     if (t.isPlayer) { player.onRevived(); hud.message('Pulih!', by ? by.name + ' memulihkanmu · obati dirimu' : 'Obati dirimu', ''); }
     else bots.revived(t);
@@ -342,8 +342,8 @@ function start(D, realAssets) {
     if (!t.isPlayer && attacker !== me && t.team !== me.team && ((t.hitByMe && now - t.hitByMe < 12) || finisher === me)) stat.assists++;
     aliveCount--;
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
-    const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet };
-    if (c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
+    const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, bag: t.bag | 0 };
+    if (c.bag || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
     if (attacker && attacker.isPlayer) audio.kill(); // spanduk kill pemain ditampilkan hud.feed
     // regu: anggota terakhir yang berdiri jatuh → yang tumbang ikut tersingkir; regu habis → peringkat regu
     const sq = t.sq;
@@ -447,6 +447,7 @@ function start(D, realAssets) {
     horn() { if (me.vehicle && me.vehicle.driver === me) vehicles.horn(me.vehicle); },
     playing: () => phase === 'play' && !paused,
     toggleMap,
+    mapOpen: () => !big.el.hidden, closeMap: () => { if (!big.el.hidden) big.close(); }, // Esc menutup peta (kunci mouse diurus player.js)
     jumpOut,
     landed(x, y) {
       if (!inArea(x, y)) { const r = bots.nearestRoad(x, y); if (r) { me.pos.set(r[0], 0, -r[1]); x = r[0]; y = r[1]; } }
@@ -537,7 +538,7 @@ function start(D, realAssets) {
 
   // ---------- Peta besar (M) ----------
   const big = new BigMap(mapImg, {
-    hint: 'Klik = tandai tujuan · scroll = zoom · seret = geser · <kbd>M</kbd> tutup',
+    hint: 'Klik = tandai tujuan · scroll = zoom · seret = geser · <kbd>M</kbd> / <kbd>Esc</kbd> tutup',
     getState: () => { const F = focusAgent(); return { x: F.pos.x, y: -F.pos.z, heading: player.st.yaw, circles: zoneCircles(), path: me.state === 'plane' && flight ? flight.path : null, marks: waypoint ? [{ ...waypoint, color: '#D29F52' }] : [], pins: me.state === 'plane' ? [] : matePins(vehicles.pins(F.pos.x, -F.pos.z, 700, F.vehicle)) }; },
     onPick: (x, y) => { waypoint = { x, y }; hud.toast('Tujuan ditandai'); },
   });
@@ -584,7 +585,7 @@ function start(D, realAssets) {
     return mateBuf;
   }
   function toggleMap() {
-    if (big.el.hidden) { big.open(); document.exitPointerLock(); }
+    if (big.el.hidden) { big.open(); if (player) player.st.wantLock = false; document.exitPointerLock(); } // peta terbuka: jangan ada percobaan kunci mouse tertunda
     else { big.close(); ctx.lock(); }
   }
   function zoneCircles() {
@@ -788,10 +789,10 @@ function start(D, realAssets) {
           squads: squadsLeft, squad: squadRows(), spec: spec && !me.alive ? spec.name : '', specSlot: spec ? spec.slot : 0,
           down: me.down && me.alive ? me.hp / DOWN_HP : -1, downLeft: me.down ? me.hp / Math.max(0.01, me.bleed) : 0,
           revive: rv ? rv.reviveT / REVIVE_T : rb ? me.reviveT / REVIVE_T : 0, reviveLeft: rv ? REVIVE_T - rv.reviveT : rb ? REVIVE_T - me.reviveT : 0, reviveName: rv ? rv.name : rb ? rb.name : '', reviveBy: !!rb,
-          state: me.state, place: placeName, alive: aliveCount, kills: me.kills, hp: me.hp, vest: me.vest, helmet: me.helmet, band: me.heals.band, kit: me.heals.kit,
+          state: me.state, place: placeName, alive: aliveCount, kills: me.kills, hp: me.hp, vest: me.vest, helmet: me.helmet, band: me.heals.band, kit: me.heals.kit, drink: me.heals.drink | 0, boost: me.boost || 0, bag: me.bag | 0, bagPct: bagWeight(me) / bagCap(me) * 100,
           weapons: me.weapons, cur: me.cur, ammo: me.ammo, nades: me.nades, nadeSel: pst.nadeSel, nadeHold: !!pst.nade, zone, outside: me.state === 'ground' ? zone.outside(me.pos.x, -me.pos.z) : -1,
           reload: pst.reloadEnd && w ? Math.max(0.01, 1 - (pst.reloadEnd - now) / w.def.reload) : 0, reloadLeft: pst.reloadEnd ? pst.reloadEnd - now : 0, // isi ulang: 0 = tidak, >0 = kemajuan
-          heal: pst.healEnd ? pst.healKind : '', healK: pst.healEnd ? 1 - (pst.healEnd - now) / (pst.healKind === 'kit' ? 6 : 3.5) : 0, healLeft: pst.healEnd ? pst.healEnd - now : 0,
+          heal: pst.healEnd ? pst.healKind : '', healK: pst.healEnd ? 1 - (pst.healEnd - now) / (pst.healDur || 3.5) : 0, healLeft: pst.healEnd ? pst.healEnd - now : 0,
           breath: pst.swim && (pst.dive || pst.breath < 0.999) ? pst.breath : -1, // napas saat menyelam (−1 = tidak ditampilkan)
           prompt: me.state === 'ground' && me.alive && !me.down ? pst.prompt : null, vehArmed: vArmed,
           hidden: me.state === 'ground' && (me.prone || me.crouch) && grass.at(me.pos.x, -me.pos.z) > 0.35 ? (me.prone ? 'prone' : 'crouch') : '',
