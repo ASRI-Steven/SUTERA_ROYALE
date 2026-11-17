@@ -356,13 +356,13 @@ export function createHud() {
         // seret-dan-lepas aksesori: label aksesori → senjata lain (pindah) / kolom kanan (buang); kartu aksesori di sekitar → senjata (pasang)
         let drag = null;
         const clearHot = () => { for (const n of lpEl.querySelectorAll('.lp-hot')) n.classList.remove('lp-hot'); };
-        const target = (e) => (drag ? e.target.closest('[data-gun]') || (drag.att ? e.target.closest('.lp-loot') : null) : null);
+        const target = (e) => (drag ? e.target.closest('[data-gun]') || (drag.att ? e.target.closest('.lp-loot, .lp-bag') : drag.bag ? e.target.closest('.lp-loot') : null) : null);
         lpEl.addEventListener('dragstart', (e) => {
-          const a = e.target.closest('.lp-att'), c = a ? null : e.target.closest('.lp-card[draggable="true"]');
-          if (!a && !c) { e.preventDefault(); return; }
-          drag = a ? { att: a.dataset.drop } : { take: +c.dataset.take };
+          const a = e.target.closest('.lp-att'), c = a ? null : e.target.closest('.lp-card[draggable="true"]'), b = a || c ? null : e.target.closest('.lp-item[draggable="true"]');
+          if (!a && !c && !b) { e.preventDefault(); return; }
+          drag = a ? { att: a.dataset.drop } : c ? { take: +c.dataset.take } : { bag: b.dataset.drop };
           e.dataTransfer.effectAllowed = 'move';
-          e.dataTransfer.setData('text/plain', a ? a.dataset.drop : 'take');
+          e.dataTransfer.setData('text/plain', a ? a.dataset.drop : c ? 'take' : b.dataset.drop);
           lpEl.classList.add('lp-dragging');
         });
         lpEl.addEventListener('dragover', (e) => { const t = target(e); clearHot(); if (t) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; t.classList.add('lp-hot'); } });
@@ -371,8 +371,9 @@ export function createHud() {
           clearHot();
           if (!t || !d || !lpH) return;
           e.preventDefault();
-          if (t.dataset.gun !== undefined) { if (d.att) lpH.moveAtt(d.att, +t.dataset.gun); else lpH.takeTo(d.take, +t.dataset.gun); }
-          else if (d.att) lpH.drop(d.att);
+          if (t.dataset.gun !== undefined) { if (d.att) lpH.moveAtt(d.att, +t.dataset.gun); else if (d.bag) lpH.bagTo(d.bag, +t.dataset.gun); else lpH.takeTo(d.take, +t.dataset.gun); }
+          else if (d.att && t.classList.contains('lp-bag')) lpH.stashAtt(d.att); // ke tas: lepas & simpan
+          else lpH.drop(d.att || d.bag); // ke kolom kanan: buang ke tanah
         });
         lpEl.addEventListener('dragend', () => { drag = null; clearHot(); lpEl.classList.remove('lp-dragging'); });
         lpEl.addEventListener('click', (e) => {
@@ -388,7 +389,7 @@ export function createHud() {
       const img = (type, cls = '') => { const u = type && lpH && lpH.icon ? lpH.icon(type) : ''; return u ? `<img class="${cls}" src="${u}" alt="" draggable="false">` : `<span class="lp-noimg ${cls}"></span>`; };
       const gun = (g) => (g.type ? `<div class="lp-gun lp-drop" data-gun="${g.slot}" data-drop="w:${g.slot}" title="Klik kanan untuk membuang"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small>${(g.att || []).length ? '<span class="lp-atts">' + g.att.map((a) => `<i class="lp-att lp-drop" draggable="true" data-drop="x:${g.slot}:${a.k}" title="${esc(a.name)} — seret ke senjata lain untuk memindahkan · klik kanan untuk melepas">${esc(a.name)}</i>`).join('') + '</span>' : ''}</div></div>`
         : `<div class="lp-gun lp-empty"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span><small>${g.slot === 2 ? 'Slot pistol kosong' : 'Slot senjata kosong'}</small></div>`);
-      const bag = (it) => `<div class="lp-item lp-drop" data-drop="${esc(it.type)}" title="${esc(it.name)} — klik kanan untuk membuang">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
+      const bag = (it) => `<div class="lp-item lp-drop"${/^x_/.test(it.type) ? ' draggable="true"' : ''} data-drop="${esc(it.type)}" title="${esc(it.name)} — ${/^x_/.test(it.type) ? 'seret ke senjata untuk memasang · ' : ''}klik kanan untuk membuang">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
       const gear = (g) => `<div class="lp-item lp-gear${g.type ? ' lp-drop' : ' lp-empty'}"${g.type ? ` data-drop="${esc(g.type)}" title="${esc(g.name)} — klik kanan untuk membuang"` : ''}>${img(g.type)}<small>${esc(g.name)}</small></div>`;
       const card = (it, i) => `<button type="button" class="lp-card"${/^x_/.test(it.type) ? ' draggable="true" title="Klik untuk memasang · seret ke senjata tertentu"' : ''} data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
       lpEl.innerHTML = `<div class="lp-box">

@@ -32,9 +32,9 @@ export const WEAPONS = {
   smg: { name: 'SMG Kilat', short: 'Kilat', slot: 0, ammo: 'light', dmg: 17, rpm: 860, auto: true, mag: 30, reload: 1.9, spread: 1.5, ads: 0.75, move: 1.0, recoil: 0.5, range: 32, maxRange: 350, sound: 'smg', fovAds: 60 },
   ar: { name: 'Senapan Garuda', short: 'Garuda', slot: 0, ammo: 'rifle', dmg: 27, rpm: 620, auto: true, mag: 30, reload: 2.25, spread: 1.3, ads: 0.32, move: 1.6, recoil: 0.72, range: 90, maxRange: 700, sound: 'ar', fovAds: 52 },
   shotgun: { name: 'Shotgun Badai', short: 'Badai', slot: 0, ammo: 'shell', dmg: 13, pellets: 9, rpm: 75, auto: false, mag: 5, reload: 2.6, spread: 4.2, ads: 3.4, move: 1.0, recoil: 3.2, range: 14, maxRange: 120, sound: 'shotgun', fovAds: 60 },
-  dmr: { name: 'DMR Elang', short: 'Elang', slot: 0, ammo: 'rifle', dmg: 56, rpm: 210, auto: false, mag: 10, reload: 2.6, spread: 1.0, ads: 0.04, move: 2.2, recoil: 2.0, range: 220, maxRange: 1100, sound: 'dmr', fovAds: 24, scope: true },
+  dmr: { name: 'DMR Elang', short: 'Elang', slot: 0, ammo: 'rifle', dmg: 56, rpm: 210, auto: false, mag: 10, reload: 2.6, spread: 1.0, ads: 0.04, move: 2.2, recoil: 2.0, range: 220, maxRange: 1100, sound: 'dmr', fovAds: 55, rail: [0.164, -0.245, 0.112] }, // rail: teropong bawaan model (sumbu y, z awal, z akhir) — baru tampil kalau aksesori scope terpasang,
   // v3: senapan runduk bolt (tembakan kepala menembus helm lv.1–2), SMR, revolver, senapan semburan 3 butir, PDW, laras ganda
-  sniper: { name: 'Runduk Rajawali', short: 'Rajawali', slot: 0, ammo: 'sniper', dmg: 95, rpm: 42, auto: false, mag: 5, reload: 3.1, spread: 2.6, ads: 0.0, move: 2.8, recoil: 4.2, range: 420, maxRange: 1500, sound: 'sniper', fovAds: 9.5, scope: true, bolt: 1.15 },
+  sniper: { name: 'Runduk Rajawali', short: 'Rajawali', slot: 0, ammo: 'sniper', dmg: 95, rpm: 42, auto: false, mag: 5, reload: 3.1, spread: 2.6, ads: 0.0, move: 2.8, recoil: 4.2, range: 420, maxRange: 1500, sound: 'sniper', fovAds: 55, rail: [0.172, -0.28, 0.158], bolt: 1.15 },
   lmg: { name: 'SMR Gempa', short: 'Gempa', slot: 0, ammo: 'rifle', dmg: 25, rpm: 690, auto: true, mag: 75, reload: 4.6, spread: 1.7, ads: 0.55, move: 3.2, recoil: 0.62, range: 85, maxRange: 700, sound: 'lmg', fovAds: 54 },
   revolver: { name: 'Revolver Kobra', short: 'Kobra', slot: 2, ammo: 'magnum', dmg: 52, rpm: 150, auto: false, mag: 6, reload: 2.4, spread: 0.8, ads: 0.25, move: 1.5, recoil: 3.0, range: 45, maxRange: 350, sound: 'revolver', fovAds: 60 },
   burst: { name: 'Senapan Petir', short: 'Petir', slot: 0, ammo: 'rifle', dmg: 30, rpm: 900, auto: false, burst: 3, burstDelay: 0.3, mag: 30, reload: 2.3, spread: 1.1, ads: 0.26, move: 1.5, recoil: 0.6, range: 95, maxRange: 700, sound: 'burst', fovAds: 52 },
@@ -45,13 +45,15 @@ export const WEAPONS = {
 // Magasin panjang: isi magasin +50 % (dibulatkan ke atas). Scope 2×/4×: bidikan lebih dekat (4× memakai tampilan teropong).
 export const ATTACH = {
   mag: { name: 'Magasin panjang', short: 'Mag+', fits: ['pistol', 'smg', 'ar', 'shotgun', 'dmr', 'sniper', 'lmg', 'burst', 'pdw'] },
-  s2: { name: 'Scope 2×', short: '2×', scope: 2, fov: 38, fits: ['smg', 'ar', 'lmg', 'burst', 'pdw'] },
-  s4: { name: 'Scope 4×', short: '4×', scope: 4, fov: 20, fits: ['ar', 'lmg', 'burst'] },
+  s2: { name: 'Scope 2×', short: '2×', scope: 2, fov: 38, fits: ['smg', 'ar', 'lmg', 'burst', 'pdw', 'dmr', 'sniper'] },
+  s4: { name: 'Scope 4×', short: '4×', scope: 4, fov: 20, fits: ['ar', 'lmg', 'burst', 'dmr', 'sniper'] },
+  s8: { name: 'Scope 8×', short: '8×', scope: 8, fov: 9.5, fits: ['dmr', 'sniper'] },
 };
 export const magCap = (inst) => { const d = WEAPONS[inst.kind]; return inst.att && inst.att.mag ? Math.ceil(d.mag * 1.5) : d.mag; };
 const scopeOf = (inst) => (inst.att && inst.att.scope ? ATTACH['s' + inst.att.scope] : null);
-export const adsFov = (inst) => { const sc = scopeOf(inst); return sc ? sc.fov : WEAPONS[inst.kind].fovAds; };
-export const hasScope = (inst) => !!WEAPONS[inst.kind].scope || (inst.att && inst.att.scope === 4);
+// Scope 8× bisa diatur 4×–8× (gulir mouse saat membidik): inst.zoom = perbesaran yang dipilih
+export const adsFov = (inst) => { const sc = scopeOf(inst); return !sc ? WEAPONS[inst.kind].fovAds : sc.scope === 8 ? 76 / Math.max(4, Math.min(8, inst.zoom || 8)) : sc.fov; };
+export const hasScope = (inst) => !!(inst.att && inst.att.scope >= 4); // 4× / 8×: tampilan teropong penuh
 export const attList = (inst) => { const L = []; if (inst.att) { if (inst.att.scope) L.push({ k: 's' + inst.att.scope, name: ATTACH['s' + inst.att.scope].name }); if (inst.att.mag) L.push({ k: 'mag', name: ATTACH.mag.name }); } return L; };
 export const AMMO = { light: 'Peluru ringan', rifle: 'Peluru senapan', shell: 'Peluru shotgun', sniper: 'Peluru runduk', magnum: 'Peluru magnum' };
 export const AMMO_CAP = { light: 300, rifle: 300, shell: 90, sniper: 40, magnum: 120 };
@@ -505,6 +507,26 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (!src) return;
     const G = guns[kind], model = src.clone(true);
     model.position.set(0, 0, 0);
+    if (WEAPONS[kind].rail) { // pisahkan teropong bawaan (segitiga di sekitar sumbu teropong) supaya bisa disembunyikan sampai scope dipasang
+      const [ys, z0, z1] = WEAPONS[kind].rail, meshes = [];
+      G.builtin = [];
+      model.traverse((o) => { if (o.isMesh) meshes.push(o); });
+      for (const m of meshes) {
+        const g = m.geometry, pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, keep = [], sc = [];
+        for (let i = 0; i + 2 < n; i += 3) {
+          const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+          const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+          (cz > z0 && cz < z1 && cy > ys - 0.027 && Math.hypot(cx, cy - ys) < 0.043 ? sc : keep).push(a, b, c);
+        }
+        if (!sc.length) continue;
+        const mk = (ind) => { const ng = new THREE.BufferGeometry(); for (const k in g.attributes) ng.setAttribute(k, g.attributes[k]); ng.setIndex(ind); return ng; };
+        const sm = m.clone();
+        sm.geometry = mk(sc); m.geometry = mk(keep);
+        sm.visible = false;
+        (m.parent || model).add(sm);
+        G.builtin.push(sm);
+      }
+    }
     for (const ch of [...G.g.children]) if (ch !== G.muzzle) G.g.remove(ch);
     G.g.add(model);
     const ms = glbNode(kind + '_mag');
@@ -677,6 +699,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   function syncScope(G, gk, pw) { // tampilkan scope sesuai aksesori senjata yang sedang dipegang
     if (G.scN === pw) return;
     G.scN = pw;
+    if (G.builtin) { for (const m of G.builtin) m.visible = pw > 0; return; } // DMR / runduk: teropong bawaan modelnya
     G.sc ||= {};
     if (pw && !G.sc[pw]) G.sc[pw] = buildScope(G, gk, pw);
     for (const k in G.sc) G.sc[k].visible = +k === pw;
@@ -977,7 +1000,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         if (st.inspect > 0) { st.inspect = Math.max(0, st.inspect - dt / 2.6); const u = 1 - st.inspect, s1 = Math.sin(Math.min(1, u / 0.5) * Math.PI), s2 = Math.sin(Math.max(0, (u - 0.45) / 0.55) * Math.PI); aRot.set(aRot.x + 0.25 * s1 - 0.15 * s2, aRot.y + 0.95 * s1 - 0.6 * s2, aRot.z - 0.35 * s1 + 0.9 * s2); aPos.set(aPos.x - 0.07 * s1 - 0.04 * s2, aPos.y + 0.03 * s1 + 0.02 * s2, aPos.z + 0.09 * s1 + 0.05 * s2); }
         const scN = (o.att && o.att.scope) | 0;
         if (!st.prev) syncScope(G, gk, scN); // selama ganti senjata, model yang turun masih senjata lama
-        const hip = [0.17, -0.2, -0.52], adsP = [-(G.sightX || 0), -SIGHT_Y[gk] - (scN ? SCOPE_DY : 0), (WEAPONS[gk] && WEAPONS[gk].scope ? -0.3 : -0.36) - (G.sightZ || 0)];
+        const hip = [0.17, -0.2, -0.52], adsP = [-(G.sightX || 0), -SIGHT_Y[gk] - (G.builtin ? (scN ? 0 : -0.006) : scN ? SCOPE_DY : 0), (G.builtin && scN ? -0.3 : -0.36) - (G.sightZ || 0)]; // DMR / runduk tanpa scope: bidik di atas rel
         const low = Math.max(lower, out), sw = st.swap;
         G.g.position.set(
           hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + st.sprint * 0.04 + aPos.x + low * 0.06,

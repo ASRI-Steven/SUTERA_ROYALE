@@ -149,7 +149,7 @@ function start(D, realAssets) {
   vehicles.spawnAll();
   const makeAgent = (name, isPlayer) => ({
     name, isPlayer, alive: true, state: 'plane', pos: new THREE.Vector3(0, ALT, 0), vel: new THREE.Vector2(), yaw: 0, vy: 0, grounded: false, crouch: false,
-    hp: 100, vest: 0, helmet: 0, bag: 0, weapons: [null, null, null], cur: -1, ammo: { light: 0, rifle: 0, shell: 0, sniper: 0, magnum: 0 }, heals: { band: 0, kit: 0, drink: 0 }, boost: 0, fuel: 0, nades: { frag: 0, smoke: 0 },
+    hp: 100, vest: 0, helmet: 0, bag: 0, weapons: [null, null, null], cur: -1, ammo: { light: 0, rifle: 0, shell: 0, sniper: 0, magnum: 0 }, heals: { band: 0, kit: 0, drink: 0 }, boost: 0, fuel: 0, atts: {}, nades: { frag: 0, smoke: 0 },
     kills: 0, dmg: 0, lastShot: 0, reloadEnd: 0, healEnd: 0, moveSpeed: 0, moveYaw: 0, pose: {},
     team: 0, sq: null, slot: 0, down: false, downN: 0, reviveT: 0, reviver: null, reviving: null, // regu & tumbang/pulih
   });

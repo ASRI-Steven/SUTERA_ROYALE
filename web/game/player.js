@@ -81,7 +81,7 @@ export function createPlayer(ctx) {
   ctx.lock = () => { if (!locked() && cvs.requestPointerLock) { try { const p = cvs.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* abaikan */ } } };
   addEventListener('mousemove', (e) => {
     if (!(locked() || (lockFailed && e.buttons) || (st.wantLock && !st.lootUI)) || !ctx.playing()) return; // wantLock: menunggu kunci mouse setelah Esc — kamera tetap ikut mouse
-    const s = 0.0022 * st.sens * (st.ads ? (weapon() && weapon().def.scope ? 0.35 : 0.7) : 1);
+    const s = 0.0022 * st.sens * (st.ads ? (weapon() && hasScope(weapon().inst) ? 0.35 : 0.7) : 1);
     st.yaw -= e.movementX * s;
     st.pitch = clamp(st.pitch - e.movementY * s, -1.45, 1.45);
     st.mdx += e.movementX;
@@ -107,7 +107,13 @@ export function createPlayer(ctx) {
   cvs.addEventListener('wheel', (e) => {
     if (!ctx.playing()) return;
     if (drv()) st.vzoom = clamp(st.vzoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.6, 1.8);
-    else if (me.state === 'ground' && me.alive && !me.down) cycle(e.deltaY > 0 ? 1 : -1);
+    else if (me.state === 'ground' && me.alive && !me.down) {
+      const w = weapon();
+      if (st.ads && w && w.inst.att && w.inst.att.scope === 8) { // scope 8×: gulir = atur perbesaran 4×–8× (bukan ganti senjata)
+        const z = clamp((w.inst.zoom || 8) + (e.deltaY < 0 ? 1 : -1), 4, 8);
+        if (z !== (w.inst.zoom || 8)) { w.inst.zoom = z; hud.flash('Perbesaran ' + z + '×'); }
+      } else cycle(e.deltaY > 0 ? 1 : -1);
+    }
   }, { passive: true });
   const KM = { KeyW: 'fwd', ArrowUp: 'fwd', KeyS: 'back', ArrowDown: 'back', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
   addEventListener('keydown', (e) => {
@@ -400,6 +406,7 @@ export function createPlayer(ctx) {
     for (const k of ['band', 'kit', 'drink']) if (me.heals[k] > 0) items.push({ type: 'h_' + k, n: me.heals[k], name: k === 'kit' ? 'P3K' : k === 'drink' ? 'Minuman energi' : 'Perban' });
     for (const [k, n] of Object.entries(me.nades || {})) if (n > 0) items.push({ type: 'g_' + k, n, name: NADES[k] ? NADES[k].name : k });
     if (me.fuel > 0) items.push({ type: 'jerry', n: me.fuel, name: 'Jeriken bensin' });
+    for (const [k, n] of Object.entries(me.atts || {})) if (n > 0 && ATTACH[k]) items.push({ type: 'x_' + k, n, name: ATTACH[k].name }); // aksesori belum terpasang
     const gear = [{ type: me.vest ? 'v' + me.vest : null, name: me.vest ? armorText('vest', me.vest, me.vestHp) : 'Tanpa rompi' }, { type: me.helmet ? 'm' + me.helmet : null, name: me.helmet ? armorText('helmet', me.helmet, me.helmetHp) : 'Tanpa helm' }, { type: me.bag ? 'b' + me.bag : null, name: me.bag ? 'Tas lv.' + me.bag : 'Tanpa tas' }];
     const loot2 = st.crate ? crateEntries(st.crate.contents).map((e) => { const type = ENTRY_TYPE[e.t] ? ENTRY_TYPE[e.t](e.k) : 'crate'; return { type, name: e.text, rar: (ITEMS[type] || {}).rar || 0 }; })
       : vicinity().map((it) => ({ type: it.type, name: itemName(it), rar: it.def.rar || 0 }));
@@ -414,6 +421,22 @@ export function createPlayer(ctx) {
     if (d.kind !== 'bag' && hp !== undefined && hp < armorMax(d.kind, d.lvl)) { extra.hp = hp; extra.name = armorText(d.kind, d.lvl, hp); }
     loot.add(type, me.pos.x + Math.cos(a) * r, -me.pos.z + Math.sin(a) * r, extra);
   }
+  // senjata dilepas (dibuang / ditukar): aksesorinya dicopot — pindah ke senjata pengganti kalau cocok & slotnya kosong,
+  // selain itu jatuh ke tanah sebagai barang terpisah; peluru lebih dari magasin biasa kembali ke cadangan
+  function shedAtts(inst, to) {
+    const at = inst.att;
+    if (!at) return;
+    const ta = to ? to.att || (to.att = {}) : null;
+    for (const k of [at.scope ? 's' + at.scope : null, at.mag ? 'mag' : null]) {
+      if (!k) continue;
+      const A = ATTACH[k];
+      if (ta && A.fits.includes(to.kind) && !(A.scope ? ta.scope : ta.mag)) { if (A.scope) ta.scope = A.scope; else ta.mag = true; }
+      else putGear('x_' + k);
+    }
+    inst.att = null;
+    const over = inst.mag - WEAPONS[inst.kind].mag;
+    if (over > 0) { inst.mag -= over; const ak = WEAPONS[inst.kind].ammo; me.ammo[ak] = (me.ammo[ak] || 0) + over; }
+  }
   function lootDrop(key) {
     if (!me.alive || me.down || me.state !== 'ground') return;
     const up = me.pos.y > 0.5, a = Math.random() * Math.PI * 2, r = up ? 0 : 0.75; // di lantai atas: tepat di kaki (jangan jatuh ke luar lantai)
@@ -423,7 +446,8 @@ export function createPlayer(ctx) {
       const s = +key.slice(2), w = me.weapons[s];
       if (!w || !ITEMS['w_' + w.kind]) return;
       me.weapons[s] = null;
-      put('w_' + w.kind, { mag: w.mag, att: w.att });
+      shedAtts(w, null); // aksesori jatuh terpisah di samping senjata
+      put('w_' + w.kind, { mag: w.mag });
       name = WEAPONS[w.kind].name;
       if (me.cur === s) { // yang dibuang sedang dipegang: pindah ke senjata lain, atau tangan kosong
         st.firing = false; st.ads = false; st.burstLeft = 0;
@@ -443,6 +467,12 @@ export function createPlayer(ctx) {
       me.heals[k]--;
       put(key);
       name = ITEMS[key].name;
+    } else if (/^x_(mag|s2|s4|s8)$/.test(key)) { // aksesori yang tersimpan di tas
+      const k = key.slice(2);
+      if (!(me.atts && me.atts[k] > 0)) return;
+      me.atts[k]--;
+      putGear(key);
+      name = ATTACH[k].name;
     } else if (key.startsWith('x:')) { // lepas aksesori dari senjata: 'x:<slot>:<mag|s2|s4>' → jatuh ke tanah
       const [, s, k] = key.split(':'), w = me.weapons[+s], at = w && w.att;
       if (!at || !ATTACH[k]) return;
@@ -519,7 +549,29 @@ export function createPlayer(ctx) {
     audio.pickup();
     hud.toast('Dipasang: ' + r.text);
   }
-  const lootH = { icon: itemIcon, take: (i) => lootTake(i), takeAll: () => lootTakeAll(), close: () => closeLoot(true), drop: (k) => lootDrop(k), moveAtt, takeTo };
+  function bagTo(type, slot) { // aksesori di tas diseret ke senjata
+    const k = type.slice(2);
+    if (!ITEMS[type] || !(me.atts && me.atts[k] > 0)) return;
+    const r = applyItem(me, { type, def: ITEMS[type] }, { attSlot: slot });
+    if (!r) { hud.toast(me.weapons[slot] ? 'Tidak cocok atau sudah terpasang di ' + WEAPONS[me.weapons[slot].kind].name : 'Slot kosong'); return; }
+    me.atts[k]--;
+    if (r.swap) { const ok = r.swap.type.slice(2); me.atts[ok] = (me.atts[ok] || 0) + 1; } // scope lama kembali ke tas
+    audio.pickup();
+    hud.toast('Dipasang: ' + r.text);
+  }
+  function stashAtt(key) { // aksesori di senjata diseret ke tas: dilepas dan disimpan (tas penuh → jatuh ke tanah)
+    const [, s, k] = key.split(':'), w = me.weapons[+s], at = w && w.att;
+    if (!at || !ATTACH[k] || (k === 'mag' ? !at.mag : at.scope !== ATTACH[k].scope)) return;
+    if (st.reloadEnd && me.cur === +s) { hud.toast('Sedang isi ulang'); return; }
+    if (k === 'mag') { at.mag = false; const over = w.mag - magCap(w); if (over > 0) { w.mag -= over; const ak = WEAPONS[w.kind].ammo; me.ammo[ak] = (me.ammo[ak] || 0) + over; } }
+    else { at.scope = 0; st.ads = false; }
+    me.atts ||= {};
+    me.atts[k] = (me.atts[k] || 0) + 1;
+    if (bagWeight(me) > bagCap(me) + 0.01) { me.atts[k]--; putGear('x_' + k); hud.toast('Tas penuh · ' + ATTACH[k].name + ' dijatuhkan'); }
+    else hud.toast(ATTACH[k].name + ' disimpan di tas');
+    audio.click();
+  }
+  const lootH = { icon: itemIcon, take: (i) => lootTake(i), takeAll: () => lootTakeAll(), close: () => closeLoot(true), drop: (k) => lootDrop(k), moveAtt, takeTo, bagTo, stashAtt };
   function openLoot(crate) {
     st.crate = crate || null;
     st.lootUI = true;
@@ -556,7 +608,7 @@ export function createPlayer(ctx) {
     if (!e) return false;
     const r = takeCrateEntry(me, it.contents, e, { replaceSlot: me.cur === 0 || me.cur === 1 ? me.cur : 0 });
     if (!r) { hud.toast(e.t === 'weapon' ? 'Slot senjata penuh' : e.t === 'vest' || e.t === 'helmet' || e.t === 'bag' ? 'Sudah punya yang setara atau lebih baik' : 'Tas penuh'); return false; }
-    if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0, mag: r.dropped.mag, att: r.dropped.att }); } // senjata lama jatuh beserta isi magasin & aksesorinya
+    if (r.dropped) { shedAtts(r.dropped, me.weapons[r.slot]); const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0, mag: r.dropped.mag }); } // senjata lama jatuh dengan isi magasinnya; aksesorinya pindah ke senjata baru atau jatuh terpisah
     audio.pickup();
     me.looted = (me.looted || 0) + 1;
     hud.toast('Diambil: ' + r.text);
@@ -568,10 +620,10 @@ export function createPlayer(ctx) {
   function take(it, auto) {
     const replaceSlot = me.cur === 0 || me.cur === 1 ? me.cur : 0;
     const r = applyItem(me, it, { replaceSlot });
-    if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' || it.def.kind === 'ammo' || it.def.kind === 'nade' || it.def.kind === 'fuel' ? 'Tas penuh' : 'Sudah punya yang setara atau lebih baik'); return; }
+    if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' || it.def.kind === 'ammo' || it.def.kind === 'nade' || it.def.kind === 'fuel' || it.def.kind === 'att' ? 'Tas penuh' : 'Sudah punya yang setara atau lebih baik'); return; }
     if (!r.keep) loot.remove(it);
     if (r.swap) putGear(r.swap.type, r.swap.hp); // rompi / helm / tas lama jatuh ke tanah
-    if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0, mag: r.dropped.mag, att: r.dropped.att }); } // senjata lama jatuh beserta isi magasin & aksesorinya
+    if (r.dropped) { shedAtts(r.dropped, me.weapons[r.slot]); const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0, mag: r.dropped.mag }); } // senjata lama jatuh dengan isi magasinnya; aksesorinya pindah ke senjata baru atau jatuh terpisah
     audio.pickup();
     me.looted = (me.looted || 0) + 1; // statistik pertandingan (misi)
     hud.toast('Diambil: ' + r.text);
