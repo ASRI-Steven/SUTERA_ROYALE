@@ -342,6 +342,11 @@ export function createHud() {
         lpEl.setAttribute('aria-label', 'Inventaris dan barang');
         document.body.appendChild(lpEl);
         lpEl.addEventListener('mousedown', (e) => e.stopPropagation());
+        lpEl.addEventListener('contextmenu', (e) => { // klik kanan barang di inventaris = buang ke tanah
+          e.preventDefault();
+          const t = e.target.closest('[data-drop]');
+          if (t && lpH && lpH.drop) lpH.drop(t.dataset.drop);
+        });
         lpEl.addEventListener('click', (e) => {
           const t = e.target.closest('[data-take],[data-all],[data-close]');
           if (!t || !lpH) { if (e.target === lpEl && lpH) lpH.close(); return; }
@@ -353,9 +358,9 @@ export function createHud() {
       if (key === lpKey) return;
       lpKey = key;
       const img = (type, cls = '') => { const u = type && lpH && lpH.icon ? lpH.icon(type) : ''; return u ? `<img class="${cls}" src="${u}" alt="" draggable="false">` : `<span class="lp-noimg ${cls}"></span>`; };
-      const gun = (g) => (g.type ? `<div class="lp-gun"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small></div></div>`
+      const gun = (g) => (g.type ? `<div class="lp-gun lp-drop" data-drop="w:${g.slot}" title="Klik kanan untuk membuang"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small></div></div>`
         : `<div class="lp-gun lp-empty"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span><small>${g.slot === 2 ? 'Slot pistol kosong' : 'Slot senjata kosong'}</small></div>`);
-      const bag = (it) => `<div class="lp-item" title="${esc(it.name)}">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
+      const bag = (it) => `<div class="lp-item lp-drop" data-drop="${esc(it.type)}" title="${esc(it.name)} — klik kanan untuk membuang">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
       const gear = (g) => `<div class="lp-item lp-gear${g.type ? '' : ' lp-empty'}">${img(g.type)}<small>${esc(g.name)}</small></div>`;
       const card = (it, i) => `<button type="button" class="lp-card" data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
       lpEl.innerHTML = `<div class="lp-box">
@@ -364,7 +369,7 @@ export function createHud() {
         <section class="lp-col lp-loot"><div class="lp-head"><h3>${esc(model.title)}</h3>${model.loot.length ? '<button type="button" class="lp-all" data-all>Ambil semua</button>' : ''}</div>
           <div class="lp-cards">${model.loot.length ? model.loot.map(card).join('') : '<p class="lp-muted">Tidak ada barang di sini</p>'}</div></section>
       </div>
-      <div class="lp-hint">Klik barang untuk mengambil · <kbd>1</kbd>–<kbd>9</kbd> · <kbd>F</kbd> / <kbd>Tab</kbd> / <kbd>Esc</kbd> tutup <button type="button" class="lp-x" data-close aria-label="Tutup">✕</button></div>`;
+      <div class="lp-hint">Klik barang untuk mengambil · klik kanan barang di inventaris untuk membuang · <kbd>1</kbd>–<kbd>9</kbd> · <kbd>F</kbd> / <kbd>Tab</kbd> / <kbd>Esc</kbd> tutup <button type="button" class="lp-x" data-close aria-label="Tutup">✕</button></div>`;
     },
     show(on) { el.hud.hidden = !on; if (on) { measureMap(); slowT = -1e9; } },
     // pemberitahuan singkat; "Diambil: …" tampil sebagai baris ambil barang bergambar

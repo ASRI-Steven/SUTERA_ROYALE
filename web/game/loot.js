@@ -219,7 +219,7 @@ export function createLoot(scene, { D, col }) {
 // agent: { weapons [slot0, slot1, pistol], cur, ammo {light,rifle,shell}, heals {band,kit}, vest, helmet }
 // opt.replaceSlot: slot yang diganti kalau dua slot utama penuh (pemain = senjata di tangan; bot = yang tier-nya lebih rendah)
 export function giveWeapon(agent, kind, opt = {}) {
-  const w = WEAPONS[kind], inst = { kind, mag: w.mag };
+  const w = WEAPONS[kind], inst = { kind, mag: opt.mag != null ? Math.min(opt.mag, w.mag) : w.mag }; // opt.mag: isi magasin senjata yang dibuang pemain
   if (w.slot === 2) {
     const old = agent.weapons[2];
     if (old && opt.bot && TIER[old.kind] >= TIER[kind]) return null;
@@ -236,8 +236,8 @@ export function giveWeapon(agent, kind, opt = {}) {
 }
 export function applyItem(agent, it, opt = {}) { // → teks hasil atau null kalau tidak diambil
   const d = it.def;
-  if (d.kind === 'weapon') { const r = giveWeapon(agent, d.w, opt); return r ? { text: d.name, slot: r.slot, dropped: r.dropped } : null; }
-  if (d.kind === 'ammo') { agent.ammo[d.ammo] = Math.min(AMMO_CAP[d.ammo] || 300, (agent.ammo[d.ammo] || 0) + d.n); return { text: d.name }; }
+  if (d.kind === 'weapon') { const r = giveWeapon(agent, d.w, it.mag != null ? { ...opt, mag: it.mag } : opt); return r ? { text: d.name, slot: r.slot, dropped: r.dropped } : null; }
+  if (d.kind === 'ammo') { agent.ammo[d.ammo] = Math.min(AMMO_CAP[d.ammo] || 300, (agent.ammo[d.ammo] || 0) + (it.n || d.n)); return { text: it.name || d.name }; } // it.n / it.name: peluru yang dibuang pemain (jumlah bisa kurang dari satu pak)
   if (d.kind === 'nade') { agent.nades ||= {}; if ((agent.nades[d.nade] || 0) >= NADE_CAP) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
   if (d.kind === 'heal') {
     const cap = d.heal === 'kit' ? 3 : 10;

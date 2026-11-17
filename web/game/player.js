@@ -60,11 +60,26 @@ export function createPlayer(ctx) {
   // ---------- Input ----------
   const locked = () => document.pointerLockElement === cvs;
   let lockFailed = false; // browser menolak pointer lock → seret mouse untuk melihat
-  document.addEventListener('pointerlockerror', () => { lockFailed = true; });
+  let escRelock = false, softLockAt = -1e9; // Esc menutup panel loot: kunci mouse lagi saat Esc dilepas (lihat keydown)
+  document.addEventListener('pointerlockerror', () => { if (performance.now() - softLockAt < 1500) return; lockFailed = true; }); // gagal kunci setelah Esc: klik saja untuk mengunci, jangan pindah ke mode seret
   ctx.locked = locked;
+  // Setelah Esc menutup panel loot, browser menolak mengunci mouse untuk sesaat. Selama itu: kursor disembunyikan, kamera
+  // tetap ikut mouse (lihat mousemove), dan penguncian dicoba ulang berkala sampai berhasil (paling lama 6 detik).
+  let relockT = 0;
+  function relockLoop() {
+    clearInterval(relockT);
+    document.body.style.cursor = 'none';
+    const t0 = performance.now();
+    relockT = setInterval(() => {
+      const waiting = st.wantLock && !locked() && !st.lootUI && ctx.playing();
+      if (!waiting || performance.now() - t0 > 6000) { clearInterval(relockT); document.body.style.cursor = ''; if (!waiting || locked()) st.wantLock = false; return; }
+      softLockAt = performance.now();
+      ctx.lock();
+    }, 250);
+  }
   ctx.lock = () => { if (!locked() && cvs.requestPointerLock) { try { const p = cvs.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* abaikan */ } } };
   addEventListener('mousemove', (e) => {
-    if (!(locked() || (lockFailed && e.buttons)) || !ctx.playing()) return;
+    if (!(locked() || (lockFailed && e.buttons) || (st.wantLock && !st.lootUI)) || !ctx.playing()) return; // wantLock: menunggu kunci mouse setelah Esc — kamera tetap ikut mouse
     const s = 0.0022 * st.sens * (st.ads ? (weapon() && weapon().def.scope ? 0.35 : 0.7) : 1);
     st.yaw -= e.movementX * s;
     st.pitch = clamp(st.pitch - e.movementY * s, -1.45, 1.45);
@@ -75,7 +90,8 @@ export function createPlayer(ctx) {
   cvs.addEventListener('mousedown', (e) => {
     if (!ctx.playing()) return;
     if (st.lootUI) { closeLoot(true); return; } // klik di luar panel loot = tutup
-    if (!locked() && !lockFailed) { ctx.lock(); return; }
+    if (st.wantLock && !locked()) softLockAt = performance.now();
+    if (!locked() && !lockFailed) { ctx.lock(); if (!st.wantLock) return; } // menunggu kunci setelah Esc: klik ini tetap dihitung (menembak)
     if (!me.alive) { if (e.button === 0 && ctx.specNext) ctx.specNext(1); return; } // menonton rekan: klik = rekan berikutnya
     if (me.down) return; // tumbang: tidak bisa menembak
     if (drv()) { // kendaraan: klik kiri tembak, klik kanan bidik (cabut senjata yang boleh dipakai di kursi ini dulu)
@@ -95,6 +111,8 @@ export function createPlayer(ctx) {
   const KM = { KeyW: 'fwd', ArrowUp: 'fwd', KeyS: 'back', ArrowDown: 'back', KeyA: 'left', ArrowLeft: 'left', KeyD: 'right', ArrowRight: 'right' };
   addEventListener('keydown', (e) => {
     if (!ctx.playing()) return;
+    // panel loot ditutup dengan Esc tapi mouse belum terkunci lagi: tombol apa pun (selain Esc) menguncinya
+    if (st.wantLock) { if (locked()) st.wantLock = false; else if (e.code !== 'Escape' && !st.lootUI && !e.repeat) { softLockAt = performance.now(); ctx.lock(); } }
     if (!me.alive) { // tersingkir, rekan masih main: Spasi/F/D/→ = rekan berikutnya, A/← = sebelumnya, M = peta
       if (e.repeat || !ctx.specNext) return;
       if (e.code === 'Space' || e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'KeyD' || e.code === 'ArrowRight') { e.preventDefault(); ctx.specNext(1); }
@@ -126,7 +144,10 @@ export function createPlayer(ctx) {
     }
     if (e.repeat) return;
     if (st.lootUI) { // panel loot terbuka: F/Tab/Esc tutup, angka = ambil barang
-      if (e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'Tab' || e.code === 'Escape') { e.preventDefault(); closeLoot(true); return; }
+      // Esc: browser memakai tombol itu untuk melepas kunci mouse — kalau langsung dikunci lagi di sini, kuncinya lepas
+      // lagi dan layar Jeda muncul. Jadi tutup panel dulu, kunci mouse saat Esc dilepas.
+      if (e.code === 'Escape') { e.preventDefault(); closeLoot(false); escRelock = true; st.wantLock = true; st.escAt = performance.now(); relockLoop(); return; }
+      if (e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'Tab') { e.preventDefault(); closeLoot(true); return; }
       if (/^Digit[1-9]$/.test(e.code)) { lootTake(+e.code.slice(5) - 1); return; }
     } else if (e.code === 'Tab' && me.state === 'ground' && !st.swim) { e.preventDefault(); openLoot(null); return; } // inventaris + barang sekitar
     switch (e.code) {
@@ -150,6 +171,7 @@ export function createPlayer(ctx) {
     }
   });
   addEventListener('keyup', (e) => {
+    if (e.code === 'Escape' && escRelock) { escRelock = false; if (!st.lootUI && ctx.playing() && !locked()) { softLockAt = performance.now(); ctx.lock(); } }
     const k = KM[e.code];
     if (k) keys[k] = 0;
     if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') st.sprint = false;
@@ -351,7 +373,7 @@ export function createPlayer(ctx) {
   // ---------- Panel loot (seperti PUBG): kiri inventaris, kanan isi peti / barang di sekitar, bergambar ----------
   const ENTRY_TYPE = { weapon: (k) => 'w_' + k, ammo: (k) => 'a_' + k, heal: (k) => 'h_' + k, vest: (k) => 'v' + k, helmet: (k) => 'm' + k, nade: (k) => 'g_' + k };
   function vicinity() { const L = []; loot.near(me.pos.x, -me.pos.z, 2.6, (it) => { if (it.def.kind !== 'crate' && Math.abs((it.z || 0) - me.pos.y) < 1.3) L.push(it); }); return L.slice(0, 12); }
-  function itemName(it) { return it.def.name || (it.def.w && WEAPONS[it.def.w].name) || it.type; }
+  function itemName(it) { return it.name || it.def.name || (it.def.w && WEAPONS[it.def.w].name) || it.type; }
   function lootModel() {
     const guns = [0, 1, 2].map((s) => { const w = me.weapons[s]; return w ? { slot: s, type: 'w_' + w.kind, name: WEAPONS[w.kind].name, mag: w.mag, cap: WEAPONS[w.kind].mag, ammo: me.ammo[WEAPONS[w.kind].ammo] || 0 } : { slot: s }; });
     const items = [];
@@ -363,7 +385,48 @@ export function createPlayer(ctx) {
       : vicinity().map((it) => ({ type: it.type, name: itemName(it), rar: it.def.rar || 0 }));
     return { title: st.crate ? 'Peti jarahan' : 'Di sekitar', guns, items, gear, loot: loot2 };
   }
-  const lootH = { icon: itemIcon, take: (i) => lootTake(i), takeAll: () => lootTakeAll(), close: () => closeLoot(true) };
+  // buang barang dari inventaris ke tanah (klik kanan di panel): 'w:<slot>' senjata, 'a_<jenis>' satu pak peluru, 'h_<jenis>' penyembuh, 'g_<jenis>' granat
+  function lootDrop(key) {
+    if (!me.alive || me.down || me.state !== 'ground') return;
+    const up = me.pos.y > 0.5, a = Math.random() * Math.PI * 2, r = up ? 0 : 0.75; // di lantai atas: tepat di kaki (jangan jatuh ke luar lantai)
+    const put = (type, extra) => loot.add(type, me.pos.x + Math.cos(a) * r, -me.pos.z + Math.sin(a) * r, { z: up ? me.pos.y : 0, ...extra });
+    let name = '';
+    if (key.startsWith('w:')) {
+      const s = +key.slice(2), w = me.weapons[s];
+      if (!w || !ITEMS['w_' + w.kind]) return;
+      me.weapons[s] = null;
+      put('w_' + w.kind, { mag: w.mag });
+      name = WEAPONS[w.kind].name;
+      if (me.cur === s) { // yang dibuang sedang dipegang: pindah ke senjata lain, atau tangan kosong
+        st.firing = false; st.ads = false; st.burstLeft = 0;
+        const o = [0, 1, 2].find((j) => me.weapons[j]);
+        me.cur = -2; select(o === undefined ? -1 : o, true);
+      }
+    } else if (key.startsWith('a_')) {
+      const k = key.slice(2), d = ITEMS[key], n = d ? Math.min(me.ammo[k] || 0, d.n) : 0;
+      if (n <= 0) return;
+      me.ammo[k] -= n;
+      name = d.name.replace(/ ×\d+$/, '') + ' ×' + n;
+      put(key, n === d.n ? {} : { n, name });
+    } else if (key.startsWith('h_')) {
+      const k = key.slice(2);
+      if (!ITEMS[key] || !(me.heals[k] > 0)) return;
+      if (st.healEnd) { hud.toast('Sedang dipakai'); return; }
+      me.heals[k]--;
+      put(key);
+      name = ITEMS[key].name;
+    } else if (key.startsWith('g_')) {
+      const k = key.slice(2);
+      if (!ITEMS[key] || !(me.nades && me.nades[k] > 0)) return;
+      me.nades[k]--;
+      if (st.nade && st.nade.kind === k && !(me.nades[k] > 0)) nadeAbort();
+      put(key);
+      name = ITEMS[key].name;
+    } else return;
+    audio.click();
+    hud.toast('Dibuang: ' + name);
+  }
+  const lootH = { icon: itemIcon, take: (i) => lootTake(i), takeAll: () => lootTakeAll(), close: () => closeLoot(true), drop: (k) => lootDrop(k) };
   function openLoot(crate) {
     st.crate = crate || null;
     st.lootUI = true;
@@ -647,18 +710,25 @@ export function createPlayer(ctx) {
     const cr = st.crate; // peti terbuka: tutup bila menjauh / habis
     if (cr && (!cr.alive || Math.hypot(cr.x - me.pos.x, cr.y + me.pos.z) > 2.8 || Math.abs(cr.z - me.pos.y) > 1.3)) { st.crate = null; if (st.lootUI) closeLoot(false); }
     if (st.lootUI) hud.lootPanel(lootModel(), lootH);
-    st.prompt = st.lootUI ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + it.def.name) : nv ? 'Naik ' + nv.def.name : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
+    st.prompt = st.lootUI ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
   }
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
     const chuteOn = me.state === 'chute';
     if (!chuteOn && me.pos.y < 120) { me.state = 'chute'; audio.click(); }
     const hs = chuteOn ? (iz > 0 ? 13 : 6) : (iz > 0 ? 28 : 14), dive = !chuteOn && iz > 0 ? clamp(-st.pitch, 0, 1) : 0;
-    const vs = chuteOn ? (iz > 0 ? 11 : 9) : 46 + dive * 24;
+    const vsT = chuteOn ? (iz > 0 ? 11 : iz < 0 ? 6 : 9) : 46 + dive * 24; // payung + S: mengerem, turun lebih pelan
+    st.airVs = st.airVs ? st.airVs + (vsT - st.airVs) * (1 - Math.exp(-dt * 3)) : vsT; // perubahan laju turun dihaluskan
+    const vs = st.airVs;
     fwd.set(Math.sin(st.yaw), 0, Math.cos(st.yaw));
     right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
-    const tx = (fwd.x * Math.max(0.35, iz) + right.x * ix * 0.6) * hs, tz = (fwd.z * Math.max(0.35, iz) + right.z * ix * 0.6) * hs;
-    const k = 1 - Math.exp(-dt * 1.8);
+    // A/D: geser samping kekuatan penuh, tidak tergantung W (gabungan maju+samping dibatasi ke kecepatan maksimum)
+    const cap = chuteOn ? 13 : 28;
+    let fs = iz < 0 ? 0 : Math.max(0.35, iz) * hs, ss = ix * cap; // S = rem: laju maju jadi nol (tanpa tombol tetap melayang maju pelan)
+    { const m = Math.hypot(fs, ss); if (m > cap) { fs *= cap / m; ss *= cap / m; } }
+    const tx = fwd.x * fs + right.x * ss, tz = fwd.z * fs + right.z * ss;
+    st.airLean = (st.airLean || 0) + (ix * (chuteOn ? 0.3 : 0.5) - (st.airLean || 0)) * (1 - Math.exp(-dt * 5)); // badan miring ke arah geser
+    const k = 1 - Math.exp(-dt * (iz < 0 ? 3.5 : 1.8)); // mengerem lebih sigap daripada menambah laju
     me.vel.x += (tx - me.vel.x) * k;
     me.vel.y += (tz - me.vel.y) * k;
     if (!ctx.inArea(me.pos.x, -me.pos.z)) { // di luar kawasan: dorong kembali ke tengah
@@ -669,7 +739,8 @@ export function createPlayer(ctx) {
     const nx = me.pos.x + me.vel.x * dt, nz = me.pos.z + me.vel.y * dt;
     if (ctx.inArea(nx, -nz) || !ctx.inArea(me.pos.x, -me.pos.z)) { me.pos.x = nx; me.pos.z = nz; }
     me.pos.y -= vs * dt;
-    me.yaw = Math.atan2(me.vel.x, me.vel.y) || st.yaw;
+    if (Math.hypot(me.vel.x, me.vel.y) > 2) me.yaw = Math.atan2(me.vel.x, me.vel.y) || st.yaw;
+    else { const d = Math.atan2(Math.sin(st.yaw - me.yaw), Math.cos(st.yaw - me.yaw)); me.yaw += d * (1 - Math.exp(-dt * 4)); } // nyaris diam (direm): badan menghadap arah kamera
     audio.windLevel(chuteOn ? 0.25 : 0.9);
     if (me.pos.y <= 0 || (me.pos.y < 40 && col.solidAt(me.pos.x, -me.pos.z, me.pos.y))) {
       const f = col.arrival(me.pos.x, -me.pos.z) || [me.pos.x, -me.pos.z];
@@ -677,6 +748,7 @@ export function createPlayer(ctx) {
       me.vel.set(0, 0);
       me.state = 'ground';
       me.grounded = true;
+      st.airLean = 0; st.airVs = 0;
       audio.windLevel(0);
       audio.step(0.2);
       ctx.landed(f[0], f[1]);
@@ -774,6 +846,11 @@ export function createPlayer(ctx) {
       char.root.visible = showChar;
       if (showChar) {
         if (driving) { char.root.position.set(me.pos.x, me.sitY || 0, me.pos.z); char.root.rotation.set(0, me.yaw, me.sitRoll || 0); }
+        else if ((me.state === 'fall' || me.state === 'chute') && st.airLean) { // miring saat A/D: berputar di titik gantung parasut / tengah badan, bukan di kaki
+          const r = st.airLean, h = me.state === 'chute' ? 1.45 : 1.0, o = h * Math.sin(r);
+          char.root.position.set(me.pos.x + Math.cos(me.yaw) * o, me.pos.y + h * (1 - Math.cos(r)), me.pos.z - Math.sin(me.yaw) * o);
+          char.root.rotation.set(0, me.yaw, r);
+        }
         else { char.root.position.copy(me.pos); char.root.rotation.set(0, me.state === 'ground' ? st.yaw : me.yaw, 0); }
         const p = me.pose;
         p.speed = me.state === 'ground' ? me.moveSpeed : 0;
@@ -791,6 +868,7 @@ export function createPlayer(ctx) {
         p.dead = !me.alive;
         p.freefall = me.state === 'fall';
         p.chute = me.state === 'chute';
+        p.chuteDrive = p.chute ? keys.fwd - keys.back : 0;
         p.sit = driving ? me.sitKind || 'car' : null;
         p.recline = driving ? me.sitRecline || 0 : 0;
         p.steer = driving && isDriver() ? me.vehicle.steerN || 0 : 0;
@@ -819,7 +897,7 @@ export function createPlayer(ctx) {
           } }
       } else char.rig.pose(me.pose, dt); // tetap jalan untuk goyangan kamera
       chute.visible = me.state === 'chute';
-      if (chute.visible) { chute.position.set(me.pos.x, me.pos.y + chuteY, me.pos.z); chute.rotation.y = me.yaw; }
+      if (chute.visible) { chute.position.set(me.pos.x, me.pos.y + chuteY, me.pos.z); chute.rotation.set(0, me.yaw, st.airLean || 0); }
       // senjata di tangan
       // orang pertama di kendaraan (V) dengan senjata siap: senjata di tangan digambar di atas kabin (tidak terpotong interior)
       const vfp = driving && st.vfp && st.vArmed && me.alive;

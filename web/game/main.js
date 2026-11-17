@@ -13,6 +13,7 @@ import { createCollider } from '../map/collide.js';
 import { makeMapImage, BigMap } from '../map/mapview.js';
 import { WEAPONS, createEffects, spreadDir, falloff } from './weapons.js';
 import { createZone } from './zone.js';
+import { createBorder } from './border.js';
 import { createLoot } from './loot.js';
 import { createBots, DIFFICULTY } from './bots.js';
 import { createPlayer } from './player.js';
@@ -127,6 +128,8 @@ function start(D, realAssets) {
   const mapImg = makeMapImage(D, bb);
   const hud = createHud();
   const zone = createZone(scene, { inArea, bb, boundary: W.boundary });
+  const border = createBorder(scene, W.boundary); // tirai cahaya di tepi kawasan (terlihat hanya dari dekat)
+  let borderMsgAt = -1e9;
   const loot = createLoot(scene, { D, col });
   loot.scatter(1.6, homes); // 100 bot: barang lebih banyak; sebagian di dalam rumah
   const grass = createGrass(scene, undefined, R); // ilalang: tempat bersembunyi (jongkok/tiarap)
@@ -603,8 +606,13 @@ function start(D, realAssets) {
   $('resumeBtn').addEventListener('click', () => { ctx.lock(); });
   document.addEventListener('pointerlockchange', () => {
     const locked = ctx.locked();
+    if (locked) player.st.wantLock = false;
+    // Esc menutup panel loot: kalau kunci mouse lepas (lagi) sesaat setelah itu, jangan dianggap jeda — game tetap jalan,
+    // mouse dikunci lagi oleh klik / tombol berikutnya (player.js: st.wantLock)
+    const escClose = !locked && performance.now() - (player.st.escAt || -1e9) < 1500;
+    if (escClose) player.st.wantLock = true;
     if (phase === 'play') {
-      paused = !locked && big.el.hidden && !player.st.lootUI; // panel loot terbuka: mouse bebas, game tidak dijeda
+      paused = !locked && big.el.hidden && !player.st.lootUI && !escClose; // panel loot terbuka: mouse bebas, game tidak dijeda
       pause.hidden = !paused;
       if (paused) { player.st.firing = false; player.st.ads = false; }
     }
@@ -628,6 +636,7 @@ function start(D, realAssets) {
   function finish(win) {
     if (phase !== 'play') return;
     phase = 'end';
+    border.hide();
     endAt = now;
     audio.engineLevel(0);
     audio.windLevel(0);
@@ -718,6 +727,10 @@ function start(D, realAssets) {
         if (flight.t >= flight.close) jumpOut(true);
       } else audio.engineLevel(plane.visible ? Math.max(0, 1 - camera.position.distanceTo(planePos) / 1500) * 0.6 : 0);
       const ev = zone.update(dt);
+      { // batas kawasan: tirai cahaya di dekat kamera + pemberitahuan saat pemain tertahan di tepinya
+        const bd = border.update(dt, camera.position.x, -camera.position.z, me.pos.x, -me.pos.z);
+        if (me.alive && (me.state === 'ground' || me.state === 'drive') && bd < (me.state === 'drive' ? 3 : 0.5) && now - borderMsgAt > 4) { borderMsgAt = now; hud.flash('Batas kawasan — tidak bisa dilewati'); }
+      }
       if (ev === 'announce') { hud.message('Zona aman ditandai', 'Lingkaran putih di peta (M) · menyusut dalam ' + mmss(zone.timeLeft)); audio.beep(); }
       if (ev === 'shrink') { hud.message('Zona mulai menyusut!', 'Masuk ke lingkaran putih sebelum dinding ungu sampai', 'warn'); audio.beep(true); }
       if (ev === 'next') { hud.message('Zona berhenti menyusut', 'Lingkaran berikutnya ditandai · menyusut lagi dalam ' + mmss(zone.timeLeft)); audio.beep(); }
