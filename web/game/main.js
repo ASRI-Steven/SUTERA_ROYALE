@@ -822,7 +822,7 @@ function start(D, realAssets) {
       // HUD (game/hud.js): kompas, panah minimap & bidikan tiap frame; sisanya ±20×/dtk — DOM hanya disentuh saat nilainya berubah
       const w = player.weapon(), moving = me.moveSpeed > 1, vArmed = me.state === 'drive' && player.st.vArmed;
       const spread = vArmed ? player.st.vSpread : w ? (player.st.ads ? w.def.ads : w.def.spread * (moving ? w.def.move : 1)) : 1.5;
-      hud.frame(player.st.yaw, spread, vArmed ? view.scoped : !view.fp || view.scoped || me.state !== 'ground' || me.down, player.st.ads ? (w && w.inst.kind === 'ar' && view.fp ? 'optic' : 'dot') : '', vArmed && player.st.vBlock, view.scoped);
+      hud.frame(player.st.yaw, spread, vArmed ? view.scoped : !view.fp || view.scoped || me.state !== 'ground' || me.down, player.st.ads ? (w && w.inst.kind === 'ar' && view.fp && !(w.inst.att && w.inst.att.scope) ? 'optic' : 'dot') : '', vArmed && player.st.vBlock, view.scoped);
       hud.mates(mateMarks());
       if (hud.due(t)) {
         const pst = player.st, mv = me.state === 'drive' ? me.vehicle : null;

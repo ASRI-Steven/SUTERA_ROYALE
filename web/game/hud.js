@@ -353,6 +353,28 @@ export function createHud() {
           const t = e.target.closest('[data-drop]');
           if (t && lpH && lpH.drop) lpH.drop(t.dataset.drop);
         });
+        // seret-dan-lepas aksesori: label aksesori → senjata lain (pindah) / kolom kanan (buang); kartu aksesori di sekitar → senjata (pasang)
+        let drag = null;
+        const clearHot = () => { for (const n of lpEl.querySelectorAll('.lp-hot')) n.classList.remove('lp-hot'); };
+        const target = (e) => (drag ? e.target.closest('[data-gun]') || (drag.att ? e.target.closest('.lp-loot') : null) : null);
+        lpEl.addEventListener('dragstart', (e) => {
+          const a = e.target.closest('.lp-att'), c = a ? null : e.target.closest('.lp-card[draggable="true"]');
+          if (!a && !c) { e.preventDefault(); return; }
+          drag = a ? { att: a.dataset.drop } : { take: +c.dataset.take };
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', a ? a.dataset.drop : 'take');
+          lpEl.classList.add('lp-dragging');
+        });
+        lpEl.addEventListener('dragover', (e) => { const t = target(e); clearHot(); if (t) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; t.classList.add('lp-hot'); } });
+        lpEl.addEventListener('drop', (e) => {
+          const t = target(e), d = drag;
+          clearHot();
+          if (!t || !d || !lpH) return;
+          e.preventDefault();
+          if (t.dataset.gun !== undefined) { if (d.att) lpH.moveAtt(d.att, +t.dataset.gun); else lpH.takeTo(d.take, +t.dataset.gun); }
+          else if (d.att) lpH.drop(d.att);
+        });
+        lpEl.addEventListener('dragend', () => { drag = null; clearHot(); lpEl.classList.remove('lp-dragging'); });
         lpEl.addEventListener('click', (e) => {
           const t = e.target.closest('[data-take],[data-all],[data-close]');
           if (!t || !lpH) { if (e.target === lpEl && lpH) lpH.close(); return; }
@@ -364,11 +386,11 @@ export function createHud() {
       if (key === lpKey) return;
       lpKey = key;
       const img = (type, cls = '') => { const u = type && lpH && lpH.icon ? lpH.icon(type) : ''; return u ? `<img class="${cls}" src="${u}" alt="" draggable="false">` : `<span class="lp-noimg ${cls}"></span>`; };
-      const gun = (g) => (g.type ? `<div class="lp-gun lp-drop" data-drop="w:${g.slot}" title="Klik kanan untuk membuang"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small></div></div>`
+      const gun = (g) => (g.type ? `<div class="lp-gun lp-drop" data-gun="${g.slot}" data-drop="w:${g.slot}" title="Klik kanan untuk membuang"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small>${(g.att || []).length ? '<span class="lp-atts">' + g.att.map((a) => `<i class="lp-att lp-drop" draggable="true" data-drop="x:${g.slot}:${a.k}" title="${esc(a.name)} — seret ke senjata lain untuk memindahkan · klik kanan untuk melepas">${esc(a.name)}</i>`).join('') + '</span>' : ''}</div></div>`
         : `<div class="lp-gun lp-empty"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span><small>${g.slot === 2 ? 'Slot pistol kosong' : 'Slot senjata kosong'}</small></div>`);
       const bag = (it) => `<div class="lp-item lp-drop" data-drop="${esc(it.type)}" title="${esc(it.name)} — klik kanan untuk membuang">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
       const gear = (g) => `<div class="lp-item lp-gear${g.type ? ' lp-drop' : ' lp-empty'}"${g.type ? ` data-drop="${esc(g.type)}" title="${esc(g.name)} — klik kanan untuk membuang"` : ''}>${img(g.type)}<small>${esc(g.name)}</small></div>`;
-      const card = (it, i) => `<button type="button" class="lp-card" data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
+      const card = (it, i) => `<button type="button" class="lp-card"${/^x_/.test(it.type) ? ' draggable="true" title="Klik untuk memasang · seret ke senjata tertentu"' : ''} data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
       lpEl.innerHTML = `<div class="lp-box">
         <section class="lp-col lp-inv"><h3>Inventaris</h3>${model.guns.map(gun).join('')}<div class="lp-row">${model.gear.map(gear).join('')}</div>
           <h4>Tas <span class="lp-cap${model.bagW >= model.bagCap - 0.5 ? ' full' : ''}">${Math.min(100, Math.round(model.bagW / model.bagCap * 100))}% · ${model.bagW} / ${model.bagCap}</span></h4><div class="lp-capbar"><i style="width:${Math.min(100, model.bagW / model.bagCap * 100).toFixed(1)}%"></i></div><div class="lp-bag">${model.items.length ? model.items.map(bag).join('') : '<p class="lp-muted">Tas kosong</p>'}</div></section>

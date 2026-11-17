@@ -41,6 +41,18 @@ export const WEAPONS = {
   pdw: { name: 'SMG Lebah', short: 'Lebah', slot: 0, ammo: 'light', dmg: 13, rpm: 1150, auto: true, mag: 32, reload: 1.7, spread: 1.1, ads: 0.6, move: 0.9, recoil: 0.32, range: 26, maxRange: 300, sound: 'pdw', fovAds: 62 },
   dbs: { name: 'Shotgun Gada', short: 'Gada', slot: 0, ammo: 'shell', dmg: 14, pellets: 9, rpm: 280, auto: false, mag: 2, reload: 2.7, spread: 5.0, ads: 4.0, move: 1.1, recoil: 4.0, range: 10, maxRange: 100, sound: 'dbs', fovAds: 62 },
 };
+// ---------- Aksesori senjata (hanya pemain): inst.att = { mag: true, scope: 2 | 4 } ----------
+// Magasin panjang: isi magasin +50 % (dibulatkan ke atas). Scope 2×/4×: bidikan lebih dekat (4× memakai tampilan teropong).
+export const ATTACH = {
+  mag: { name: 'Magasin panjang', short: 'Mag+', fits: ['pistol', 'smg', 'ar', 'shotgun', 'dmr', 'sniper', 'lmg', 'burst', 'pdw'] },
+  s2: { name: 'Scope 2×', short: '2×', scope: 2, fov: 38, fits: ['smg', 'ar', 'lmg', 'burst', 'pdw'] },
+  s4: { name: 'Scope 4×', short: '4×', scope: 4, fov: 20, fits: ['ar', 'lmg', 'burst'] },
+};
+export const magCap = (inst) => { const d = WEAPONS[inst.kind]; return inst.att && inst.att.mag ? Math.ceil(d.mag * 1.5) : d.mag; };
+const scopeOf = (inst) => (inst.att && inst.att.scope ? ATTACH['s' + inst.att.scope] : null);
+export const adsFov = (inst) => { const sc = scopeOf(inst); return sc ? sc.fov : WEAPONS[inst.kind].fovAds; };
+export const hasScope = (inst) => !!WEAPONS[inst.kind].scope || (inst.att && inst.att.scope === 4);
+export const attList = (inst) => { const L = []; if (inst.att) { if (inst.att.scope) L.push({ k: 's' + inst.att.scope, name: ATTACH['s' + inst.att.scope].name }); if (inst.att.mag) L.push({ k: 'mag', name: ATTACH.mag.name }); } return L; };
 export const AMMO = { light: 'Peluru ringan', rifle: 'Peluru senapan', shell: 'Peluru shotgun', sniper: 'Peluru runduk', magnum: 'Peluru magnum' };
 export const AMMO_CAP = { light: 300, rifle: 300, shell: 90, sniper: 40, magnum: 120 };
 // granat (slot lempar, tombol G): fuse = detik sejak dilempar; frag meledak (r, dmg), asap jadi awan (r, dur)
@@ -642,6 +654,33 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     h.rotateZ(roll0);
   }
 
+  // ---------- scope terpasang (aksesori): tabung berongga di atas pisir; dibuat sekali per senjata & perbesaran ----------
+  const SCOPE_DY = 0.043; // tinggi sumbu tabung di atas garis pisir (m)
+  function buildScope(G, gk, pw) {
+    const g = new THREE.Group(), L = pw === 4 ? 0.2 : 0.09, R = pw === 4 ? 0.026 : 0.032;
+    const body = new THREE.MeshStandardMaterial({ color: '#1b1d21', metalness: 0.6, roughness: 0.45, side: THREE.DoubleSide });
+    const rim = new THREE.MeshStandardMaterial({ color: '#34373e', metalness: 0.7, roughness: 0.35 });
+    g.add(new THREE.Mesh(new THREE.CylinderGeometry(R, R, L, 22, 1, true).rotateX(Math.PI / 2), body));
+    for (const z of [-L / 2, L / 2]) { const t = new THREE.Mesh(new THREE.TorusGeometry(R + 0.0015, 0.0035, 8, 26), rim); t.position.z = z; g.add(t); }
+    if (pw === 4) { // lensa depan melebar + kenop setelan
+      const bell = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 0.009, 0.05, 22, 1, true).rotateX(Math.PI / 2), body); bell.position.z = -L / 2 - 0.025; g.add(bell);
+      const lens = new THREE.Mesh(new THREE.CircleGeometry(R + 0.008, 22), new THREE.MeshStandardMaterial({ color: '#4aa8e0', metalness: 0.9, roughness: 0.1, transparent: true, opacity: 0.35, side: THREE.DoubleSide })); lens.position.z = -L / 2 - 0.048; g.add(lens);
+      const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.014, 12), rim); knob.position.set(0, R + 0.006, 0); g.add(knob);
+      const knob2 = knob.clone(); knob2.rotation.z = Math.PI / 2; knob2.position.set(R + 0.006, 0, 0); g.add(knob2);
+    }
+    const mount = new THREE.Mesh(new THREE.BoxGeometry(0.018, SCOPE_DY - R + 0.006, L * 0.6), rim); mount.position.y = -(SCOPE_DY + R) / 2; g.add(mount);
+    g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+    g.position.set(G.sightX || 0, SIGHT_Y[gk] + SCOPE_DY, (G.sightZ || 0) - 0.1 - (pw === 4 ? 0.04 : 0));
+    G.g.add(g);
+    return g;
+  }
+  function syncScope(G, gk, pw) { // tampilkan scope sesuai aksesori senjata yang sedang dipegang
+    if (G.scN === pw) return;
+    G.scN = pw;
+    G.sc ||= {};
+    if (pw && !G.sc[pw]) G.sc[pw] = buildScope(G, gk, pw);
+    for (const k in G.sc) G.sc[k].visible = +k === pw;
+  }
   function heldPose(G) { // tangan kiri / magasin / pompa / bolt / silinder / laras ke posisi diam
     if (G.handL) { G.handL.position.copy(G.handL0); G.handL.rotation.set(0, 0, 0); }
     if (G.handR && G.handR0) G.handR.position.copy(G.handR0);
@@ -762,7 +801,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const popK = ease((u - 0.25) / 0.04); // cincin kaleng ditarik
     if (kind === 'drink') { // tangan kiri: naik ke atas kaleng untuk menarik cincin, lalu turun keluar layar
       const tk = ease((u - 0.14) / 0.09) * (1 - ease((u - 0.3) / 0.08));
-      wrist.set(-0.08, -0.56, -0.35).lerp(tC.set(0.015, -0.115 + 0.03 * popK, -0.385 + 0.035 * popK), tk); wrist.y -= drop;
+      wrist.set(-0.08, -0.56, -0.35).lerp(tC.set(-0.03, -0.075 + 0.03 * popK, -0.4 + 0.035 * popK), tk); wrist.y -= drop;
       elbow.y -= 0.25 * (1 - tk);
     }
     placeLimb(foreL, elbow, tC.copy(wrist).lerp(elbow, 0.02));
@@ -791,7 +830,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       if (tail.visible) { const end = tC.copy(wrist).addScaledVector(axis, p * len).addScaledVector(n2, 0.046); placeLimb(tail, roll.position, end); tail.scale.x = 1; tail.scale.z = 1; }
     } else if (kind === 'drink') {
       // minuman: kaleng diangkat tangan kanan → tangan kiri menarik cincin → kaleng ke mulut, dimiringkan makin tinggi sambil diteguk → turun
-      const H = [0.1, -0.2, -0.4], M = [0.02, -0.13, -0.27], cp = new THREE.Vector3();
+      const H = [0.08, -0.13, -0.42], M = [0.02, -0.1, -0.27], cp = new THREE.Vector3();
       track(u, [K(0, ER), K(0.07, ER), K(0.16, H), K(0.33, H), K(0.42, M), K(0.82, M), K(0.9, H), K(1, ER)], cp);
       const sip = ease((u - 0.34) / 0.09) * (1 - ease((u - 0.82) / 0.07)), prog = Math.max(0, Math.min(1, (u - 0.42) / 0.4));
       cp.y += -0.012 * Math.sin(Math.max(0, Math.min(1, (u - 0.25) / 0.06)) * Math.PI) + 0.005 * Math.sin(u * 38) * sip - drop; // sentakan saat dibuka + tegukan
@@ -936,7 +975,9 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         if (st.cylT > 0 && G.cyl && !(act && act.type === 'reload')) { st.cylT = Math.max(0, st.cylT - dt * 6); G.cyl.quaternion.copy(G.cylQ); G.cyl.rotateZ((1 - st.cylT) * Math.PI / 3); }
         const out = st.prev ? ease(st.prevT) : 0; // disarungkan: turun, miring
         if (st.inspect > 0) { st.inspect = Math.max(0, st.inspect - dt / 2.6); const u = 1 - st.inspect, s1 = Math.sin(Math.min(1, u / 0.5) * Math.PI), s2 = Math.sin(Math.max(0, (u - 0.45) / 0.55) * Math.PI); aRot.set(aRot.x + 0.25 * s1 - 0.15 * s2, aRot.y + 0.95 * s1 - 0.6 * s2, aRot.z - 0.35 * s1 + 0.9 * s2); aPos.set(aPos.x - 0.07 * s1 - 0.04 * s2, aPos.y + 0.03 * s1 + 0.02 * s2, aPos.z + 0.09 * s1 + 0.05 * s2); }
-        const hip = [0.17, -0.2, -0.52], adsP = [-(G.sightX || 0), -SIGHT_Y[gk], (WEAPONS[gk] && WEAPONS[gk].scope ? -0.3 : -0.36) - (G.sightZ || 0)];
+        const scN = (o.att && o.att.scope) | 0;
+        if (!st.prev) syncScope(G, gk, scN); // selama ganti senjata, model yang turun masih senjata lama
+        const hip = [0.17, -0.2, -0.52], adsP = [-(G.sightX || 0), -SIGHT_Y[gk] - (scN ? SCOPE_DY : 0), (WEAPONS[gk] && WEAPONS[gk].scope ? -0.3 : -0.36) - (G.sightZ || 0)];
         const low = Math.max(lower, out), sw = st.swap;
         G.g.position.set(
           hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + st.sprint * 0.04 + aPos.x + low * 0.06,

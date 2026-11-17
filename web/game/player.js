@@ -7,7 +7,7 @@
 // klik kiri tembak / klik kanan bidik (sopir: pistol/SMG saja, satu tangan; penumpang: semua senjata), R isi ulang,
 // 1/2/3 ganti senjata, Ctrl+1..4 pindah kursi (1 = sopir; kendaraan tanpa sopir meluncur lalu berhenti).
 import * as THREE from 'three';
-import { WEAPONS, NADES, createViewModel } from './weapons.js';
+import { WEAPONS, NADES, createViewModel, ATTACH, magCap, adsFov, hasScope, attList } from './weapons.js';
 import { applyItem, propGeometry, crateEntries, takeCrateEntry, crateEmpty, ITEMS, bagWeight, bagCap, armorHp, armorMax, armorText } from './loot.js';
 import { itemIcon } from './icons.js';
 import { buildCharacter } from '../map/rig.js';
@@ -250,10 +250,10 @@ export function createPlayer(ctx) {
   }
   function reload() {
     const w = weapon(), now = ctx.now();
-    if (!w || st.reloadEnd || st.nade || w.inst.mag >= w.def.mag || me.ammo[w.def.ammo] <= 0) return;
+    if (!w || st.reloadEnd || st.nade || w.inst.mag >= magCap(w.inst) || me.ammo[w.def.ammo] <= 0) return;
     st.reloadEnd = now + w.def.reload;
     st.reloadFor = w.inst;
-    vm.reload(w.def.reload, w.def.mag - w.inst.mag); // animasi isi ulang (shotgun: jumlah selongsong)
+    vm.reload(w.def.reload, magCap(w.inst) - w.inst.mag); // animasi isi ulang (shotgun: jumlah selongsong)
     audio.reload(w.def.reload);
     st.healEnd = 0;
   }
@@ -394,7 +394,7 @@ export function createPlayer(ctx) {
   function vicinity() { const L = []; loot.near(me.pos.x, -me.pos.z, 2.6, (it) => { if (it.def.kind !== 'crate' && Math.abs((it.z || 0) - me.pos.y) < 1.3) L.push(it); }); return L.slice(0, 12); }
   function itemName(it) { return it.name || it.def.name || (it.def.w && WEAPONS[it.def.w].name) || it.type; }
   function lootModel() {
-    const guns = [0, 1, 2].map((s) => { const w = me.weapons[s]; return w ? { slot: s, type: 'w_' + w.kind, name: WEAPONS[w.kind].name, mag: w.mag, cap: WEAPONS[w.kind].mag, ammo: me.ammo[WEAPONS[w.kind].ammo] || 0 } : { slot: s }; });
+    const guns = [0, 1, 2].map((s) => { const w = me.weapons[s]; return w ? { slot: s, type: 'w_' + w.kind, name: WEAPONS[w.kind].name, att: attList(w), mag: w.mag, cap: magCap(w), ammo: me.ammo[WEAPONS[w.kind].ammo] || 0 } : { slot: s }; });
     const items = [];
     for (const [k, n] of Object.entries(me.ammo)) if (n > 0) items.push({ type: 'a_' + k, n, name: (ITEMS['a_' + k] ? ITEMS['a_' + k].name : k).replace(/ ×\d+$/, '') });
     for (const k of ['band', 'kit', 'drink']) if (me.heals[k] > 0) items.push({ type: 'h_' + k, n: me.heals[k], name: k === 'kit' ? 'P3K' : k === 'drink' ? 'Minuman energi' : 'Perban' });
@@ -423,7 +423,7 @@ export function createPlayer(ctx) {
       const s = +key.slice(2), w = me.weapons[s];
       if (!w || !ITEMS['w_' + w.kind]) return;
       me.weapons[s] = null;
-      put('w_' + w.kind, { mag: w.mag });
+      put('w_' + w.kind, { mag: w.mag, att: w.att });
       name = WEAPONS[w.kind].name;
       if (me.cur === s) { // yang dibuang sedang dipegang: pindah ke senjata lain, atau tangan kosong
         st.firing = false; st.ads = false; st.burstLeft = 0;
@@ -443,6 +443,18 @@ export function createPlayer(ctx) {
       me.heals[k]--;
       put(key);
       name = ITEMS[key].name;
+    } else if (key.startsWith('x:')) { // lepas aksesori dari senjata: 'x:<slot>:<mag|s2|s4>' → jatuh ke tanah
+      const [, s, k] = key.split(':'), w = me.weapons[+s], at = w && w.att;
+      if (!at || !ATTACH[k]) return;
+      if (st.reloadEnd && me.cur === +s) { hud.toast('Sedang isi ulang'); return; }
+      if (k === 'mag') {
+        if (!at.mag) return;
+        at.mag = false;
+        const over = w.mag - magCap(w); // peluru yang tidak muat lagi kembali ke cadangan
+        if (over > 0) { w.mag -= over; const ak = WEAPONS[w.kind].ammo; me.ammo[ak] = (me.ammo[ak] || 0) + over; }
+      } else { if (at.scope !== ATTACH[k].scope) return; at.scope = 0; st.ads = false; }
+      putGear('x_' + k);
+      name = ATTACH[k].name;
     } else if (/^[vm][1-3]$/.test(key)) { // rompi / helm yang sedang dipakai
       const k = key[0] === 'v' ? 'vest' : 'helmet';
       if ((me[k] | 0) !== +key[1]) return;
@@ -472,7 +484,42 @@ export function createPlayer(ctx) {
     audio.click();
     hud.toast('Dibuang: ' + name);
   }
-  const lootH = { icon: itemIcon, take: (i) => lootTake(i), takeAll: () => lootTakeAll(), close: () => closeLoot(true), drop: (k) => lootDrop(k) };
+  // seret aksesori di panel: dari senjata ke senjata lain (key 'x:<slot>:<jenis>'), atau dari "Di sekitar" ke senjata tertentu
+  function moveAtt(key, to) {
+    const [, s, k] = key.split(':'), from = me.weapons[+s], dst = me.weapons[to], A = ATTACH[k];
+    if (!from || !dst || !A || +s === to || !from.att) return;
+    if (st.reloadEnd) { hud.toast('Sedang isi ulang'); return; }
+    if (!A.fits.includes(dst.kind)) { hud.toast(A.name + ' tidak cocok untuk ' + WEAPONS[dst.kind].name); return; }
+    const da = dst.att || (dst.att = {});
+    if (k === 'mag') {
+      if (!from.att.mag) return;
+      if (da.mag) { hud.toast(WEAPONS[dst.kind].name + ' sudah memakai magasin panjang'); return; }
+      from.att.mag = false; da.mag = true;
+      const over = from.mag - magCap(from); // peluru yang tidak muat lagi kembali ke cadangan
+      if (over > 0) { from.mag -= over; const ak = WEAPONS[from.kind].ammo; me.ammo[ak] = (me.ammo[ak] || 0) + over; }
+    } else {
+      if (from.att.scope !== A.scope) return;
+      const old = da.scope | 0; // scope di senjata tujuan: ditukar kalau cocok, kalau tidak jatuh ke tanah
+      da.scope = A.scope;
+      from.att.scope = old && ATTACH['s' + old].fits.includes(from.kind) ? old : 0;
+      if (old && !from.att.scope) putGear('x_s' + old);
+      st.ads = false;
+    }
+    audio.click();
+    hud.toast(A.name + ' → ' + WEAPONS[dst.kind].short);
+  }
+  function takeTo(i, slot) { // aksesori di tanah diseret ke senjata tertentu
+    if (st.crate) return;
+    const it = vicinity()[i];
+    if (!it || it.def.kind !== 'att') return;
+    const r = applyItem(me, it, { attSlot: slot });
+    if (!r) { hud.toast(me.weapons[slot] ? 'Tidak cocok atau sudah terpasang di ' + WEAPONS[me.weapons[slot].kind].name : 'Slot kosong'); return; }
+    loot.remove(it);
+    if (r.swap) putGear(r.swap.type, r.swap.hp);
+    audio.pickup();
+    hud.toast('Dipasang: ' + r.text);
+  }
+  const lootH = { icon: itemIcon, take: (i) => lootTake(i), takeAll: () => lootTakeAll(), close: () => closeLoot(true), drop: (k) => lootDrop(k), moveAtt, takeTo };
   function openLoot(crate) {
     st.crate = crate || null;
     st.lootUI = true;
@@ -509,7 +556,7 @@ export function createPlayer(ctx) {
     if (!e) return false;
     const r = takeCrateEntry(me, it.contents, e, { replaceSlot: me.cur === 0 || me.cur === 1 ? me.cur : 0 });
     if (!r) { hud.toast(e.t === 'weapon' ? 'Slot senjata penuh' : e.t === 'vest' || e.t === 'helmet' || e.t === 'bag' ? 'Sudah punya yang setara atau lebih baik' : 'Tas penuh'); return false; }
-    if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0 }); }
+    if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0, mag: r.dropped.mag, att: r.dropped.att }); } // senjata lama jatuh beserta isi magasin & aksesorinya
     audio.pickup();
     me.looted = (me.looted || 0) + 1;
     hud.toast('Diambil: ' + r.text);
@@ -524,7 +571,7 @@ export function createPlayer(ctx) {
     if (!r) { if (!auto) hud.toast(it.def.kind === 'heal' || it.def.kind === 'ammo' || it.def.kind === 'nade' || it.def.kind === 'fuel' ? 'Tas penuh' : 'Sudah punya yang setara atau lebih baik'); return; }
     if (!r.keep) loot.remove(it);
     if (r.swap) putGear(r.swap.type, r.swap.hp); // rompi / helm / tas lama jatuh ke tanah
-    if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0 }); }
+    if (r.dropped) { const up = me.pos.y > 0.5; loot.add('w_' + r.dropped.kind, me.pos.x + (up ? 0 : 0.6), -me.pos.z + (up ? 0 : 0.4), { z: up ? me.pos.y : 0, mag: r.dropped.mag, att: r.dropped.att }); } // senjata lama jatuh beserta isi magasin & aksesorinya
     audio.pickup();
     me.looted = (me.looted || 0) + 1; // statistik pertandingan (misi)
     hud.toast('Diambil: ' + r.text);
@@ -739,7 +786,7 @@ export function createPlayer(ctx) {
     // isi ulang / obat
     if (st.reloadEnd && now >= st.reloadEnd) {
       const wi = st.reloadFor, def = wi && WEAPONS[wi.kind];
-      if (def && wi === (w && w.inst)) { const got = Math.min(def.mag - wi.mag, me.ammo[def.ammo]); wi.mag += got; me.ammo[def.ammo] -= got; }
+      if (def && wi === (w && w.inst)) { const got = Math.min(magCap(wi) - wi.mag, me.ammo[def.ammo]); wi.mag += got; me.ammo[def.ammo] -= got; }
       st.reloadEnd = 0;
     }
     if (st.healEnd && now >= st.healEnd) {
@@ -828,7 +875,7 @@ export function createPlayer(ctx) {
     }
     if (st.reloadEnd && now >= st.reloadEnd) { // isi ulang selesai (sama seperti di darat)
       const wi = st.reloadFor, def = wi && WEAPONS[wi.kind];
-      if (def && wi === (w && w.inst)) { const got = Math.min(def.mag - wi.mag, me.ammo[def.ammo]); wi.mag += got; me.ammo[def.ammo] -= got; }
+      if (def && wi === (w && w.inst)) { const got = Math.min(magCap(wi) - wi.mag, me.ammo[def.ammo]); wi.mag += got; me.ammo[def.ammo] -= got; }
       st.reloadEnd = 0;
     }
     if (st.ads || st.firing || st.reloadEnd) st.vIdle = now;
@@ -971,10 +1018,10 @@ export function createPlayer(ctx) {
       const vfp = driving && st.vfp && st.vArmed && me.alive;
       const fp = (me.state === 'ground' && !st.tpp && me.alive) || vfp;
       const w = weapon();
-      const scoped = fp && st.ads && w && w.def.scope && ctx.now() > st.switchEnd;
-      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped });
+      const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
+      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null });
       st.mdx = st.mdy = 0;
-      const targetFov = fp && st.ads && w ? w.def.fovAds : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : 75; // kamera belakang: zoom bidik
+      const targetFov = fp && st.ads && w ? adsFov(w.inst) : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : 75; // kamera belakang: zoom bidik
       camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 14));
       camera.updateProjectionMatrix();
       return { fp, scoped };

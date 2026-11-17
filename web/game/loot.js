@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { WEAPONS, NADES, AMMO_CAP, gunGeometry } from './weapons.js';
+import { WEAPONS, NADES, AMMO_CAP, gunGeometry, ATTACH, magCap } from './weapons.js';
 
 // ---------- Model barang & parasut dari Blender (tools/blender, props.glb), opsional ----------
 // Satu mesh berwarna verteks per barang, asal di dasar tengah (parasut: asal di titik gantung, kanopi di atas).
@@ -48,6 +48,7 @@ export const ITEMS = {
   v1: { kind: 'vest', lvl: 1, rar: 0, name: 'Rompi lv.1' }, v2: { kind: 'vest', lvl: 2, rar: 1, name: 'Rompi lv.2' }, v3: { kind: 'vest', lvl: 3, rar: 3, name: 'Rompi lv.3' },
   m1: { kind: 'helmet', lvl: 1, rar: 0, name: 'Helm lv.1' }, m2: { kind: 'helmet', lvl: 2, rar: 1, name: 'Helm lv.2' }, m3: { kind: 'helmet', lvl: 3, rar: 3, name: 'Helm lv.3' },
   b1: { kind: 'bag', lvl: 1, rar: 0, name: 'Tas lv.1' }, b2: { kind: 'bag', lvl: 2, rar: 1, name: 'Tas lv.2' }, b3: { kind: 'bag', lvl: 3, rar: 3, name: 'Tas lv.3' },
+  x_mag: { kind: 'att', att: 'mag', rar: 1, name: 'Magasin panjang' }, x_s2: { kind: 'att', att: 's2', rar: 1, name: 'Scope 2×' }, x_s4: { kind: 'att', att: 's4', rar: 2, name: 'Scope 4×' }, // aksesori senjata
   jerry: { kind: 'fuel', rar: 1, name: 'Jeriken bensin' }, // isi bensin kendaraan (B) · di tanah: meledak setelah kena 3 peluru
   crate: { kind: 'crate', rar: 2, name: 'Peti jarahan' },
 };
@@ -91,6 +92,9 @@ function itemGeo(type) {
   if (it.kind === 'ammo') { const c = { light: '#c9a227', rifle: '#5f8f3a', shell: '#b0342b', sniper: '#3a3f2c', magnum: '#8a5a2a' }[it.ammo]; return colored([[box(0.24, 0.13, 0.16), c], [box(0.245, 0.03, 0.165, 0.1), it.ammo === 'sniper' ? '#D29F52' : '#2a2a2a']]); }
   if (it.kind === 'nade') return gunGeometry(it.nade).scale(1.6, 1.6, 1.6).rotateX(Math.PI / 2).translate(0, 0.055, 0); // granat Blender, rebah
   if (type === 'h_band') return colored([[new THREE.CylinderGeometry(0.06, 0.06, 0.1, 14).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#efe6d6'], [new THREE.CylinderGeometry(0.03, 0.03, 0.102, 10).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#c8bda8']]);
+  if (type === 'x_mag') return colored([[box(0.07, 0.3, 0.12), '#33363d'], [box(0.075, 0.03, 0.125, 0.3), '#c9a24a'], [box(0.072, 0.02, 0.122, 0.1), '#1d1d1f']]);
+  if (type === 'x_s2' || type === 'x_s4') { const L = type === 'x_s4' ? 0.34 : 0.2, c = type === 'x_s4' ? '#26282d' : '#3a3d45';
+    return colored([[new THREE.CylinderGeometry(0.035, 0.035, L, 14).rotateZ(Math.PI / 2).translate(0, 0.09, 0), c], [new THREE.CylinderGeometry(0.048, 0.04, 0.07, 14).rotateZ(Math.PI / 2).translate(L / 2, 0.09, 0), c], [new THREE.CylinderGeometry(0.044, 0.044, 0.012, 14).rotateZ(Math.PI / 2).translate(L / 2 + 0.036, 0.09, 0), '#58b6e8'], [box(0.1, 0.05, 0.04, 0.0), '#1d1d1f']]); }
   if (type === 'jerry') return colored([[box(0.3, 0.36, 0.14), '#b5332a'], [box(0.31, 0.03, 0.145, 0.19), '#7d211b'], [box(0.12, 0.05, 0.04, 0.385, -0.04), '#2a2a2e'], [new THREE.CylinderGeometry(0.03, 0.03, 0.06, 10).translate(0.1, 0.39, 0), '#e0c040']]);
   if (type === 'h_drink') return colored([[new THREE.CylinderGeometry(0.045, 0.045, 0.17, 14).translate(0, 0.085, 0), '#2f7fd6'], [new THREE.CylinderGeometry(0.046, 0.046, 0.05, 14).translate(0, 0.085, 0), '#f2c14e'], [new THREE.CylinderGeometry(0.04, 0.045, 0.012, 14).translate(0, 0.176, 0), '#d9dde3']]);
   if (type === 'h_kit') return colored([[box(0.34, 0.14, 0.24), '#2f9b5a'], [box(0.18, 0.012, 0.05, 0.146), '#ffffff'], [box(0.05, 0.012, 0.18, 0.146), '#ffffff']]);
@@ -181,7 +185,7 @@ export function createLoot(scene, { D, col }) {
     ['a_magnum', 3], ['a_sniper', 1.6], ['g_frag', 4], ['g_smoke', 3],
     ['a_light', 11], ['a_rifle', 11], ['a_shell', 6], ['h_band', 12], ['h_kit', 4], ['h_drink', 8],
     ['v1', 6], ['v2', 4], ['v3', 1.2], ['m1', 6], ['m2', 4], ['m3', 1.2],
-    ['b1', 7], ['b2', 4], ['b3', 1.5], ['jerry', 5],
+    ['b1', 7], ['b2', 4], ['b3', 1.5], ['jerry', 5], ['x_mag', 5], ['x_s2', 4], ['x_s4', 2],
   ];
   const AMMO_FOR = { pistol: 'a_light', smg: 'a_light', shotgun: 'a_shell', ar: 'a_rifle', dmr: 'a_rifle', sniper: 'a_sniper', lmg: 'a_rifle', revolver: 'a_magnum', burst: 'a_rifle', pdw: 'a_light', dbs: 'a_shell' };
   function spot(x, y) { const f = col.findFree(x, y, 6, 0.35); return f; }
@@ -252,7 +256,9 @@ export { armorText };
 // agent: { weapons [slot0, slot1, pistol], cur, ammo {light,rifle,shell}, heals {band,kit}, vest, helmet }
 // opt.replaceSlot: slot yang diganti kalau dua slot utama penuh (pemain = senjata di tangan; bot = yang tier-nya lebih rendah)
 export function giveWeapon(agent, kind, opt = {}) {
-  const w = WEAPONS[kind], inst = { kind, mag: opt.mag != null ? Math.min(opt.mag, w.mag) : w.mag }; // opt.mag: isi magasin senjata yang dibuang pemain
+  const w = WEAPONS[kind], inst = { kind, mag: w.mag }; // opt.mag / opt.att: isi magasin & aksesori senjata yang dibuang pemain
+  if (opt.att) inst.att = { ...opt.att };
+  if (opt.mag != null) inst.mag = Math.min(opt.mag, magCap(inst));
   if (w.slot === 2) {
     const old = agent.weapons[2];
     if (old && opt.bot && TIER[old.kind] >= TIER[kind]) return null;
@@ -269,7 +275,7 @@ export function giveWeapon(agent, kind, opt = {}) {
 }
 export function applyItem(agent, it, opt = {}) { // → teks hasil atau null kalau tidak diambil
   const d = it.def;
-  if (d.kind === 'weapon') { const r = giveWeapon(agent, d.w, it.mag != null ? { ...opt, mag: it.mag } : opt); return r ? { text: d.name, slot: r.slot, dropped: r.dropped } : null; }
+  if (d.kind === 'weapon') { const r = giveWeapon(agent, d.w, it.mag != null ? { ...opt, mag: it.mag, att: it.att } : opt); return r ? { text: d.name, slot: r.slot, dropped: r.dropped } : null; }
   if (agent.isPlayer) { // pemain: dibatasi bobot tas, bukan jumlah per jenis
     if (d.kind === 'ammo') { // ambil sebanyak yang muat; sisanya tetap di tanah
       const n = it.n || d.n, take = Math.min(n, bagFit(agent, ITEM_W.ammo[d.ammo] || 0.5)), base = d.name.replace(/ ×\d+$/, '');
@@ -281,9 +287,22 @@ export function applyItem(agent, it, opt = {}) { // → teks hasil atau null kal
     if (d.kind === 'nade') { agent.nades ||= {}; if (bagFit(agent, ITEM_W.nade[d.nade] || 10) < 1) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
     if (d.kind === 'heal') { if (bagFit(agent, ITEM_W.heal[d.heal] || 2) < 1) return null; agent.heals[d.heal] = (agent.heals[d.heal] || 0) + 1; return { text: d.name }; }
     if (d.kind === 'bag') { const old = agent.bag | 0; if (old >= d.lvl) return null; agent.bag = d.lvl; return { text: d.name, swap: old ? { type: 'b' + old } : null }; } // tas lama jatuh ke tanah
+    if (d.kind === 'att') { // aksesori: langsung terpasang ke senjata yang cocok (yang dipegang dulu); scope lama yang tergantikan jatuh ke tanah
+      const A = ATTACH[d.att], order = opt.attSlot != null ? [opt.attSlot] : [agent.cur, 0, 1, 2].filter((s, i, arr) => s >= 0 && arr.indexOf(s) === i); // opt.attSlot: diseret ke senjata tertentu
+      for (const s of order) {
+        const wi = agent.weapons[s];
+        if (!wi || !A.fits.includes(wi.kind)) continue;
+        const at = wi.att || (wi.att = {});
+        if (A.scope) { if ((at.scope | 0) >= A.scope) continue; const old = at.scope; at.scope = A.scope; return { text: d.name + ' → ' + WEAPONS[wi.kind].short, swap: old ? { type: 'x_s' + old } : null }; }
+        if (at.mag) continue;
+        at.mag = true;
+        return { text: d.name + ' → ' + WEAPONS[wi.kind].short };
+      }
+      return null;
+    }
     if (d.kind === 'fuel') { if (bagFit(agent, ITEM_W.fuel) < 1) return null; agent.fuel = (agent.fuel || 0) + 1; return { text: d.name }; }
   }
-  if (d.kind === 'bag' || d.kind === 'fuel') return null; // bot tidak memakai tas / jeriken
+  if (d.kind === 'bag' || d.kind === 'fuel' || d.kind === 'att') return null; // bot tidak memakai tas / jeriken / aksesori
   if (d.kind === 'ammo') { agent.ammo[d.ammo] = Math.min(AMMO_CAP[d.ammo] || 300, (agent.ammo[d.ammo] || 0) + (it.n || d.n)); return { text: it.name || d.name }; } // it.n / it.name: peluru yang dibuang pemain (jumlah bisa kurang dari satu pak)
   if (d.kind === 'nade') { agent.nades ||= {}; if ((agent.nades[d.nade] || 0) >= NADE_CAP) return null; agent.nades[d.nade] = (agent.nades[d.nade] || 0) + 1; return { text: d.name }; }
   if (d.kind === 'heal') {

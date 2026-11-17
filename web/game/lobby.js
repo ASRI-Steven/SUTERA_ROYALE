@@ -326,6 +326,7 @@ export function createLobby(o) {
           <li><span>Aksi</span><p><kbd>F</kbd> ambil / naik kendaraan / terjun / buka payung · tahan <kbd>F</kbd> pulihkan rekan yang tumbang · <kbd>Tab</kbd> tas · <kbd>V</kbd> kamera 1/3 · <kbd>M</kbd> peta · <kbd>Esc</kbd> jeda / tutup tas &amp; peta</p></li>
           <li><span>Terjun</span><p><kbd>W</kbd> + kamera datar melayang jauh · <kbd>W</kbd> + kamera menunduk menukik · <kbd>A</kbd><kbd>D</kbd> geser · <kbd>S</kbd> mengerem (payung: turun lebih pelan)</p></li>
           <li><span>Tas</span><p><kbd>Tab</kbd> buka · klik barang untuk mengambil · <kbd>Klik kanan</kbd> barang di inventaris untuk membuang (senjata, peluru, obat, granat, jeriken, rompi, helm, tas) · tas lv.1–3 menambah kapasitas</p></li>
+          <li><span>Aksesori</span><p>Magasin panjang (+50 % isi magasin) dan Scope 2× / 4× langsung terpasang ke senjata yang cocok saat diambil · seret aksesori ke senjata lain untuk memindahkan · <kbd>Klik kanan</kbd> aksesori di kartu senjata untuk melepas</p></li>
           <li><span>Kendaraan</span><p><kbd>W</kbd><kbd>S</kbd> gas/rem · <kbd>A</kbd><kbd>D</kbd> setir · <kbd>Spasi</kbd> rem tangan · <kbd>Shift</kbd> boost (bensin lebih boros) · <kbd>B</kbd> isi bensin dari jeriken (saat berhenti) · <kbd>H</kbd> klakson · <kbd>F</kbd> turun · <kbd>Ctrl</kbd>+<kbd>1</kbd>–<kbd>4</kbd> pindah kursi</p></li>
           <li><span>Jeriken</span><p>Di tanah meledak setelah kena 3 peluru, atau langsung bila terkena ledakan granat / kendaraan</p></li>
         </ul>
