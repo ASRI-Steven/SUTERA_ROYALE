@@ -341,9 +341,10 @@ function makeCableMat(U) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uPx = U.px;
-    sh.vertexShader = 'attribute vec3 cdir;\nattribute float cside;\nattribute float crad;\nuniform float uPx;\n' + sh.vertexShader
+    sh.vertexShader = 'attribute vec3 cdir;\nattribute float cside;\nattribute float crad;\nattribute vec3 cmid;\nattribute float cfar;\nuniform float uPx;\n' + sh.vertexShader
       .replace('#include <project_vertex>', `
   vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+  if (length((modelViewMatrix * vec4(cmid, 1.0)).xyz) > cfar) mvPosition = vec4(0.0, 0.0, 1.0, 1.0); // bentang jauh: diciutkan (di belakang kamera)
   vec3 tv = normalize((modelViewMatrix * vec4(cdir, 0.0)).xyz);
   vec3 sd = cross(tv, normalize(mvPosition.xyz));
   float sl = length(sd);
@@ -505,32 +506,23 @@ export function createEnvProps(W, A, col) {
     }
   }
 
-  // ---------- kabel (SUTET, tiang listrik, sambungan rumah): SUTET satu mesh (terlihat dari jauh), kabel tiang per petak 400 m
-  const statics = []; // mesh gabungan yang dipilah per jarak: { mesh, x, z, r, far }
-  const addStatic = (mesh, box, far) => {
-    mesh.matrixAutoUpdate = false;
-    group.add(mesh);
-    drawMeshes++;
-    statics.push({ mesh, x: (box[0] + box[2]) / 2, z: -(box[1] + box[3]) / 2, r: Math.hypot(box[2] - box[0], box[3] - box[1]) / 2, far });
-  };
-  const growBox = (b, x, y) => { if (x < b[0]) b[0] = x; if (y < b[1]) b[1] = y; if (x > b[2]) b[2] = x; if (y > b[3]) b[3] = y; };
+  // ---------- kabel (SUTET, tiang listrik, sambungan rumah): satu mesh; tiap bentang menghilang di luar jarak cfar
+  // (dihitung shader dari titik tengah bentang: kabel tiang ≤ 450 m, SUTET ≤ 2,6 km)
+  const addStatic = (mesh) => { mesh.matrixAutoUpdate = false; group.add(mesh); drawMeshes++; };
   const cables = { spans: 0 };
   {
-    const buckets = new Map(), TILE = 400;
-    const bucket = (key) => { let B = buckets.get(key); if (!B) buckets.set(key, (B = { pos: [], dir: [], side: [], rad: [], col: [], idx: [], box: [Infinity, Infinity, -Infinity, -Infinity] })); return B; };
-    const add = (B, ax, ay, az, bx, by, bz, sag, r, c, n) => {
+    const B = { pos: [], dir: [], side: [], rad: [], col: [], mid: [], far: [], idx: [] };
+    const add = (ax, ay, az, bx, by, bz, sag, r, c, n, far) => {
       const L = Math.hypot(bx - ax, by - ay);
       if (L < 0.5) return;
-      const base = B.pos.length / 3;
-      growBox(B.box, ax, ay); growBox(B.box, bx, by);
+      const base = B.pos.length / 3, mx = (ax + bx) / 2, my = (ay + by) / 2, mz = (az + bz) / 2 - sag;
       for (let k = 0; k <= n; k++) {
         const t = k / n, x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t - 4 * sag * t * (1 - t);
         const dz = (bz - az) - 4 * sag * (1 - 2 * t), dx = bx - ax, dy = by - ay, dl = Math.hypot(dx, dy, dz) || 1;
-        for (const s of [-1, 1]) { B.pos.push(x, z, -y); B.dir.push(dx / dl, dz / dl, -dy / dl); B.side.push(s); B.rad.push(r); B.col.push(c[0], c[1], c[2]); }
+        for (const s of [-1, 1]) { B.pos.push(x, z, -y); B.dir.push(dx / dl, dz / dl, -dy / dl); B.side.push(s); B.rad.push(r); B.col.push(c[0], c[1], c[2]); B.mid.push(mx, mz, -my); B.far.push(far); }
         if (k < n) { const v = base + k * 2; B.idx.push(v, v + 3, v + 1, v, v + 2, v + 3); } // berlawanan jarum jam dilihat kamera (sisi pita mengikuti arah pandang)
       }
     };
-    const tileOf = (x, y) => bucket(Math.floor(x / TILE) + ',' + Math.floor(y / TILE));
     const AL = [0.32, 0.34, 0.36], BLACK = [0.018, 0.018, 0.02], anchorsOf = (o, list) => list.map(([ax, ay, az]) => { const [x, y] = P(o, ax, ay); return [x, y, az + o.z]; });
     for (const ch of D.cables || []) {
       const list = ch.i.map((i) => byKey.get(ch.k + ':' + i)).filter((o) => o && o.ok);
@@ -540,16 +532,16 @@ export function createEnvProps(W, A, col) {
         const L = Math.hypot(B0.x - A0.x, B0.y - A0.y);
         if (ch.k === 'sutet') {
           if (L > 900) continue;
-          const B = bucket('sutet'), ca = anchorsOf(A0, an.cond), cb = anchorsOf(B0, bn.cond), ea = anchorsOf(A0, an.earth), eb = anchorsOf(B0, bn.earth);
+          const ca = anchorsOf(A0, an.cond), cb = anchorsOf(B0, bn.cond), ea = anchorsOf(A0, an.earth), eb = anchorsOf(B0, bn.earth);
           const n = Math.max(10, Math.min(28, Math.round(L / 14))), sag = L * L * 0.000085;
-          for (let j = 0; j < Math.min(ca.length, cb.length); j++) add(B, ...ca[j], ...cb[j], sag, 0.016, AL, n);
-          for (let j = 0; j < Math.min(ea.length, eb.length); j++) add(B, ...ea[j], ...eb[j], sag * 0.85, 0.008, AL, n);
+          for (let j = 0; j < Math.min(ca.length, cb.length); j++) add(...ca[j], ...cb[j], sag, 0.016, AL, n, 2600);
+          for (let j = 0; j < Math.min(ea.length, eb.length); j++) add(...ea[j], ...eb[j], sag * 0.85, 0.008, AL, n, 2600);
         } else {
           if (L > 70) continue;
-          const B = tileOf((A0.x + B0.x) / 2, (A0.y + B0.y) / 2), sag = 0.25 + L * L * 0.00035, n = 8;
+          const sag = 0.25 + L * L * 0.00035, n = 8;
           for (const kk of ['mv', 'lv', 'tel']) {
             const a = anchorsOf(A0, an[kk] || []), b = anchorsOf(B0, bn[kk] || []);
-            for (let j = 0; j < Math.min(a.length, b.length); j++) add(B, ...a[j], ...b[j], kk === 'mv' ? sag * 0.8 : sag * 1.25, kk === 'mv' ? 0.006 : kk === 'lv' ? 0.016 : 0.009, kk === 'mv' ? AL : BLACK, n);
+            for (let j = 0; j < Math.min(a.length, b.length); j++) add(...a[j], ...b[j], kk === 'mv' ? sag * 0.8 : sag * 1.25, kk === 'mv' ? 0.006 : kk === 'lv' ? 0.016 : 0.009, kk === 'mv' ? AL : BLACK, n, 450);
           }
         }
         cables.spans++;
@@ -561,36 +553,37 @@ export function createEnvProps(W, A, col) {
       const an = MAN[o.m].anchors;
       if (!an || !an.lv) continue;
       const [ax, ay, az] = anchorsOf(o, an.lv)[0];
-      add(tileOf(ax, ay), ax, ay, az, x * M, y * M, h * M, 0.35, 0.007, BLACK, 6);
+      add(ax, ay, az, x * M, y * M, h * M, 0.35, 0.007, BLACK, 6, 300);
       cables.spans++;
     }
-    for (const [key, B] of buckets) {
-      if (!B.pos.length) continue;
+    if (B.pos.length) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3));
       g.setAttribute('cdir', new THREE.Float32BufferAttribute(B.dir, 3));
       g.setAttribute('cside', new THREE.Float32BufferAttribute(B.side, 1));
       g.setAttribute('crad', new THREE.Float32BufferAttribute(B.rad, 1));
+      g.setAttribute('cmid', new THREE.Float32BufferAttribute(B.mid, 3));
+      g.setAttribute('cfar', new THREE.Float32BufferAttribute(B.far, 1));
       g.setAttribute('color', new THREE.Float32BufferAttribute(B.col, 3));
       g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(B.pos.length), 3));
       g.setIndex(B.pos.length / 3 > 65535 ? new THREE.Uint32BufferAttribute(B.idx, 1) : new THREE.Uint16BufferAttribute(B.idx, 1));
       const mesh = new THREE.Mesh(g, cableMat);
-      mesh.name = 'cables_' + key;
+      mesh.name = 'cables';
       mesh.frustumCulled = false;
-      addStatic(mesh, B.box, key === 'sutet' ? 1e9 : 420);
+      addStatic(mesh);
     }
   }
 
-  // ---------- pagar kawat (lapangan, BTS) + pagar seng proyek: satu mesh (+ jaring) per pagar, dipilah per jarak
+  // ---------- pagar kawat (lapangan, BTS) + pagar seng proyek: semua rangka satu mesh, semua jaring satu mesh
   const white = cellUV('white'), wu = (white[0] + white[2]) / 2, wv = (white[1] + white[3]) / 2;
-  const newBuf = (pbr) => ({ pos: [], nor: [], col: [], uv: [], pbr: pbr ? [] : null, fx: pbr ? [] : null, box: [Infinity, Infinity, -Infinity, -Infinity] });
+  const newBuf = (pbr) => ({ pos: [], nor: [], col: [], uv: [], pbr: pbr ? [] : null, fx: pbr ? [] : null });
+  const fr = newBuf(true), nt = newBuf(false);
   const quadTo = (B, a, b, c, d, n, colr, uvs, pb, f) => {
     for (const k of [0, 1, 2, 0, 2, 3]) {
       const p = [a, b, c, d][k];
       B.pos.push(p[0], p[2], -p[1]); B.nor.push(n[0], n[2], -n[1]); B.col.push(colr[0], colr[1], colr[2]);
       B.uv.push(uvs[k][0], uvs[k][1]);
       if (B.pbr) { B.pbr.push(...pb); B.fx.push(f); }
-      growBox(B.box, p[0], p[1]);
     }
   };
   const W4 = [[wu, wv], [wu, wv], [wu, wv], [wu, wv]];
@@ -599,7 +592,7 @@ export function createEnvProps(W, A, col) {
     for (let j = 0; j < 4; j++) { const p = C4[j], q2 = C4[(j + 1) % 4], ex = q2[0] - p[0], ey = q2[1] - p[1], l = Math.hypot(ex, ey) || 1; quadTo(B, [p[0], p[1], z0], [q2[0], q2[1], z0], [q2[0], q2[1], z1], [p[0], p[1], z1], [ey / l, -ex / l, 0], colr, W4, pb, 0); }
     quadTo(B, [C4[0][0], C4[0][1], z1], [C4[1][0], C4[1][1], z1], [C4[2][0], C4[2][1], z1], [C4[3][0], C4[3][1], z1], [0, 0, 1], colr, W4, pb, 0);
   };
-  const mkStatic = (B, mat, withPbr, far, name) => {
+  const mkStatic = (B, mat, withPbr, name) => {
     if (!B.pos.length) return;
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3));
@@ -617,14 +610,14 @@ export function createEnvProps(W, A, col) {
     mesh.name = name;
     mesh.castShadow = withPbr;
     mesh.receiveShadow = true;
-    addStatic(mesh, B.box, far);
+    addStatic(mesh);
   };
   const GALV = [0.42, 0.44, 0.46], PB_GALV = [255, 115, 200, 0], ZINC = [0.62, 0.64, 0.66], PB_ZINC = [255, 110, 170, 0];
   const roadNear = (x, y, pad) => { let hit = false; col.near(x, y, 14, (c) => { if (hit) return; for (const si of c.s) { const s = col.segs[si], dx = s.bx - s.ax, dy = s.by - s.ay, L = dx * dx + dy * dy, t = L > 0 ? Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / L)) : 0; if (Math.hypot(x - s.ax - dx * t, y - s.ay - dy * t) < s.w / 2 + pad) { hit = true; return; } } }); return hit; };
   const freeAt = (x, y) => inArea(x, y) && !roadNear(x, y, 0.4) && col.inBuilding(x, y) < 0 && !col.waterAt(x, y);
   let fenceM = 0, hoardM = 0;
-  (D.fences || []).forEach((F, fi) => {
-    const p = F.p, n = p.length / 2, H = F.h * M, wire = !!F.wire, gate = F.gate, fr = newBuf(true), nt = newBuf(false);
+  (D.fences || []).forEach((F) => {
+    const p = F.p, n = p.length / 2, H = F.h * M, wire = !!F.wire, gate = F.gate;
     for (let e = 0; e < n; e++) {
       const ax = p[e * 2] * M, ay = p[e * 2 + 1] * M, bx = p[((e + 1) % n) * 2] * M, by = p[((e + 1) % n) * 2 + 1] * M, L = Math.hypot(bx - ax, by - ay);
       if (L < 0.5) continue;
@@ -645,14 +638,12 @@ export function createEnvProps(W, A, col) {
         fenceM += seg;
       }
     }
-    mkStatic(fr, uni, true, 260, 'fence_' + fi);
-    mkStatic(nt, netMat, false, 120, 'fencenet_' + fi);
   });
   // pagar seng proyek: panel 2,4 m (seng bergelombang dari atlas) + spanduk pengembang tiap 12 m, celah 7 m di sisi terdekat jalan
   const hoardUV = cellUV('hoard'), zincUV = cellUV('zinc');
   const uvSpan = (cu, a, b) => [[cu[0] + (cu[2] - cu[0]) * a, cu[1]], [cu[0] + (cu[2] - cu[0]) * b, cu[1]], [cu[0] + (cu[2] - cu[0]) * b, cu[3]], [cu[0] + (cu[2] - cu[0]) * a, cu[3]]];
-  (D.hoards || []).forEach((Hd, hi) => {
-    const p = Hd.p, n = p.length / 2, H = 2.4, fr = newBuf(true);
+  (D.hoards || []).forEach((Hd) => {
+    const p = Hd.p, n = p.length / 2, H = 2.4;
     let gateE = -1, gd = Infinity;
     for (let e = 0; e < n; e++) { const mx = (p[e * 2] + p[((e + 1) % n) * 2]) / 2 * M, my = (p[e * 2 + 1] + p[((e + 1) % n) * 2 + 1]) / 2 * M; let d = 99; col.near(mx, my, 30, (c) => { for (const si of c.s) { const s = col.segs[si]; d = Math.min(d, Math.hypot((s.ax + s.bx) / 2 - mx, (s.ay + s.by) / 2 - my)); } }); if (d < gd) { gd = d; gateE = e; } }
     let run = 0;
@@ -677,8 +668,9 @@ export function createEnvProps(W, A, col) {
         hoardM += seg;
       }
     }
-    mkStatic(fr, uni, true, 450, 'hoard_' + hi);
   });
+  mkStatic(fr, uni, true, 'fences');
+  mkStatic(nt, netMat, false, 'fencenets');
 
   // lampu jalan lama (tiang polos world.js) diganti lampu LED baru
   if (types.has('lamp') && W.lamps) W.lamps.visible = false;
@@ -686,10 +678,11 @@ export function createEnvProps(W, A, col) {
   group.updateMatrixWorld(true);
 
   // ---------- pemilahan LOD per jarak (dipanggil tiap frame, kerja hanya saat kamera pindah / zoom / bayangan dihitung ulang)
-  const last = new THREE.Vector3(Infinity, 0, 0);
+  const last = new THREE.Vector3(Infinity, 0, 0), fwd = new THREE.Vector3(), lastFwd = new THREE.Vector3(), cone = { x: 0, y: 0, z: 0, c2: 0 };
   let lastK = 0, wasShadow = false;
   const TAN0 = Math.tan(37.5 * Math.PI / 180);
-  function repartition(cx, cy, cz, k, wide) {
+  // cone: kamera diperbesar (FOV sempit: lobi, teropong) → hanya benda di dalam kerucut pandang (+ yang sangat dekat)
+  function repartition(cx, cy, cz, k, wide, cone) {
     for (const C of combos) { C.nS = 0; C.nN = 0; }
     for (const T of types.values()) {
       const R0 = T.range, nr = R0.length, n = T.list.length, has = T.has, ML = models[T.name];
@@ -697,6 +690,7 @@ export function createEnvProps(W, A, col) {
       if (wide) for (let li = nr > 1 ? 1 : 0; li < nr; li++) lim[li] = Math.max(lim[li], 380 * 380); // satu frame: benda di sekitar ikut peta bayangan
       for (let j = 0; j < n; j++) {
         const dx = T.pos[j * 3] - cx, dy = T.pos[j * 3 + 1] - cy, dz = T.pos[j * 3 + 2] - cz, d2 = dx * dx + dy * dy * 0.5 + dz * dz;
+        if (cone && d2 > 900) { const dd = dx * cone.x + dy * cone.y + dz * cone.z; if (dd < 0 || dd * dd < cone.c2 * (dx * dx + dy * dy + dz * dz)) continue; }
         let li = 0;
         while (li < nr && d2 > lim[li]) li++;
         while (li < nr && !has[li]) li++;
@@ -717,18 +711,23 @@ export function createEnvProps(W, A, col) {
       }
     }
   }
-  const stats = { instances: inst.filter((o) => o.ok).length, dropped, obstacles: obstacles.length, meshes: drawMeshes, cables: cables.spans, statics: statics.length, fenceM: Math.round(fenceM), hoardM: Math.round(hoardM), types: types.size, combos: combos.length };
+  const stats = { instances: inst.filter((o) => o.ok).length, dropped, obstacles: obstacles.length, meshes: drawMeshes, cables: cables.spans, fenceM: Math.round(fenceM), hoardM: Math.round(hoardM), types: types.size, combos: combos.length };
   return {
     obstacles, group, stats, atlas: atlas.canvas, types,
     // tiap frame sebelum scene.updateMatrixWorld() (main.js): waktu efek, lebar kabel, pemilahan jarak
     update(cam = camera, t = performance.now() / 1000) {
       U.time.value = t;
-      const fov = cam.fov || 75, k = TAN0 / Math.tan(fov * Math.PI / 360);
-      U.px.value = 0.55 * 2 * Math.tan(fov * Math.PI / 360) / Math.max(1, renderer.domElement.height);
-      const p = cam.position, shadow = renderer.shadowMap.enabled && renderer.shadowMap.needsUpdate;
-      if (shadow || wasShadow || last.distanceToSquared(p) > 64 || Math.abs(k - lastK) > lastK * 0.15) {
-        repartition(p.x, p.y, p.z, k, shadow);
-        for (const st of statics) { const d = Math.hypot(st.x - p.x, st.z - p.z) - st.r, lim = (shadow ? Math.max(st.far, 380) : st.far) * k; st.mesh.visible = d < lim && p.y < lim; }
+      const fov = cam.fov || 75, tz = Math.tan(fov * Math.PI / 360), k = Math.min(4, TAN0 / tz);
+      U.px.value = 0.55 * 2 * tz / Math.max(1, renderer.domElement.height);
+      const p = cam.position, shadow = renderer.shadowMap.enabled && renderer.shadowMap.needsUpdate, zoom = k > 1.3 && !shadow;
+      if (zoom) fwd.set(0, 0, -1).applyQuaternion(cam.quaternion);
+      if (shadow || wasShadow || last.distanceToSquared(p) > 64 || Math.abs(k - lastK) > lastK * 0.15 || (zoom && fwd.dot(lastFwd) < 0.996)) {
+        if (zoom) { // kerucut = setengah diagonal FOV + 8°
+          const half = Math.atan(tz * Math.hypot(1, cam.aspect || 1.78)) + 0.14, c = Math.cos(Math.min(1.5, half));
+          cone.x = fwd.x; cone.y = fwd.y; cone.z = fwd.z; cone.c2 = c * c;
+          lastFwd.copy(fwd);
+        }
+        repartition(p.x, p.y, p.z, k, shadow, zoom ? cone : null);
         last.copy(p);
         lastK = k;
         wasShadow = shadow;
