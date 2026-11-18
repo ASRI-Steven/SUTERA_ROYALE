@@ -12,7 +12,7 @@ import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, apply
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
 import { tickSkins } from './skinfx.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, createSkinFlame, setVmGlow, muzzleLocal } from './weapons.js';
 import { createKillFx } from './killfx.js';
 import { createKillBanner } from './hud.js';
 import * as audio from './audio.js';
@@ -142,7 +142,7 @@ function createStage({ scene, camera, col, sunDir }) {
   // memakai material view-model (pola, pendar & animasi sama persis dengan di tangan); program shader dikompilasi dulu
   // (compileAsync) sebelum ditampilkan supaya lobi tidak tersendat
   const SHOW = new THREE.Vector3(S.x + ux * 1.9 - rx * 0.55, 1.25, S.z + uz * 1.9 - rz * 0.55);
-  const show = { root: new THREE.Group(), key: '', obj: null, t0: 0 };
+  const show = { root: new THREE.Group(), key: '', obj: null, t0: 0, flame: createSkinFlame(1.3), th: null };
   show.root.position.copy(SHOW);
   show.root.visible = false;
   g.add(show.root);
@@ -157,6 +157,12 @@ function createStage({ scene, camera, col, sunDir }) {
     hold.add(gun);
     const bb = new THREE.Box3().setFromObject(gun), c = bb.getCenter(new THREE.Vector3()), len = Math.max(0.2, bb.max.z - bb.min.z);
     gun.position.sub(c);
+    // nyala moncong beranimasi di ujung laras (skin epik & legendaris); ditempel sesudah kotak batas dihitung
+    const sk = skinById(id);
+    show.th = sk && sk.th && sk.th.glow ? sk.th : null;
+    show.flame.set(show.th && show.th.flame);
+    gun.add(show.flame.mesh);
+    show.flame.mesh.position.copy(muzzleLocal(kind));
     hold.scale.setScalar(Math.min(1.25, 0.82 / len)); // senapan panjang & pistol mengisi bingkai yang sama
     hold.rotation.set(0.08, 0, 0);
     show.obj = hold;
@@ -237,6 +243,14 @@ function createStage({ scene, camera, col, sunDir }) {
         show.obj.rotation.y = -1.2 + u * 0.5;
         show.root.position.y = SHOW.y + Math.sin(u * 1.3) * 0.015;
         show.root.updateMatrixWorld(true);
+        // peragaan efek skin (material view-model yang sama dengan di tangan): pendar berdenyut, panas naik-turun seperti
+        // menembak beruntun, sapuan cahaya dari popor ke moncong tiap 3,5 dtk; nyala moncong mengikuti panas
+        if (show.th) {
+          const heat = 0.5 + 0.5 * Math.sin(u * 0.9), cyc = (u % 3.5) / 1.2;
+          setVmGlow(0.25 + 0.25 * Math.sin(u * 2.2), heat, 0, cyc < 1 ? 0.5 - cyc * 1.6 : -99);
+          show.flame.mesh.visible = !!show.th.flame && show.obj.visible;
+          show.flame.update(heat, 0, 1, 1);
+        } else { setVmGlow(0, 0, 0, -99); show.flame.mesh.visible = false; }
       }
       if (kfx) kfx.update(dt);
     },
