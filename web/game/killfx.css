@@ -1,0 +1,62 @@
+/* Sutera Royale — spanduk kill bertema skin senjata (game/hud.js createKillBanner, dipicu game/killfx.js; juga pratinjau
+   toko di lobi). Warna tema lewat --k1/--k2. Hanya transform/opacity yang dianimasikan; tanpa CSS mask & backdrop-filter.
+   Tiap animasi punya dua nama kembar (…0 / …1): kelas on0/on1 bergantian supaya animasi diputar ulang tanpa memaksa layout. */
+.kb { position: absolute; left: 50%; top: 71%; z-index: 6; width: 0; height: 0; pointer-events: none; --k1: #ffc64a; --k2: #fff1c8; }
+.kb[hidden] { display: none; }
+.kb-wrap { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: .3em; transition: opacity .45s ease, transform .45s ease; }
+.kb.out .kb-wrap { opacity: 0; transform: translate(-50%, -62%); }
+.kb-mid { position: relative; width: 7.2em; height: 7.2em; display: grid; place-items: center; transition: transform .25s cubic-bezier(.2, 1.4, .4, 1); }
+.kb.s2 .kb-mid { transform: scale(1.06); } .kb.s3 .kb-mid { transform: scale(1.13); } .kb.s4 .kb-mid { transform: scale(1.2); } .kb.s5 .kb-mid { transform: scale(1.3); }
+.kb-mid > i { position: absolute; border-radius: 50%; pointer-events: none; }
+.kb-emb { position: relative; width: 5em; height: 5em; border-radius: 50%; display: grid; place-items: center; animation: .55s cubic-bezier(.2, 1.5, .35, 1) both;
+  background: radial-gradient(circle at 50% 36%, #2b2560 0, #120e2e 72%);
+  box-shadow: 0 0 0 .15em var(--k1), 0 0 0 .32em rgba(14, 11, 34, .75), 0 0 1.8em -.1em var(--k1), inset 0 0 1.2em -.3em var(--k1); }
+.kb.leg .kb-emb { box-shadow: 0 0 0 .15em var(--k1), 0 0 0 .3em rgba(14, 11, 34, .8), 0 0 0 .42em var(--k2), 0 0 2.4em .1em var(--k1), inset 0 0 1.4em -.2em var(--k1); }
+.kb-ico { width: 3.4em; height: 3.4em; overflow: visible; filter: drop-shadow(0 .05em .1em rgba(0, 0, 0, .65)) drop-shadow(0 0 .35em var(--k1)); }
+.kb-n { position: absolute; right: -.75em; bottom: -.15em; font: 700 1em/1 var(--display); color: #fff; text-shadow: 0 0 .5em var(--k1), 0 .08em .2em #000; }
+.kb-pips { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.kb-pip { fill: rgba(255, 255, 255, .2); stroke: rgba(10, 8, 26, .75); stroke-width: 1.4; transform-box: fill-box; transform-origin: center; }
+.kb-pip.on { fill: var(--k1); stroke: var(--k2); filter: drop-shadow(0 0 3px var(--k1)); }
+.kb-burst { inset: -.4em; background: radial-gradient(circle, var(--k2) 0, var(--k1) 22%, transparent 64%); opacity: 0; animation: .65s ease-out both; }
+.kb-shock { inset: .6em; border: .22em solid var(--k1); opacity: 0; }
+.kb-rays { inset: -2.4em; opacity: 0; background: repeating-conic-gradient(from 7deg, transparent 0deg 10deg, color-mix(in srgb, var(--k1) 70%, transparent) 10.5deg 12deg, transparent 12.5deg 24deg); }
+.kb-tx { display: grid; justify-items: center; gap: .12em; text-align: center; white-space: nowrap; animation: .4s ease-out both; }
+.kb-lbl { font: 700 1.55em/1 var(--display); font-style: normal; letter-spacing: .22em; text-transform: uppercase; color: #fff; text-shadow: 0 0 .45em var(--k1), 0 0 1.2em var(--k1), 0 .1em .25em rgba(0, 0, 0, .8); }
+.kb.s4 .kb-lbl, .kb.s5 .kb-lbl { font-size: 1.85em; color: var(--k2); }
+.kb-who { font-size: .9em; font-weight: 700; letter-spacing: .04em; color: #fff; text-shadow: 0 .08em .25em #000, 0 0 .6em rgba(0, 0, 0, .6); }
+.kb-hs { font-style: normal; font-size: .66em; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; padding: .2em .65em; border-radius: 1em; color: #1d1a3c; background: var(--k1); }
+.kb-hs[hidden] { display: none; }
+.kb-edge { position: fixed; inset: 0; pointer-events: none; opacity: 0; box-shadow: inset 0 0 9em -1.5em var(--k1), inset 0 0 2.4em -1em var(--k2); }
+/* lumpuhkan: lambang redup bergaris, tanpa ledakan besar */
+.kb.kn .kb-emb { background: radial-gradient(circle at 50% 36%, #221d4a 0, #100c26 72%); box-shadow: 0 0 0 .12em color-mix(in srgb, var(--k1) 70%, #fff), 0 0 0 .3em rgba(14, 11, 34, .7); }
+.kb.kn .kb-ico { opacity: .6; filter: grayscale(.35) drop-shadow(0 .05em .1em rgba(0, 0, 0, .65)); }
+.kb.kn .kb-lbl { font-size: 1.2em; letter-spacing: .16em; text-shadow: 0 .1em .25em rgba(0, 0, 0, .8); }
+.kb.kn .kb-burst { animation: none; }
+/* animasi (nama kembar 0/1) */
+.kb.on0 .kb-emb { animation-name: kbPop0; } .kb.on1 .kb-emb { animation-name: kbPop1; }
+.kb.on0 .kb-burst { animation-name: kbBurst0; } .kb.on1 .kb-burst { animation-name: kbBurst1; }
+.kb.on0 .kb-tx { animation-name: kbTx0; } .kb.on1 .kb-tx { animation-name: kbTx1; }
+.kb.on0 .kb-pip.on { animation: kbPip0 .4s cubic-bezier(.2, 1.6, .4, 1) both; } .kb.on1 .kb-pip.on { animation: kbPip1 .4s cubic-bezier(.2, 1.6, .4, 1) both; }
+.kb g:nth-child(2) > .kb-pip.on { animation-delay: .05s; } .kb g:nth-child(3) > .kb-pip.on { animation-delay: .1s; } .kb g:nth-child(4) > .kb-pip.on { animation-delay: .15s; } .kb g:nth-child(5) > .kb-pip.on { animation-delay: .2s; }
+.kb.on0.s3 .kb-rays, .kb.on0.s4 .kb-rays, .kb.on0.s5 .kb-rays { animation: kbRays0 2.6s ease-out both; }
+.kb.on1.s3 .kb-rays, .kb.on1.s4 .kb-rays, .kb.on1.s5 .kb-rays { animation: kbRays1 2.6s ease-out both; }
+.kb.on0.s4 .kb-edge, .kb.on0.s5 .kb-edge { animation: kbEdge0 1.1s ease-out both; } .kb.on1.s4 .kb-edge, .kb.on1.s5 .kb-edge { animation: kbEdge1 1.1s ease-out both; }
+.kb.on0.s5 .kb-shock { animation: kbShock0 .85s ease-out both; } .kb.on1.s5 .kb-shock { animation: kbShock1 .85s ease-out both; }
+.kb.leg.on0 .kb-shock { animation: kbShock0 .85s ease-out both; } .kb.leg.on1 .kb-shock { animation: kbShock1 .85s ease-out both; }
+@keyframes kbPop0 { 0% { opacity: 0; transform: scale(1.9); } 55% { opacity: 1; transform: scale(.92); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes kbPop1 { 0% { opacity: 0; transform: scale(1.9); } 55% { opacity: 1; transform: scale(.92); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes kbBurst0 { 0% { opacity: .95; transform: scale(.3); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes kbBurst1 { 0% { opacity: .95; transform: scale(.3); } 100% { opacity: 0; transform: scale(1.7); } }
+@keyframes kbTx0 { 0% { opacity: 0; transform: translateY(.5em) scale(1.25); } 100% { opacity: 1; transform: none; } }
+@keyframes kbTx1 { 0% { opacity: 0; transform: translateY(.5em) scale(1.25); } 100% { opacity: 1; transform: none; } }
+@keyframes kbPip0 { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+@keyframes kbPip1 { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+@keyframes kbRays0 { 0% { opacity: 0; transform: rotate(0) scale(.6); } 15% { opacity: .75; } 100% { opacity: 0; transform: rotate(70deg) scale(1.15); } }
+@keyframes kbRays1 { 0% { opacity: 0; transform: rotate(0) scale(.6); } 15% { opacity: .75; } 100% { opacity: 0; transform: rotate(70deg) scale(1.15); } }
+@keyframes kbEdge0 { 0% { opacity: 0; } 18% { opacity: .9; } 100% { opacity: 0; } }
+@keyframes kbEdge1 { 0% { opacity: 0; } 18% { opacity: .9; } 100% { opacity: 0; } }
+@keyframes kbShock0 { 0% { opacity: .9; transform: scale(.7); } 100% { opacity: 0; transform: scale(3.2); } }
+@keyframes kbShock1 { 0% { opacity: .9; transform: scale(.7); } 100% { opacity: 0; transform: scale(3.2); } }
+/* pratinjau di toko: spanduk berdiri sendiri di atas adegan lobi */
+.lb .kb { top: 58%; left: 26.5%; z-index: 8; font-size: 1.15em; }
+@media (prefers-reduced-motion: reduce) { .kb *, .kb { animation: none !important; transition: none !important; } }

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL } from './skinfx.js';
+import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL, SF_U, tickSkins } from './skinfx.js';
 
 // ---------- Model senjata dari Blender (tools/blender/weapons.py), opsional ----------
 // weapons.glb: <jenis> (model orang pertama), <jenis>_mag, shotgun_pump, <jenis>_lod1 (warna verteks, untuk loot &
@@ -179,7 +179,11 @@ const VM_FS_COLOR = `
   float vmN = vmNoise(vObjP * 140.0), vmWear = 0.0;
 #if VM_KIND == 1
   vmWear = uVm.x * smoothstep(0.35, 0.85, vWx.y * (0.3 + 1.2 * vmN));
+#ifdef SF_GUN
+  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.6, 0.61, 0.64), vmWear); // skin: butir logam diganti pola skin (hemat GPU)
+#else
   diffuseColor.rgb = mix(diffuseColor.rgb * (0.88 + 0.24 * vmNoise(vObjP * 55.0)), vec3(0.6, 0.61, 0.64), vmWear); // tepi aus: logam telanjang
+#endif
 #elif VM_KIND == 2 || VM_KIND == 3
   vmWear = uVm.x * smoothstep(0.45, 0.9, vWx.y * (0.3 + 1.1 * vmN));
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 2.0 + 0.015, vmWear * 0.6);
@@ -193,7 +197,7 @@ const VM_FS_COLOR = `
 #endif
 `;
 const VM_FS_ROUGH = `
-#if VM_KIND == 1
+#if VM_KIND == 1 && !defined(SF_GUN)
   roughnessFactor = mix(roughnessFactor * (0.78 + 0.44 * vmNoise(vObjP * 260.0)), 0.22, vmWear);
 #elif VM_KIND == 2 || VM_KIND == 3
   roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.6, vmWear);
@@ -201,11 +205,15 @@ const VM_FS_ROUGH = `
 `;
 const VM_FS_BUMP = `
 #if VM_KIND > 0
-  { // relief dari turunan layar (tanpa peta normal)
-    float bh = vmHeight(vObjP);
+  { // relief dari turunan layar (tanpa peta normal); skin senjata memakai reliefnya sendiri (ukiran, sisik, anyaman)
+#ifdef SF_GUN
+    float bh = sfHgt >= 0.0 ? sfHgt * 0.00022 : 0.0;
+#else
+    float bh = vmHeight(vObjP) * uVm.y;
+#endif
     vec3 bsx = dFdx(-vViewPosition), bsy = dFdy(-vViewPosition), br1 = cross(bsy, normal), br2 = cross(normal, bsx);
     float bdet = dot(bsx, br1);
-    normal = normalize(abs(bdet) * normal - sign(bdet) * (dFdx(bh) * br1 + dFdy(bh) * br2) * uVm.y);
+    normal = normalize(abs(bdet) * normal - sign(bdet) * (dFdx(bh) * br1 + dFdy(bh) * br2));
   }
 #endif
 `;
@@ -226,32 +234,29 @@ const VM_FS_GLASS = `
 #endif
 `;
 // ---------- Skin (game/skinfx.js) ----------
-// Senjata: define SF_GUN = nomor skin, SF_CLS = kelas bahan → warna/logam/kekasaran/pendar diganti SEBELUM butir & aus tepi
-// material orang pertama dihitung (tepi yang aus tetap memperlihatkan logam). Lengan: define SF_CHARFX = pola skin karakter.
+// Senjata: define SF_GUN = nomor skin, SF_CLS = kelas bahan → warna/logam/kekasaran/pendar/relief/pernis diganti SEBELUM
+// butir & aus tepi material orang pertama dihitung (tepi yang aus tetap memperlihatkan logam). Lengan: define SF_CHARFX =
+// pola skin karakter. Uniform bersama: uSfT (waktu animasi), uSfG (efek view-model: pendar, panas, kilat, sapuan).
 const VM_SKIN_PARS = '\n#ifdef SF_GUN\n' + GUN_SKIN_GLSL + '#endif\n#ifdef SF_CHARFX\n' + SKIN_COMMON + CHAR_SLEEVE_GLSL + '#endif\n';
 const VM_SKIN_COLOR = `
 #ifdef SF_GUN
-  float sfMetal = -1.0, sfRough = -1.0; vec3 sfEmis = vec3(0.0);
-  { vec3 sfC = diffuseColor.rgb; sfGun(SF_CLS, vObjP, normalize(vObjN), 1.0, sfC, sfMetal, sfRough, sfEmis); diffuseColor.rgb = sfC; }
+  float sfMetal = -1.0, sfRough = -1.0, sfHgt = -1.0, sfCoat = -1.0; vec3 sfEmis = vec3(0.0);
+  { vec3 sfC = diffuseColor.rgb; float sfV = abs(dot(normalize(vNormal), normalize(vViewPosition)));
+    sfGun(SF_CLS, vObjP, normalize(vObjN), sfV, sfC, sfMetal, sfRough, sfEmis, sfHgt, sfCoat); diffuseColor.rgb = sfC; }
 #endif
 #ifdef SF_CHARFX
-  diffuseColor.rgb = sfSleeve(SF_CHARFX, vObjP, normalize(vObjN), diffuseColor.rgb);
+  vec3 sfEmis = vec3(0.0);
+  diffuseColor.rgb = sfSleeve(SF_CHARFX, vObjP, normalize(vObjN), diffuseColor.rgb, sfEmis);
 #endif
 `;
-const VM_SKIN_ROUGH = '\n#ifdef SF_GUN\n  if (sfRough >= 0.0) roughnessFactor = mix(sfRough * (0.88 + 0.24 * vmNoise(vObjP * 260.0)), 0.22, vmWear * step(float(VM_KIND), 1.5));\n#endif\n';
+const VM_SKIN_ROUGH = '\n#ifdef SF_GUN\n  if (sfRough >= 0.0) roughnessFactor = mix(sfRough, 0.22, vmWear * step(float(VM_KIND), 1.5));\n#endif\n';
 const VM_SKIN_METAL = '\n#ifdef SF_GUN\n  if (sfMetal >= 0.0) metalnessFactor = sfMetal;\n#endif\n';
-const VM_SKIN_EMIS = `
-#ifdef SF_GUN
-  totalEmissiveRadiance += sfEmis;
-#if SF_GUN == 6
-  if (SF_CLS != 9) { // kristal es: tepi siluet memutih & berpendar (kesan tembus cahaya)
-    float sfF = pow(1.0 - saturate(dot(normal, normalize(vViewPosition))), 3.0);
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.8, 0.94, 1.0), sfF * 0.6);
-    totalEmissiveRadiance += vec3(0.2, 0.62, 1.0) * sfF * 0.3;
-  }
-#endif
-#endif
-`;
+const VM_SKIN_EMIS = '\n#if defined(SF_GUN) || defined(SF_CHARFX)\n  totalEmissiveRadiance += sfEmis;\n#endif\n';
+const VM_SKIN_COAT = '\n#if defined(SF_GUN) && defined(USE_CLEARCOAT)\n  material.clearcoat *= sfCoat >= 0.0 ? sfCoat : 1.0;\n#endif\n'; // pernis hanya di bagian yang diminta skin
+// uSfG view-model senjata pemain: x = pendar (isi ulang/periksa/cabut), y = panas tembakan, z = kilat tembakan, w = posisi
+// sapuan cahaya (z ruang senjata, m; −99 = tidak ada). Model dunia memakai SF_G0 (selalu diam).
+const VM_G = { value: new THREE.Vector4(0, 0, 0, -99) }, SF_G0 = { value: new THREE.Vector4(0, 0, 0, -99) };
+export { SF_G0 };
 // kind: 1 logam · 2 polimer · 3 karet · 4 kain · 5 kayu · 6 kulit; wear = aus tepi; bump = tinggi relief (m); env = pantulan
 const VM_LOOK = {
   // logam: albedo = F0 (baja ±0,25–0,4); warna GLB terlalu gelap untuk logam murni → warna sendiri
@@ -283,6 +288,7 @@ function vmPatch(m, L) {
   m.userData.env0 = m.envMapIntensity;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
+    sh.uniforms.uSfT = SF_U.uSfT; sh.uniforms.uSfG = VM_G; // skin (lengan bisa berganti pola tanpa material baru)
     sh.vertexShader = VM_VS_PARS + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>' + VM_VS);
     sh.fragmentShader = VM_FS_PARS + VM_SKIN_PARS + sh.fragmentShader
       .replace('#include <color_fragment>', '#include <color_fragment>' + VM_SKIN_COLOR + VM_FS_COLOR)
@@ -290,10 +296,11 @@ function vmPatch(m, L) {
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>' + VM_SKIN_METAL + '\n#if VM_KIND == 1\n  metalnessFactor = mix(metalnessFactor, 1.0, vmWear);\n#endif\n')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>' + VM_SKIN_EMIS)
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>' + VM_FS_BUMP)
+      .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>' + VM_SKIN_COAT)
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>' + VM_FS_LIGHT)
       .replace('#include <opaque_fragment>', VM_FS_GLASS + '#include <opaque_fragment>');
   };
-  m.customProgramCacheKey = () => 'vm4';
+  m.customProgramCacheKey = () => 'vm5';
   return m;
 }
 // material orang pertama untuk satu nama material GLB (dipakai bersama semua senjata & tangan)
@@ -314,22 +321,26 @@ function vmMaterial(name, src) {
   return m;
 }
 // ---------- Skin: varian material & lengan ----------
-// varian ber-skin dari material orang pertama untuk bagian senjata (logam, polimer, karet, kayu; 'gold' = aksen).
-// Kaca, titik bidik, kain & kulit dikembalikan apa adanya. Satu varian per (nama material, nomor skin), dipakai bersama.
-const VM_CLS = { 1: 1, 2: 2, 3: 3, 5: 5 };
-export function vmSkinned(base, skin) {
+// varian ber-skin dari material orang pertama untuk bagian senjata; kelas bahan dari NAMA material GLB (lihat GUN_SKIN_GLSL):
+// 1 logam telanjang · 4 logam berlapis · 2 polimer · 3 karet/gagang · 5 kayu · 9 aksen. Kaca, titik bidik, kain & kulit
+// dikembalikan apa adanya. Satu varian per (nama material, nomor skin), dipakai bersama. coat = skin berpernis →
+// MeshPhysicalMaterial dengan lapisan bening (kadarnya per piksel dari shader skin).
+const VM_CLS = { metal: 1, dark: 4, canister: 4, gold: 9, poly: 2, olive: 2, yellow: 2, red: 2, grip: 3, wood: 5 };
+export function vmSkinned(base, skin, coat = false) {
   const L0 = base && base.userData && base.userData.vmL, nm = base && base.name;
-  if (!skin || !L0 || nm === 'glass' || nm === 'dot' || !VM_CLS[L0.kind]) return base;
+  if (!skin || !L0 || !VM_CLS[nm]) return base;
   const key = nm + '#' + skin;
   if (VM_MATS.has(key)) return VM_MATS.get(key);
-  const m = new THREE.MeshStandardMaterial({ color: base.color.clone(), metalness: base.metalness, roughness: base.roughness, envMapIntensity: base.envMapIntensity });
-  vmPatch(m, { ...L0, wear: (L0.wear || 0) * 0.45, gunSkin: skin, cls: nm === 'gold' ? 9 : VM_CLS[L0.kind] });
+  const P = { color: base.color.clone(), metalness: base.metalness, roughness: base.roughness, envMapIntensity: base.envMapIntensity };
+  const m = coat ? new THREE.MeshPhysicalMaterial({ ...P, clearcoat: 1, clearcoatRoughness: 0.07 }) : new THREE.MeshStandardMaterial(P);
+  vmPatch(m, { ...L0, wear: (L0.wear || 0) * 0.3, gunSkin: skin, cls: VM_CLS[nm] });
   m.userData.env0 = base.userData.env0;
   m.name = nm;
   VM_MATS.set(key, m);
   return m;
 }
-// warna & pola lengan orang pertama mengikuti skin karakter: { sleeve, glove, cuff (hex), fx (nomor pola, 0 = polos) }; tanpa argumen = bawaan
+// warna & pola lengan orang pertama mengikuti skin karakter: { sleeve, glove, cuff (hex), fx (nomor pola, 0 = polos),
+// cuffGlow (hex pendar manset, opsional) }; tanpa argumen = bawaan
 export function setVmArms(o = {}) {
   for (const nm of ['sleeve', 'glove', 'cuff']) {
     const m = VM_MATS.get(nm);
@@ -337,9 +348,17 @@ export function setVmArms(o = {}) {
     if (!m.userData.color0) m.userData.color0 = m.color.clone();
     if (o[nm]) m.color.set(o[nm]); else m.color.copy(m.userData.color0);
   }
+  const cf = VM_MATS.get('cuff');
+  if (cf) { if (o.cuffGlow) cf.emissive.set(o.cuffGlow).multiplyScalar(1.6); else cf.emissive.setRGB(0, 0, 0); }
   const sl = VM_MATS.get('sleeve'), fx = o.fx | 0;
   if (sl && (sl.defines.SF_CHARFX | 0) !== fx) { if (fx) sl.defines.SF_CHARFX = fx; else delete sl.defines.SF_CHARFX; sl.needsUpdate = true; }
 }
+// ---------- Efek skin senjata pemain (diisi game/skins.js applyEquipped) ----------
+// tracer / flash: warna HDR [r, g, b] pelacak & kilatan moncong; muzzle: partikel moncong ('ember' | 'frost' | 'spark' |
+// 'gold' | 'plasma' | 'peacock' | 'smoke' | 'petal'); glow: pakai pendar isi ulang/periksa/cabut; cue(ev): bunyi
+// 'equip' | 'inspect' | 'reload' (game/audio.js). null = tampilan pabrik.
+const SKIN = { v: 0, tracer: null, flash: null, muzzle: null, glow: false, cue: null };
+export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, muzzle: null, glow: false, cue: null }, o || {}); SKIN.v++; }
 // salinan model orang pertama satu senjata (badan + magasin/pompa/bolt …) dengan material orang pertama, untuk pratinjau
 export function gunPreview(kind) {
   if (!GLB) return null;
@@ -500,6 +519,53 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const puffs = pointPool(camera, 24, false, 0.0, 70, 30);
   const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0 };
   const v = new THREE.Vector3();
+  // ---------- efek skin senjata (setSkinFx): warna kilatan, partikel moncong, pendar isi ulang/periksa/cabut, panas ----------
+  // Hanya MEMBACA keadaan animasi (st.flashT, st.act, st.inspect, st.swap); dipanggil sekali per frame dari update().
+  const sfx = pointPool(camera, 72, true, 0.25, 40, 32), FLASH0 = flash.material.color.clone(), LIGHT0 = flashLight.color.clone();
+  const sk = { v: -1, fl: 0, act: null, insp: 0, swap: 0, heat: 0, kick: 0, glow: 0, sweep: -99, sweepV: 0 };
+  const rr = (a, b) => a + Math.random() * (b - a);
+  function skinMuzzle(kind, p) { // partikel moncong per tembakan (ruang kamera)
+    const big = FLASH_K[kind] > 1.3 ? 1.6 : 1;
+    switch (SKIN.muzzle) {
+      case 'ember': for (let i = 0; i < 4 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.15, 0.15), rr(0.15, 0.55), rr(-0.5, -0.2), 0.006, 0.002, rr(0.45, 0.85), 6, 2.1, 0.35, 1, -0.5, 1.6); break;
+      case 'frost': for (let i = 0; i < 5 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.25, 0.25), rr(-0.1, 0.25), rr(-0.45, -0.1), 0.007, 0.002, rr(0.4, 0.7), 3.2, 5, 7, 1, 0.25, 3); break;
+      case 'spark': for (let i = 0; i < 6 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-1.1, 1.1), rr(-0.6, 1.1), rr(-1.4, -0.3), 0.004, 0.001, rr(0.1, 0.22), 4, 4.5, 9, 1, 0, 5); break;
+      case 'gold': for (let i = 0; i < 5 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0.0, 0.5), rr(-0.6, -0.15), 0.006, 0.002, rr(0.35, 0.65), 7, 5, 1.6, 1, 1.4, 2); break;
+      case 'plasma': for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; sfx.emit(p.x, p.y, p.z, Math.cos(a) * 0.5, Math.sin(a) * 0.5, -0.4, 0.006, 0.001, 0.22, 1.4, 6, 9, 1, 0, 6); } break;
+      case 'peacock': for (let i = 0; i < 5 * big; i++) { const t = i % 2; sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0.05, 0.45), rr(-0.6, -0.2), 0.006, 0.002, rr(0.35, 0.6), t ? 6 : 0.8, t ? 4 : 5, t ? 1 : 3.4, 1, -0.2, 2); } break;
+      case 'smoke': for (let i = 0; i < 2; i++) puffs.emit(p.x, p.y, p.z, rr(-0.06, 0.06), rr(0.06, 0.16), rr(-0.3, -0.15), 0.03, 0.12, rr(0.5, 0.8), 0.08, 0.16, 0.15, 0.35, -0.1, 1.4);
+        for (let i = 0; i < 3; i++) sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0, 0.4), rr(-0.6, -0.2), 0.005, 0.001, rr(0.3, 0.5), 1, 5, 4, 1, -0.3, 2); break;
+      case 'petal': for (let i = 0; i < 4 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0.0, 0.35), rr(-0.5, -0.15), 0.006, 0.003, rr(0.4, 0.7), 7, 4.4, 1.4, 1, 0.6, 2.2); break;
+      default:
+    }
+  }
+  function skinFxTick(dt, G, scoped) {
+    tickSkins(); // waktu animasi skin (sekali per frame)
+    sfx.pts.visible = !scoped;
+    if (sk.v !== SKIN.v) { // tema berganti: warna kilatan & cahaya moncong
+      sk.v = SKIN.v;
+      if (SKIN.flash) { flash.material.color.setRGB(SKIN.flash[0], SKIN.flash[1], SKIN.flash[2]); const m = Math.max(...SKIN.flash); flashLight.color.setRGB(SKIN.flash[0] / m, SKIN.flash[1] / m, SKIN.flash[2] / m); }
+      else { flash.material.color.copy(FLASH0); flashLight.color.copy(LIGHT0); }
+    }
+    const shot = st.flashT > sk.fl + 1e-5 && !!G; // fire() baru mengisi ulang st.flashT
+    sk.fl = st.flashT - dt;
+    if (shot) { sk.kick = 1; sk.heat = Math.min(1.5, sk.heat + (FLASH_K[st.kind] > 1.3 ? 0.22 : 0.07)); if (SKIN.muzzle && G.g.parent) { G.muzzle.getWorldPosition(v); skinMuzzle(st.kind, v); } }
+    sk.kick *= Math.exp(-dt * 14);
+    sk.heat = Math.max(0, sk.heat - dt * 0.35);
+    // pendar: isi ulang (puncak saat magasin terpasang + denyut di akhir), periksa (sapuan cahaya dari popor ke moncong), cabut
+    let glow = 0;
+    const A = st.act;
+    if (A && A.type === 'reload') { const u = Math.min(1, A.t); glow = 0.9 * Math.max(0, Math.min(1, (u - 0.48) / 0.14)) * (1 - Math.max(0, (u - 0.78) / 0.22)); if (u > 0.8 && sk.act !== 2) { sk.act = 2; if (SKIN.cue) SKIN.cue('reload'); } else if (sk.act !== 2) sk.act = 1; }
+    else if (sk.act) { if (sk.act === 2) sk.glow = 1; sk.act = null; }
+    if (st.inspect > 0) { const u = 1 - st.inspect; glow = Math.max(glow, 0.7 * Math.sin(Math.PI * u)); sk.sweep = 0.5 - u * 1.6; if (!sk.insp && SKIN.cue) SKIN.cue('inspect'); sk.insp = 1; }
+    else { sk.insp = 0; if (sk.sweepV <= 0) sk.sweep = -99; }
+    if (st.swap > sk.swap + 0.3 && st.kind) { sk.sweepV = 1; sk.glow = Math.max(sk.glow, 0.8); if (SKIN.cue) SKIN.cue('equip'); } // senjata dicabut
+    sk.swap = st.swap;
+    if (sk.sweepV > 0) { sk.sweepV = Math.max(0, sk.sweepV - dt * 1.8); sk.sweep = -0.95 + (1 - sk.sweepV) * 1.5; if (!sk.sweepV && !(st.inspect > 0)) sk.sweep = -99; }
+    sk.glow = Math.max(0, sk.glow - dt * 1.6);
+    VM_G.value.set(SKIN.glow ? Math.max(glow, sk.glow) : 0, sk.heat, sk.kick, SKIN.glow ? sk.sweep : -99);
+    sfx.update(dt);
+  }
   // ganti model prosedural dengan model Blender (laras −Z, asal di pegangan): titik bidik & moncong dari model;
   // magasin (<jenis>_mag) & pompa (shotgun_pump) adalah simpul terpisah di weapons.glb → dipasang ke senjata supaya bisa dianimasikan
   function upgradeGun(kind) {
@@ -1337,6 +1403,19 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   return {
     // pantulan lingkungan untuk logam senjata (dipanggil sekali dengan renderer)
     gunRoots: () => Object.values(guns).map((G) => G.g), // grup tiap senjata (untuk game/skins.js applyGunSkin)
+    // kompilasi di muka semua program shader view-model (senjata + lengan dengan skin yang sedang dipakai): sekali ke
+    // target render (jalur post-processing: linear, tanpa tone mapping) dan sekali ke layar (mode hemat). Senjata yang
+    // sedang tidak dipegang dipasang sementara supaya ikut. → tanpa tersendat saat pertama membidik/menembak.
+    compile(renderer, rt) {
+      const tmp = [];
+      for (const k in guns) { const g = guns[k].g; if (g.parent !== root) { root.add(g); tmp.push(g); } }
+      for (const n of [heal, nadeRig]) if (n.parent !== root) { root.add(n); tmp.push(n); }
+      const prev = renderer.getRenderTarget();
+      try {
+        if (rt) { renderer.setRenderTarget(rt); renderer.compile(scene, camera); }
+        renderer.setRenderTarget(null); renderer.compile(scene, camera);
+      } finally { renderer.setRenderTarget(prev); for (const g of tmp) root.remove(g); }
+    },
     setEnv(renderer, envTex) { if (envTex) { scene.environment = envTex; return; } const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; pm.dispose(); },
     // mode realistis: cahaya senjata = cahaya dunia (langit + matahari dari arah sebenarnya, redup bila pemain di tempat teduh)
     setLight(L) { const g = 0.2126 * L.sky.r + 0.7152 * L.sky.g + 0.0722 * L.sky.b; hemiVM.color.copy(L.sky).lerp(new THREE.Color(g, g, g), 0.5); hemiVM.groundColor.copy(L.ground); hemiBase = L.skyI * 1.15; hemiVM.intensity = hemiBase; key.color.copy(L.sun); keyBase = L.sunI; key.intensity = keyBase; worldLit = true; },
@@ -1501,6 +1580,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         }
         updateDrop(dt);
       }
+      skinFxTick(dt, G, !!o.scoped); // efek skin: hanya membaca keadaan animasi di atas
       st.flashT -= dt;
       flash.visible = st.flashT > 0 && !o.scoped && !!G;
       flashLight.intensity = flash.visible ? 6 * (1 - 0.6 * st.ads) : 0;
@@ -1624,17 +1704,20 @@ export function createEffects(scene, flashTex) {
   tracerMesh.matrixAutoUpdate = false;
   tracerMesh.onBeforeRender = (renderer) => { const rt = renderer.getRenderTarget(); tUni.uPx.value.set(1 / (rt ? rt.width : renderer.domElement.width), 1 / (rt ? rt.height : renderer.domElement.height)); };
   scene.add(tracerMesh);
-  const T = new Float32Array(MAXT * 9); // ox oy oz dx dy dz len s bright
+  const TS = 15, T = new Float32Array(MAXT * TS); // ox oy oz dx dy dz len s bright · kepala rgb · ekor rgb
   let tn = 0;
   // ----- partikel -----
   const spk = pointPool(scene, 512, true, 0.15, 22, 19), puf = pointPool(scene, 320, false, 0.0, 96, 18), fls = pointPool(scene, 48, true, 0.0, 72, 21);
   const rnd = (a, b) => a + Math.random() * (b - a);
   return {
-    tracer(from, to, bright = 1) {
+    // mine = tembakan pemain: warna pelacak mengikuti skin senjata yang dipakai (setSkinFx)
+    tracer(from, to, bright = 1, mine = false) {
       const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, len = Math.hypot(dx, dy, dz);
       if (len < 2) return;
-      const i = (tn < MAXT ? tn++ : (Math.random() * MAXT) | 0) * 9;
+      const i = (tn < MAXT ? tn++ : (Math.random() * MAXT) | 0) * TS, c = mine && SKIN.tracer;
       T[i] = from.x; T[i + 1] = from.y; T[i + 2] = from.z; T[i + 3] = dx / len; T[i + 4] = dy / len; T[i + 5] = dz / len; T[i + 6] = len; T[i + 7] = 0; T[i + 8] = bright;
+      if (c) { T[i + 9] = c[0]; T[i + 10] = c[1]; T[i + 11] = c[2]; T[i + 12] = c[0] * 0.3; T[i + 13] = c[1] * 0.3; T[i + 14] = c[2] * 0.3; }
+      else { T[i + 9] = 5.2; T[i + 10] = 4.2; T[i + 11] = 2.2; T[i + 12] = 1.6; T[i + 13] = 1.0; T[i + 14] = 0.3; }
     },
     // kind: 'spark' logam/kendaraan · 'dust' tanah · 'wall' tembok/plester · 'hit' badan
     burst(p, kind = 'dust', n = 10, up = 1) {
@@ -1662,16 +1745,16 @@ export function createEffects(scene, flashTex) {
     update(dt) {
       let q = 0;
       for (let i = 0; i < tn; i++) {
-        const k = i * 9;
+        const k = i * TS;
         T[k + 7] += dt * 820;
-        if (T[k + 7] - 10 > T[k + 6]) { tn--; if (i < tn) { for (let c = 0; c < 9; c++) T[k + c] = T[tn * 9 + c]; i--; } continue; }
+        if (T[k + 7] - 10 > T[k + 6]) { tn--; if (i < tn) { for (let c = 0; c < TS; c++) T[k + c] = T[tn * TS + c]; i--; } continue; }
         const head = Math.min(T[k + 6], T[k + 7]), tail = Math.max(0, T[k + 7] - 10), br = T[k + 8];
         const ax = T[k] + T[k + 3] * tail, ay = T[k + 1] + T[k + 4] * tail, az = T[k + 2] + T[k + 5] * tail, bx = T[k] + T[k + 3] * head, by = T[k + 1] + T[k + 4] * head, bz = T[k + 2] + T[k + 5] * head;
         const o = q * 12;
         tA[o] = ax; tA[o + 1] = ay; tA[o + 2] = az; tA[o + 3] = ax; tA[o + 4] = ay; tA[o + 5] = az; tA[o + 6] = bx; tA[o + 7] = by; tA[o + 8] = bz; tA[o + 9] = bx; tA[o + 10] = by; tA[o + 11] = bz;
         tB[o] = bx; tB[o + 1] = by; tB[o + 2] = bz; tB[o + 3] = bx; tB[o + 4] = by; tB[o + 5] = bz; tB[o + 6] = ax; tB[o + 7] = ay; tB[o + 8] = az; tB[o + 9] = ax; tB[o + 10] = ay; tB[o + 11] = az;
-        for (let c = 0; c < 2; c++) { tCol[o + c * 3] = 1.6 * br; tCol[o + c * 3 + 1] = 1.0 * br; tCol[o + c * 3 + 2] = 0.3 * br; } // ekor redup
-        for (let c = 2; c < 4; c++) { tCol[o + c * 3] = 5.2 * br; tCol[o + c * 3 + 1] = 4.2 * br; tCol[o + c * 3 + 2] = 2.2 * br; } // kepala HDR
+        for (let c = 0; c < 2; c++) { tCol[o + c * 3] = T[k + 12] * br; tCol[o + c * 3 + 1] = T[k + 13] * br; tCol[o + c * 3 + 2] = T[k + 14] * br; } // ekor redup
+        for (let c = 2; c < 4; c++) { tCol[o + c * 3] = T[k + 9] * br; tCol[o + c * 3 + 1] = T[k + 10] * br; tCol[o + c * 3 + 2] = T[k + 11] * br; } // kepala HDR
         q++;
       }
       if (q || tGeo.drawRange.count) {
