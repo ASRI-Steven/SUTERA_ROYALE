@@ -10,6 +10,7 @@ import { gunGeometry, loadWeaponModels } from './weapons.js';
 import { loadPropModels } from './loot.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createCollider } from '../map/collide.js';
+import { loadEnvProps, createEnvProps } from '../map/envprops.js';
 import { makeMapImage, BigMap } from '../map/mapview.js';
 import { WEAPONS, createEffects, spreadDir, falloff } from './weapons.js';
 import { createZone } from './zone.js';
@@ -57,6 +58,8 @@ async function boot() {
   const propsP = Promise.race([loadPropModels(), new Promise((r) => setTimeout(r, 6000))]).catch(() => { /* barang prosedural */ });
   // mode realistis: langit HDR + tekstur foto (maks. 40 dtk; kalau gagal/terlalu lama, tampilan lama yang dipakai)
   const realP = Promise.race([loadRealism(), new Promise((r) => setTimeout(() => r(null), 40000))]).catch((e) => { console.warn('Mode realistis tidak aktif:', e.message); return null; });
+  // benda lingkungan kota (menara, lampu jalan, halte, gerbang, reklame, …): maks. 15 dtk; kalau gagal, kota tanpa benda tambahan
+  const envP = Promise.race([loadEnvProps(), new Promise((r) => setTimeout(() => r(null), 15000))]).catch((e) => { console.warn('Benda lingkungan tidak dimuat:', e.message); return null; });
   let D;
   try {
     const res = await fetch('data/alsut-map.json');
@@ -66,14 +69,15 @@ async function boot() {
   await Promise.all([partsP, gunsP, propsP]);
   loadStep(18, 'Memuat langit & tekstur…');
   const real = await realP;
+  const env = await envP;
   // model tiap senjata di tangan karakter (orang ketiga & bot); model senjata menghadap −Z, rig menghadap +Z
   addGearParts(Object.keys(WEAPONS).map((k) => ({ gear: 'gun_' + k, bone: 'gun', geo: gunGeometry(k).rotateY(Math.PI) })));
   loadStep(25, 'Menyusun kota…');
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
-  try { start(D, real); } catch (e) { console.error(e); fail('Game gagal disiapkan: ' + e.message); }
+  try { start(D, real, env); } catch (e) { console.error(e); fail('Game gagal disiapkan: ' + e.message); }
 }
 
-function start(D, realAssets) {
+function start(D, realAssets, envAssets) {
   let W;
   if (realAssets) useHemisphereAmbientOnly(); // cahaya sekitar dari HemisphereLight untuk semua material (pantulan lingkungan tetap)
   if (realAssets) useCheapShadowFilter(); // bayangan matahari: 8 ambilan tekstur per piksel, bukan 16
@@ -125,6 +129,8 @@ function start(D, realAssets) {
   // ---------- Sistem ----------
   const homes = planHomes(D); // rumah yang bisa dimasuki (lantai dasar): pintu, sekat, perabot
   const col = createCollider(D, inArea, homes);
+  const envProps = createEnvProps(W, envAssets, col, homes); // menara SUTET/BTS, lampu jalan, tiang + kabel, halte, gerbang, reklame, dst. (map/envprops.js)
+  col.addObstacles(envProps.obstacles); // sebelum kendaraan diparkir & bot bernavigasi (sel navigasi di-cache)
   const interiors = createInteriors(scene, W, homes);
   const mapImg = makeMapImage(D, bb);
   const hud = createHud();
@@ -911,6 +917,7 @@ function start(D, realAssets) {
     document.body.classList.toggle('underwater', under);
     sky.position.copy(camera.position);
     sunDisc.position.copy(camera.position).addScaledVector(sunDir, 12000);
+    envProps.update(camera, t / 1000); // pilah LOD benda lingkungan per jarak + waktu efek (lampu pesawat, lalu lintas, videotron)
     scene.updateMatrixWorld(); // sekali per frame; pass render di bawah tidak menelusuri ulang (scene.matrixWorldAutoUpdate = false)
     if (R) {
       // bayangan dinamis karakter & kendaraan di sekitar kamera (tidak dari udara / di bawah air / mode hemat)
