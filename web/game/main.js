@@ -299,7 +299,7 @@ function start(D, realAssets, envAssets) {
     if (attacker && attacker.isPlayer) { hud.hitmarker(part === 'head', t.hp <= 0); audio.hit(part === 'head'); t.hitByMe = now; mySquad.focus = t; mySquad.focusAt = now; }
     if (t.isPlayer && part !== 'zone' && part !== 'bleed' && attacker) { hud.damageFrom(-wrap(Math.atan2(attacker.pos.x - me.pos.x, attacker.pos.z - me.pos.z) - player.st.yaw)); audio.hurt(); if (attacker !== me) { mySquad.focus = attacker; mySquad.focusAt = now; } }
     if (!t.isPlayer && attacker) bots.hurt(t, attacker, now);
-    if (t.reviving) t.reviving = null; // kena tembak: batal memulihkan rekan
+    if (t.reviving && part !== 'zone') t.reviving = null; // kena tembak: batal memulihkan rekan (luka zona tidak membatalkan)
     if (t.hp > 0) return;
     if (t.down) { kill(t, t.downBy || attacker, t.downBy ? t.downW : w, part === 'bleed' || t.downBy ? t.downPart : part, attacker); return; } // kill milik yang melumpuhkan
     // regu masih punya anggota yang berdiri → tumbang (bisa dipulihkan); kalau tidak → tersingkir
