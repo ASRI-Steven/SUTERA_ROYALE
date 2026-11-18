@@ -395,27 +395,51 @@ function start(D, realAssets) {
       for (const m of sq.members) if (m.alive && m.down) kill(m, m.downBy, m.downW, m.downPart, null);
       return; // pemanggilan di atas sudah mengurus akhir regu
     }
+    if (t.isPlayer) me.diedAt = now;
     if (sq.aliveN === 0 && !sq.rank) {
       sq.rank = squadsLeft;
       squadsLeft--;
-      if (sq === mySquad) { deathRank = sq.rank; finish(false); return; }
-      if (squadsLeft <= 1 && mySquad.aliveN > 0) { finish(true); return; }
+      // regu pemain habis: tinggal satu regu → pertandingan selesai; selain itu kartu "Tersingkir" + menonton
+      if (sq === mySquad) { deathRank = sq.rank; if (squadsLeft <= 1) finish(false); else eliminated(attacker === t ? null : attacker, w, part); return; }
+      if (squadsLeft <= 1) { finish(mySquad.aliveN > 0); return; } // pemain sudah tersingkir & sedang menonton → juara sudah ada
     }
-    if (t.isPlayer) me.diedAt = now;
     if (t.isPlayer && !DOWNS) { deathRank = squadsLeft; finish(false); return; } // pertandingan pemain selesai: peringkat = jumlah regu yang masih bertahan
     if (t.isPlayer && phase === 'play') { // pemain tersingkir tetapi rekan masih hidup → menonton rekan
       player.onDead();
       specNext(1);
       hud.message('Kamu tersingkir', 'Menonton rekan · Spasi / klik ganti rekan', 'warn');
-    } else if (spec === t && phase === 'play') specNext(1);
+    } else if (spec === t && phase === 'play') specTo(specAll && attacker !== t ? attacker : null); // yang ditonton tersingkir → ikuti penyingkirnya
   }
-  // ---------- Menonton rekan (pemain sudah tersingkir) ----------
-  let spec = null;
+  // ---------- Menonton (pemain sudah tersingkir) ----------
+  // Rekan masih hidup → menonton rekan. Regu pemain habis → kartu "Tersingkir" (ringkasan & hadiah langsung dihitung),
+  // lalu menonton siapa saja yang masih hidup, mulai dari yang menyingkirkan; kalau yang ditonton tersingkir, kamera pindah
+  // ke penyingkirnya. Selesai saat pemain kembali ke lobi (kartu / menu Esc) atau pertandingan berakhir.
+  let spec = null, specAll = false;
   function specNext(dir) {
-    const L = mySquad.members, n = L.length, at = spec ? L.indexOf(spec) : 0;
+    const L = specAll ? agents : mySquad.members, n = L.length, at = spec ? L.indexOf(spec) : 0;
     spec = null;
     for (let k = 1; k <= n; k++) { const m = L[((at + dir * k) % n + n) % n]; if (m.alive && !m.isPlayer) { spec = m; break; } }
     player.spectate(spec);
+  }
+  function specTo(a) { if (a && a.alive && !a.isPlayer) { spec = a; player.spectate(a); } else specNext(1); }
+  const CAUSE = { zone: 'Terjebak di luar zona', drown: 'Tenggelam', crash: 'Kecelakaan kendaraan', bleed: 'Kehabisan darah', blast: 'Terkena ledakan' };
+  function eliminated(killer, w, part) {
+    specAll = true;
+    endAt = now;
+    summary(false); // hadiah & misi dihitung sekarang (menonton tidak mengubah hasil)
+    player.onDead();
+    Object.assign(player.st, { firing: false, ads: false });
+    specTo(killer && !killer.isPlayer ? killer : null);
+    hud.death({ rank: deathRank, total: squads.length, by: killer && killer !== me ? killer.name : '', weapon: w && w.def ? w.def.name || w.def.short || '' : '', cause: CAUSE[part] || '',
+      kills: me.kills, dmg: me.dmg, sec: (me.diedAt || now) - startedAt }, () => { hud.death(null); ctx.lock(); }, leaveMatch);
+    audio.beep(true);
+    document.exitPointerLock(); // tombol kartu bisa diklik (tidak dianggap jeda, lihat pointerlockchange)
+  }
+  function leaveMatch() { hud.death(null); finish(false, true); }
+  // baris kecil di bawah nama yang ditonton: regu, kill, senjata, keadaan
+  function specSub(a) {
+    const w = a.cur >= 0 && a.weapons[a.cur], def = w && WEAPONS[w.kind];
+    return (a.team === me.team ? 'Rekan' : 'Regu ' + (a.team + 1)) + ' · ' + a.kills + ' kill' + (def ? ' · ' + def.short : '') + (a.down ? ' · tumbang' : a.state === 'drive' ? ' · berkendara' : a.state === 'fall' || a.state === 'chute' ? ' · terjun' : a.state === 'plane' ? ' · di pesawat' : '');
   }
   // jarak ke benda pertama di sinar (gedung, orang, kendaraan selain milik penembak): titik di bawah bidikan
   function probe(shooter, o, d, maxT) {
@@ -649,6 +673,7 @@ function start(D, realAssets) {
     onStart: () => { audio.unlockAudio(); startMatch(); ctx.lock(); },
   });
   $('resumeBtn').addEventListener('click', () => { ctx.lock(); });
+  $('lobbyBtn').addEventListener('click', () => { if (specAll && phase === 'play') { pause.hidden = true; paused = false; leaveMatch(); } });
   document.addEventListener('pointerlockchange', () => {
     const locked = ctx.locked();
     if (locked) player.st.wantLock = false;
@@ -657,8 +682,9 @@ function start(D, realAssets) {
     const escClose = !locked && performance.now() - (player.st.escAt || -1e9) < 1500;
     if (escClose) player.st.wantLock = true;
     if (phase === 'play') {
-      paused = !locked && big.el.hidden && !player.st.lootUI && !escClose; // panel loot terbuka: mouse bebas, game tidak dijeda
+      paused = !locked && big.el.hidden && !player.st.lootUI && !escClose && !hud.deathOpen(); // panel loot / kartu tersingkir terbuka: mouse bebas, game tidak dijeda
       pause.hidden = !paused;
+      if (paused) { $('lobbyBtn').hidden = !specAll; $('resumeBtn').textContent = specAll ? 'Lanjut menonton' : 'Lanjut'; } // menonton: menu Esc bisa kembali ke lobi
       if (paused) { player.st.firing = false; player.st.ads = false; }
     }
   });
@@ -696,14 +722,12 @@ function start(D, realAssets) {
     if (matchHooks.onStart) matchHooks.onStart({ diff });
     hud.message('SUTERA ROYALE', (mySquad.members.length > 1 ? 'Regu ' + mySquad.members.length + ' orang' : 'Solo') + ' · bot ' + DIFFICULTY[diff].label.toLowerCase() + ' · tekan F untuk terjun · M = peta');
   }
-  function finish(win) {
-    if (phase !== 'play') return;
-    phase = 'end';
-    border.hide();
-    endAt = now;
-    audio.engineLevel(0);
-    audio.windLevel(0);
-    // ringkasan pertandingan untuk lapisan meta (misi, koin): lihat game/hooks.js
+  // ringkasan pertandingan untuk lapisan meta (misi, koin): lihat game/hooks.js. Sekali per pertandingan — saat regu pemain
+  // tersingkir (lalu menonton) atau saat pertandingan selesai.
+  let summarySent = false;
+  function summary(win) {
+    if (summarySent) return;
+    summarySent = true;
     if (matchHooks.onEnd) matchHooks.onEnd({
       win, rank: win ? 1 : deathRank, total: squads.length, squadMode: true, squadSize: mySquad.members.length, players: BOTS + 1, diff,
       kills: me.kills, knocks: stat.knocks, assists: stat.assists, revives: stat.revives, headshots: stat.headshots, damage: Math.round(me.dmg),
@@ -711,13 +735,28 @@ function start(D, realAssets) {
       lootCount: me.looted || 0, onFootM: Math.round(stat.onFootM), drivenM: Math.round(stat.drivenM), healsUsed: stat.healsUsed, roadKills: stat.roadKills, nadeKills: stat.nadeKills, weaponKills: { ...stat.weaponKills },
       squadKills: mySquad.members.reduce((n, m) => n + m.kills, 0), timesDowned: me.downN || 0, alive: me.alive,
     });
+  }
+  // quick = kembali ke lobi dari kartu tersingkir / menu Esc saat menonton (layar akhir langsung)
+  function finish(win, quick) {
+    if (phase !== 'play') return;
+    phase = 'end';
+    border.hide();
+    if (!summarySent) endAt = now;
+    audio.engineLevel(0);
+    audio.windLevel(0);
+    summary(win);
+    if (specAll && !quick) { // sedang menonton: umumkan juaranya dulu
+      const champ = agents.find((a) => a.alive && !a.isPlayer);
+      hud.message('Pertandingan selesai', champ ? 'Juara: regu ' + champ.name : '', '');
+    }
     setTimeout(() => {
+      hud.death(null);
       document.exitPointerLock();
       pause.hidden = true;
       big.close();
       lobby.showEnd(); // hasil, statistik, kemajuan misi & hadiah (ringkasan diterima lobi lewat matchHooks.onEnd di atas)
       hud.show(false);
-    }, win ? 1200 : 2400);
+    }, quick ? 0 : win ? 1200 : specAll ? 3200 : 2400);
   }
 
   // ---------- Loop ----------
@@ -832,7 +871,7 @@ function start(D, realAssets) {
         if (now - placeT > 0.5) { placeT = now; placeName = F.state === 'plane' ? '' : placeAt(F.pos.x, -F.pos.z); }
         const rv = me.reviving, rb = me.down && me.reviver && me.reviver.reviving === me ? me.reviver : null; // memulihkan rekan / sedang dipulihkan
         hud.update({
-          squads: squadsLeft, squad: squadRows(), spec: spec && !me.alive ? spec.name : '', specSlot: spec ? spec.slot : 0,
+          squads: squadsLeft, squad: squadRows(), spec: spec && !me.alive ? spec.name : '', specSlot: spec ? spec.slot : 0, specAll, specSub: spec && !me.alive ? specSub(spec) : '', specHp: spec ? (spec.down ? 0 : spec.hp) : 0,
           down: me.down && me.alive ? me.hp / DOWN_HP : -1, downLeft: me.down ? me.hp / Math.max(0.01, me.bleed) : 0,
           revive: rv ? rv.reviveT / REVIVE_T : rb ? me.reviveT / REVIVE_T : 0, reviveLeft: rv ? REVIVE_T - rv.reviveT : rb ? REVIVE_T - me.reviveT : 0, reviveName: rv ? rv.name : rb ? rb.name : '', reviveBy: !!rb,
           state: me.state, place: placeName, alive: aliveCount, kills: me.kills, hp: me.hp, vest: me.vest, helmet: me.helmet, vestPct: armorPct('vest', me.vest, me.vestHp), helmPct: armorPct('helmet', me.helmet, me.helmetHp), band: me.heals.band, kit: me.heals.kit, drink: me.heals.drink | 0, boost: me.boost || 0, bag: me.bag | 0, bagPct: bagWeight(me) / bagCap(me) * 100,

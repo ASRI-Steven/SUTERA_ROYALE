@@ -24,7 +24,8 @@ const wrapDeg = (d) => { d %= 360; return d > 180 ? d - 360 : d < -180 ? d + 360
 
 // ---------- Glif (SVG 24×24, satu warna = currentColor) ----------
 const GLYPHS = {
-  alive: '<circle cx="12" cy="7.2" r="3.7"/><path d="M4.5 20.5c0-4.4 3.3-7.2 7.5-7.2s7.5 2.8 7.5 7.2z"/>',
+  eye: '<path fill-rule="evenodd" d="M12 5.2c4.6 0 8.2 3.2 9.8 6.8-1.6 3.6-5.2 6.8-9.8 6.8S3.8 15.6 2.2 12C3.8 8.4 7.4 5.2 12 5.2zm0 2.6a4.2 4.2 0 1 0 0 8.4 4.2 4.2 0 0 0 0-8.4zm0 2.2a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/>',
+  alive:'<circle cx="12" cy="7.2" r="3.7"/><path d="M4.5 20.5c0-4.4 3.3-7.2 7.5-7.2s7.5 2.8 7.5 7.2z"/>',
   kill: '<path fill-rule="evenodd" d="M12 2.5c-4.7 0-8.2 3.3-8.2 7.7 0 2.6 1.2 4.7 3.1 6v2.6c0 .9.7 1.7 1.7 1.7h1v-1.8h1.5v1.8h1.8v-1.8h1.5v1.8h1c1 0 1.7-.8 1.7-1.7v-2.6c1.9-1.3 3.1-3.4 3.1-6 0-4.4-3.5-7.7-8.2-7.7zM8.6 9.2a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm6.8 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4zM12 13.6l1.2 2.3h-2.4z"/>',
   helm: '<path d="M4 13.5C4 8.3 7.6 4.6 12 4.6s8 3.7 8 8.9v2.2H4z"/><path d="M6.2 16.8h1.7c.3 2 1.8 3.2 4.1 3.2s3.8-1.2 4.1-3.2h1.7c-.3 3-2.5 4.9-5.8 4.9s-5.5-1.9-5.8-4.9z" opacity=".6"/>',
   vest: '<path fill-rule="evenodd" d="M7.2 3.2h2.3c.4 1.4 1.3 2.2 2.5 2.2s2.1-.8 2.5-2.2h2.3l2.7 3.4-1.2 2.2v9.9c0 .9-.7 1.6-1.6 1.6H7.3c-.9 0-1.6-.7-1.6-1.6V8.8L4.5 6.6zM11.55 7.6v12.7h.9V7.6zM7.4 10.3v1.3h2.9v-1.3zm6.3 0v1.300h2.900v-1.300zm0 3.500v3.400h2.900v-3.400z"/>',
@@ -151,7 +152,17 @@ const TEMPLATE = SPRITE + `
   <div class="hd-bar"><i data-h="downB"></i></div>
   <span data-h="downH"></span>
 </div>
-<div class="h-spec" data-h="spec" hidden><span class="hs-tag">Menonton</span><i class="hs-dot"></i><b data-h="specN"></b><span class="hs-keys"><kbd>Spasi</kbd> / klik · rekan berikutnya <kbd>A</kbd> sebelumnya <kbd>M</kbd> peta</span></div>
+<div class="h-spec" data-h="spec" hidden><span class="hs-tag">Menonton</span><i class="hs-dot"></i><div class="hs-who"><b data-h="specN"></b><em data-h="specSub"></em><div class="hs-hp"><i data-h="specHp"></i></div></div><span class="hs-keys" data-h="specKeys"></span></div>
+<div class="h-death" data-h="death" hidden>
+  <div class="hx-card">
+    <span class="hx-tag">Tersingkir</span>
+    <div class="hx-rank"><b data-h="dRank"></b><span data-h="dOf"></span></div>
+    <p class="hx-by" data-h="dBy"></p>
+    <div class="hx-stats"><div><b data-h="dKills">0</b><span>Kill</span></div><div><b data-h="dDmg">0</b><span>Kerusakan</span></div><div><b data-h="dTime">0:00</b><span>Bertahan</span></div></div>
+    <div class="hx-btns"><button type="button" class="hx-watch" data-h="dWatch">${ic('eye')}Tonton pertandingan</button><button type="button" class="hx-lobby" data-h="dLobby">Kembali ke lobi</button></div>
+    <small class="hx-hint">Saat menonton: <kbd>Spasi</kbd>/klik pemain berikutnya · <kbd>A</kbd> sebelumnya · <kbd>V</kbd> kamera · <kbd>Esc</kbd> menu</small>
+  </div>
+</div>
 <div class="h-dock">
   <div class="h-breath" data-h="breath" hidden>${ic('air')}<div><i data-h="breathB"></i></div><span data-h="breathT">Napas</span></div>
   <div class="h-weapons" data-h="weapons"></div>
@@ -455,6 +466,24 @@ export function createHud() {
       }
     },
     hitmarker(head, kill) { restart(el.hit, 'h-hit', 'hit', kill ? 'kill' : head ? 'head' : ''); },
+    // kartu "Tersingkir" (regu pemain habis): info = { rank, total, by, weapon, kills, dmg, sec }; null = tutup.
+    // onWatch / onLobby = tombol "Tonton pertandingan" / "Kembali ke lobi"
+    death(info, onWatch, onLobby) {
+      el.hud.classList.toggle('dead', !!info);
+      if (!info) { el.death.hidden = true; return; }
+      el.dRank.textContent = '#' + info.rank;
+      el.dOf.textContent = 'dari ' + info.total + ' regu';
+      el.dBy.textContent = '';
+      if (info.by) { el.dBy.append('Disingkirkan oleh '); const b = document.createElement('b'); b.textContent = info.by; el.dBy.append(b); if (info.weapon) el.dBy.append(' · ' + info.weapon); }
+      else el.dBy.textContent = info.cause || 'Regu tersingkir';
+      el.dKills.textContent = info.kills | 0;
+      el.dDmg.textContent = Math.round(info.dmg || 0);
+      el.dTime.textContent = Math.floor(info.sec / 60) + ':' + String(Math.floor(info.sec % 60)).padStart(2, '0');
+      el.dWatch.onclick = (e) => { e.stopPropagation(); onWatch && onWatch(); };
+      el.dLobby.onclick = (e) => { e.stopPropagation(); onLobby && onLobby(); };
+      el.death.hidden = false;
+    },
+    deathOpen() { return !el.death.hidden; },
     damageFrom(angle) { // angle: arah penembak relatif pandangan (rad, 0 = depan, + = kanan)
       const a = document.createElement('div');
       a.innerHTML = DMG_ARC;
@@ -515,7 +544,12 @@ export function createHud() {
         set('downBy', s.reviveBy ? s.reviveName : '', (v) => { el.downH.textContent = v ? v + ' sedang memulihkanmu · jangan bergerak' : 'Merangkak ke rekan (WASD) · mereka bisa memulihkanmu'; el.down.classList.toggle('rev', !!v); });
       }
       set('spec', s.spec || '', (v) => { el.spec.hidden = !v; el.hud.classList.toggle('spec', !!v); if (v) el.specN.textContent = v; });
-      if (s.spec) set('specSlot', s.specSlot | 0, (v) => { el.spec.className = 'h-spec m' + v; });
+      if (s.spec) { // menonton: rekan (warna rekan) atau siapa saja setelah regu habis (specAll)
+        set('specSlot', (s.specAll ? 'a' : 'm') + (s.specSlot | 0), (v) => { el.spec.className = 'h-spec ' + (v[0] === 'a' ? 'all ' : '') + 'm' + v.slice(1); });
+        set('specSub', s.specSub || '', (v) => { el.specSub.textContent = v; });
+        set('specHp', Math.round(clamp01((s.specHp || 0) / 100) * 50), (v) => { el.specHp.style.transform = 'scaleX(' + v / 50 + ')'; });
+        set('specKeys', s.specAll ? 1 : 0, (v) => { el.specKeys.innerHTML = '<kbd>Spasi</kbd> / klik · ' + (v ? 'pemain' : 'rekan') + ' berikutnya <kbd>A</kbd> sebelumnya <kbd>V</kbd> kamera <kbd>M</kbd> peta' + (v ? ' <kbd>Esc</kbd> menu' : ''); });
+      }
       set('loc', s.place || '', (v) => { el.loc.textContent = v; el.loc.hidden = !v; });
       // ---- darah ----
       const hp = Math.max(0, Math.min(100, Math.ceil(s.hp)));
