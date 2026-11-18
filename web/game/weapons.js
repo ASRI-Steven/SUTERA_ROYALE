@@ -562,56 +562,77 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   function syncGuns() { for (const k in guns) { const g = guns[k].g; if (g.visible) { if (g.parent !== root) root.add(g); } else if (g.parent) g.parent.remove(g); } }
 
   // ---------- Animasi orang pertama ----------
-  // Lini waktu dinormalisasi (u 0..1) sepanjang durasi aksi yang sama dengan logika game (WEAPONS.reload, obat 3,5/6 dtk).
+  // Aksi (isi ulang, obat, granat, periksa) memakai lini waktu u = 0..1 sepanjang durasi aksi di logika game
+  // (WEAPONS.reload, obat 3,5 / 6 / 4 dtk), jadi animasi selesai tepat saat aksinya selesai.
+  // Kurva kunci [t, x, y, z, henti?] (t naik): Hermite C1 — gerak mengalir lewat kunci (tidak berhenti di tiap kunci) dan
+  // tidak melampaui titik balik (tangen nol di puncak/lembah). Kunci ber-elemen ke-5 = 1 dan kedua ujung berhenti sejenak
+  // (mis. saat tangan menyentuh/menahan). Semua kunci dibuat sekali (bukan per frame).
+  const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
   const ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
-  function track(u, keys, out) { // keys: [[t, x, y, z], ...], t naik; antar kunci smoothstep
-    let i = 1;
-    while (i < keys.length - 1 && u > keys[i][0]) i++;
-    const A = keys[i - 1], B = keys[i], f = ease((u - A[0]) / Math.max(1e-6, B[0] - A[0]));
-    return out.set(A[1] + (B[1] - A[1]) * f, A[2] + (B[2] - A[2]) * f, A[3] + (B[3] - A[3]) * f);
+  const easeIn = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x);
+  const easeOut = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : 1 - (1 - x) * (1 - x) * (1 - x));
+  const backOut = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : 1 + 2.2 * (x - 1) ** 3 + 1.2 * (x - 1) ** 2); // melampaui ±5 % lalu kembali
+  const seg = (u, a, b) => clamp01((u - a) / (b - a));
+  function tang(K, i, c) {
+    if (i <= 0 || i >= K.length - 1 || K[i][4]) return 0;
+    const A = K[i - 1], B = K[i], C = K[i + 1], h0 = B[0] - A[0], h1 = C[0] - B[0];
+    const d0 = (B[c] - A[c]) / Math.max(1e-6, h0), d1 = (C[c] - B[c]) / Math.max(1e-6, h1);
+    return d0 * d1 <= 0 ? 0 : (d0 * h1 + d1 * h0) / Math.max(1e-6, h0 + h1);
   }
-  const K = (t, p) => [t, p.x !== undefined ? p.x : p[0], p.y !== undefined ? p.y : p[1], p.z !== undefined ? p.z : p[2]];
-  const add = (p, x, y, z) => [(p.x ?? p[0]) + x, (p.y ?? p[1]) + y, (p.z ?? p[2]) + z];
-  // titik kerja tangan kiri (ruang senjata): pegang magasin, kokang (bolt), lubang isi shotgun; miring senjata saat isi ulang
-  const RL = {
-    // tilt: putar senjata (pitch, yaw, roll) supaya lubang magasin menghadap kamera; shift: geser ke tengah & naik
-    ar: { grab: [-0.008, -0.085, -0.1], bolt: [-0.045, 0.035, 0.0], slap: true, tilt: [0.18, 0.3, -0.72], shift: [-0.07, 0.075, 0.05] },
-    smg: { grab: [-0.008, -0.07, -0.108], bolt: [-0.05, 0.07, -0.07], pull: 0.06, tilt: [0.16, 0.28, -0.66], shift: [-0.06, 0.07, 0.05] },
-    dmr: { grab: [-0.008, -0.04, -0.1], bolt: [-0.048, 0.04, 0.02], slap: true, tilt: [0.16, 0.3, -0.62], shift: [-0.07, 0.075, 0.06] },
-    pistol: { grab: [-0.004, -0.085, -0.004], bolt: [-0.035, 0.062, 0.03], pull: 0.055, tilt: [0.32, 0.3, -0.55], shift: [-0.05, 0.065, 0.04] },
-    shotgun: { port: [0.0, -0.07, -0.1], tilt: [0.16, 0.32, -0.82], shift: [-0.06, 0.075, 0.05] },
-    sniper: { grab: [-0.008, -0.005, -0.075], bolt: [0.04, 0.072, 0.03], slap: true, tilt: [0.15, 0.28, -0.6], shift: [-0.07, 0.075, 0.06] },
-    lmg: { grab: [-0.045, -0.02, -0.09], bolt: [0.0, 0.142, -0.02], slap: true, tilt: [0.2, 0.34, -0.55], shift: [-0.08, 0.08, 0.06] },
-    burst: { grab: [-0.008, -0.085, -0.11], bolt: [-0.03, 0.125, 0.07], pull: 0.05, tilt: [0.18, 0.3, -0.72], shift: [-0.07, 0.075, 0.05] },
-    pdw: { grab: [-0.008, -0.085, -0.105], bolt: [-0.03, 0.1, -0.03], pull: 0.05, tilt: [0.16, 0.28, -0.66], shift: [-0.06, 0.07, 0.05] },
-    revolver: { tilt: [0.55, 0.3, -0.95], shift: [-0.06, 0.08, 0.05], port: [-0.03, 0.06, -0.03] },
-    dbs: { tilt: [0.12, 0.28, -0.45], shift: [-0.05, 0.07, 0.05], port: [0.0, 0.09, -0.06] },
-  };
-  // speedloader revolver (6 peluru kuningan pada cakram)
-  const spl = new THREE.Group();
-  { const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.012, 16), new THREE.MeshStandardMaterial({ color: '#2c2f36', roughness: 0.5 }));
-    spl.add(disc);
-    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3, b = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.03, 8), new THREE.MeshStandardMaterial({ color: '#d9b25a', metalness: 0.6, roughness: 0.35 })); b.position.set(Math.cos(a) * 0.0118, 0.02, Math.sin(a) * 0.0118); spl.add(b); }
-    spl.rotation.x = Math.PI / 2; spl.visible = false; }
-  // selongsong kedua (laras ganda: dua peluru dimasukkan bersamaan)
-  const shell2 = new THREE.Group();
-  const POUCH = [-0.17, -0.46, 0.14];
+  function curve(u, K, out) {
+    const n = K.length;
+    if (u <= K[0][0]) return out.set(K[0][1], K[0][2], K[0][3]);
+    if (u >= K[n - 1][0]) return out.set(K[n - 1][1], K[n - 1][2], K[n - 1][3]);
+    let i = 1;
+    while (i < n - 1 && u > K[i][0]) i++;
+    const A = K[i - 1], B = K[i], h = B[0] - A[0], s = (u - A[0]) / Math.max(1e-6, h), s2 = s * s, s3 = s2 * s;
+    const h00 = 2 * s3 - 3 * s2 + 1, h10 = (s3 - 2 * s2 + s) * h, h01 = 3 * s2 - 2 * s3, h11 = (s3 - s2) * h;
+    return out.set(
+      h00 * A[1] + h10 * tang(K, i - 1, 1) + h01 * B[1] + h11 * tang(K, i, 1),
+      h00 * A[2] + h10 * tang(K, i - 1, 2) + h01 * B[2] + h11 * tang(K, i, 2),
+      h00 * A[3] + h10 * tang(K, i - 1, 3) + h01 * B[3] + h11 * tang(K, i, 3));
+  }
+  const _c1 = new THREE.Vector3();
+  const curve1 = (u, K) => curve(u, K, _c1).x;
+  // penyusun kunci: kP(t, [x, y, z], henti) · kS(t, nilai, henti) · vAdd(titik, dx, dy, dz) · vMix(a, b, k)
+  const kP = (t, p, stop) => (stop ? [t, p[0], p[1], p[2], 1] : [t, p[0], p[1], p[2]]);
+  const kS = (t, v, stop) => (stop ? [t, v, 0, 0, 1] : [t, v, 0, 0]);
+  const vAdd = (p, x = 0, y = 0, z = 0) => [p[0] + x, p[1] + y, p[2] + z];
+  const vMix = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k];
   const Z3 = [0, 0, 0];
-  // selongsong shotgun (dipegang tangan kiri saat dimasukkan satu per satu)
-  const shell = new THREE.Group();
-  { const body = new THREE.Mesh(new THREE.CylinderGeometry(0.0105, 0.0105, 0.058, 10), new THREE.MeshStandardMaterial({ color: '#b5302a', roughness: 0.5 }));
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.0112, 0.0112, 0.013, 10), new THREE.MeshStandardMaterial({ color: '#d9b25a', metalness: 0.6, roughness: 0.35 }));
-    base.position.y = -0.033; shell.add(body, base); shell.rotation.x = Math.PI / 2; shell.visible = false;
-    shell2.add(body.clone(), base.clone()); shell2.rotation.x = Math.PI / 2; shell2.visible = false; }
 
-  // rig obat (ruang kamera): lengan kiri disodorkan, tangan kanan membalut / menyuntik; tidak bergantung senjata
-  const heal = new THREE.Group();
-  heal.visible = false; // ditempel ke root hanya selama dipakai
-  const unitCyl = new THREE.CylinderGeometry(1, 1, 1, 14);
-  const foreSrc = glbNode('fp_forearm'), handSrc = glbNode('fp_hand_open');
-  const limb = (r0, r1) => { if (foreSrc) { const c = foreSrc.clone(true); c.position.set(0, 0, 0); return dressVm(c, true); } return new THREE.Mesh(vwxOf(new THREE.CylinderGeometry(r0, r1, 1, 14)), sleeve); };
-  function glovedHand() { // telapak + 4 jari + jempol
-    if (handSrc) { const c = handSrc.clone(true); c.position.set(0, 0, 0); return dressVm(c, true); }
+  // ---------- Lengan orang pertama ----------
+  // Potongan tangan + lengan bawah weapons.glb kaku: telapak di asal, lengan bawah searah sumbu lokal AX_* (ke siku).
+  // aimArm: telapak di `pos`, potongan diputar supaya lengan bawah mengarah ke `dir` (ruang dasar ≈ kamera; qInv = rotasi
+  // ruang dasar → ruang induk potongan), lalu diputar `roll` di sumbu lengan. dir = AX_* & roll = 0 → pose asli model
+  // (identitas), jadi pose diam tidak berubah; saat beraksi lengan bawah tetap tersambung ke tepi layar (siku di luar layar).
+  const AX_L = new THREE.Vector3(-0.328, -0.429, 0.842).normalize(); // fp_hand_l (sumbu utama lengan baju)
+  const AX_R = new THREE.Vector3(0.239, -0.406, 0.882).normalize(); // fp_hand_r
+  const AX_N = new THREE.Vector3(0.325, -0.849, 0.416).normalize(); // fp_hand_nade
+  const AXL = AX_L.toArray(), AXR = AX_R.toArray(), AXN = AX_N.toArray();
+  const _ad = new THREE.Vector3(), _aq = new THREE.Quaternion(), _aq2 = new THREE.Quaternion(), _fz = new THREE.Vector3();
+  function aimArm(o, a, pos, dir, roll, qInv) {
+    o.position.copy(pos);
+    _ad.copy(dir);
+    if (qInv) _ad.applyQuaternion(qInv);
+    _ad.normalize();
+    _aq.setFromUnitVectors(a, _ad);
+    o.quaternion.copy(_aq2.setFromAxisAngle(_ad, roll)).multiply(_aq);
+  }
+  // aimArm2: sama, tetapi putaran lengan dihitung supaya sumbu lokal h (sumbu kaleng/suntikan/gulungan, arah telapak) mengarah
+  // sedekat mungkin ke t (ruang dasar) — lebih mudah diatur daripada sudut putar
+  const _ah = new THREE.Vector3(), _at = new THREE.Vector3(), _ax = new THREE.Vector3();
+  function aimArm2(o, a, pos, dir, h, t, qInv) {
+    o.position.copy(pos);
+    _ad.copy(dir);
+    if (qInv) _ad.applyQuaternion(qInv);
+    _ad.normalize();
+    _aq.setFromUnitVectors(a, _ad);
+    _ah.copy(h).applyQuaternion(_aq); _ah.addScaledVector(_ad, -_ah.dot(_ad));
+    _at.copy(t); if (qInv) _at.applyQuaternion(qInv); _at.addScaledVector(_ad, -_at.dot(_ad));
+    o.quaternion.copy(_aq2.setFromAxisAngle(_ad, Math.atan2(_ax.crossVectors(_ah, _at).dot(_ad), _ah.dot(_at)))).multiply(_aq);
+  }
+  function glovedHand() { // cadangan tanpa GLB: telapak + 4 jari (−Z) + jempol, manset di +Z (pergelangan)
     const g = new THREE.Group();
     const palm = new THREE.Mesh(vwxOf(new THREE.BoxGeometry(0.075, 0.028, 0.085)), glove);
     g.add(palm);
@@ -620,61 +641,98 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const cf = new THREE.Mesh(vwxOf(new THREE.CylinderGeometry(0.036, 0.036, 0.02, 12)), cuff); cf.rotation.x = Math.PI / 2; cf.position.z = 0.055; g.add(cf);
     return g;
   }
-  const foreL = limb(0.034, 0.045), foreR = limb(0.034, 0.045), handL = glovedHand(), handR = glovedHand();
+  // salinan potongan tangan+lengan GLB (material orang pertama, ikut warna skin karakter) atau cadangan prosedural
+  function armPiece(name, a) {
+    const src = glbNode(name);
+    if (src) { const c = src.clone(true); c.position.set(0, 0, 0); c.quaternion.identity(); dressVm(c, true); c.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); return c; }
+    const g = new THREE.Group(), h = glovedHand(), f = new THREE.Mesh(vwxOf(new THREE.CylinderGeometry(0.036, 0.046, 0.44, 12)), sleeve);
+    f.quaternion.setFromUnitVectors(UPV, a); f.position.copy(a).multiplyScalar(0.27);
+    h.quaternion.setFromUnitVectors(_fz.set(0, 0, 1), a);
+    g.name = name; g.add(f, h);
+    return g;
+  }
+  const UPV = new THREE.Vector3(0, 1, 0);
+
+  // ---------- Barang yang dipegang saat beraksi ----------
+  const brassM = new THREE.MeshStandardMaterial({ color: '#d9b25a', metalness: 0.7, roughness: 0.32 });
+  const shellM = new THREE.MeshStandardMaterial({ color: '#b5302a', roughness: 0.5 });
+  // selongsong shotgun: grup searah −Z (ujung depan −Z, dasar kuningan +Z), asal di tengah
+  function makeShell() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.0105, 0.0105, 0.058, 12), shellM), base = new THREE.Mesh(new THREE.CylinderGeometry(0.0112, 0.0112, 0.013, 12), brassM);
+    base.position.y = -0.033;
+    const s = new THREE.Group(); s.add(body, base); s.rotation.x = -Math.PI / 2; g.add(s);
+    g.visible = false;
+    return g;
+  }
+  const shells = [makeShell(), makeShell()]; // pompa: satu dipakai bergantian; laras ganda: dua selongsong
+  // speedloader revolver: cakram + 6 peluru (ujung ke −Z) & 6 selongsong kosong yang dikeluarkan
+  const spl = new THREE.Group(), spent = new THREE.Group();
+  { const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, 0.01, 18).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#2c2f36', roughness: 0.5, metalness: 0.4 }));
+    disc.position.z = 0.016; spl.add(disc);
+    const rnd = new THREE.CylinderGeometry(0.0045, 0.0045, 0.03, 8).rotateX(Math.PI / 2), tip = new THREE.ConeGeometry(0.0045, 0.008, 8).rotateX(-Math.PI / 2);
+    for (let k = 0; k < 6; k++) {
+      const a = k * Math.PI / 3, x = Math.cos(a) * 0.0118, y = Math.sin(a) * 0.0118;
+      const b = new THREE.Mesh(rnd, brassM); b.position.set(x, y, 0); spl.add(b);
+      const t = new THREE.Mesh(tip, brassM); t.position.set(x, y, -0.019); spl.add(t);
+      const c = new THREE.Mesh(rnd, brassM); c.position.set(x, y, 0); spent.add(c);
+    }
+    spl.visible = spent.visible = false; }
+  // rig obat (ruang kamera): lengan kiri/kanan + barang; tidak bergantung senjata
+  const heal = new THREE.Group();
+  heal.visible = false; // ditempel ke root hanya selama dipakai
+  const hArmL = armPiece('fp_hand_l', AX_L), hArmR = armPiece('fp_hand_r', AX_R), hArmC = armPiece('fp_hand_nade', AX_N);
   const bandageMat = new THREE.MeshStandardMaterial({ color: '#f1efe8', roughness: 0.9 });
+  const unitCyl = new THREE.CylinderGeometry(1, 1, 1, 18, 1, true);
   const wrap = new THREE.Mesh(unitCyl, bandageMat), roll = new THREE.Group();
-  { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 16), bandageMat), core = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.052, 10), new THREE.MeshStandardMaterial({ color: '#b9b2a2' })); roll.add(r, core); }
+  { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.05, 18), bandageMat), core = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.052, 10), new THREE.MeshStandardMaterial({ color: '#b9b2a2' })); roll.add(r, core); }
   const tail = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1, 0.003), bandageMat); // pita perban dari gulungan ke lengan (sumbu panjang = Y)
+  wrap.material.side = THREE.DoubleSide;
   const kit = new THREE.Group(), lid = new THREE.Group();
   { const kg = props.kit ? props.kit.clone() : null;
     if (kg) { kg.computeBoundingBox(); const bb = kg.boundingBox, c = bb.getCenter(new THREE.Vector3()); kg.translate(-c.x, -bb.min.y, -c.z); const m = new THREE.Mesh(kg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })); m.scale.setScalar(0.4); kit.add(m); kit.userData.h = (bb.max.y - bb.min.y) * 0.4; kit.userData.d = (bb.max.z - bb.min.z) * 0.4; kit.userData.w = (bb.max.x - bb.min.x) * 0.4; }
     else { const m = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.055, 0.1), new THREE.MeshStandardMaterial({ color: '#1f8a4c' })); m.position.y = 0.0275; kit.add(m); kit.userData.h = 0.055; kit.userData.d = 0.1; kit.userData.w = 0.14; }
-    const L = new THREE.Mesh(new THREE.BoxGeometry(kit.userData.w * 1.02, 0.008, kit.userData.d * 1.02), new THREE.MeshStandardMaterial({ color: '#23955a', roughness: 0.6 }));
-    L.position.set(0, 0.006, kit.userData.d * 0.51);
+    const Lm = new THREE.Mesh(new THREE.BoxGeometry(kit.userData.w * 1.02, 0.008, kit.userData.d * 1.02), new THREE.MeshStandardMaterial({ color: '#23955a', roughness: 0.6 }));
+    Lm.position.set(0, 0.004, kit.userData.d * 0.51);
     const cr1 = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.003, 0.011), new THREE.MeshStandardMaterial({ color: '#ffffff' })), cr2 = cr1.clone(); cr2.rotation.y = Math.PI / 2;
-    cr1.position.set(0, 0.0055, kit.userData.d * 0.51); cr2.position.copy(cr1.position);
-    lid.add(L, cr1, cr2); lid.position.set(0, kit.userData.h, -kit.userData.d * 0.51); kit.add(lid); }
-  const syringe = new THREE.Group(), plunger = new THREE.Group();
-  { const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.09, 14), new THREE.MeshStandardMaterial({ color: '#eef6fa', roughness: 0.15, transparent: true, opacity: 0.8 }));
-    const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.0088, 0.0088, 0.06, 12), new THREE.MeshStandardMaterial({ color: '#e0533b', emissive: '#7a2016' }));
-    const needle = new THREE.Mesh(new THREE.CylinderGeometry(0.0014, 0.0014, 0.036, 6), new THREE.MeshStandardMaterial({ color: '#d8dce2', metalness: 0.8, roughness: 0.2 }));
-    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.05, 6), new THREE.MeshStandardMaterial({ color: '#3a3d46' })), thumb = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.004, 12), rod.material);
-    barrel.position.y = 0; liquid.position.y = -0.01; needle.position.y = -0.063; rod.position.y = 0.06; thumb.position.y = 0.086;
-    plunger.add(rod, thumb); syringe.add(barrel, liquid, needle, plunger);
-    syringe.userData.liquid = liquid; }
-  // kaleng minuman energi (origin = pusat kaleng): badan, pita warna, tutup, cincin pembuka yang berengsel
+    cr1.position.set(0, 0.0095, kit.userData.d * 0.51); cr2.position.copy(cr1.position);
+    lid.add(Lm, cr1, cr2); lid.position.set(0, kit.userData.h, -kit.userData.d * 0.51); kit.add(lid); }
+  const syringe = new THREE.Group(), plunger = new THREE.Group(); // jarum ke −Y, pendorong di +Y
+  { const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.08, 14), new THREE.MeshStandardMaterial({ color: '#eef6fa', roughness: 0.15, transparent: true, opacity: 0.8 }));
+    const liquid = new THREE.Mesh(new THREE.CylinderGeometry(0.0072, 0.0072, 0.06, 12), new THREE.MeshStandardMaterial({ color: '#e0533b', emissive: '#7a2016' }));
+    const needle = new THREE.Mesh(new THREE.CylinderGeometry(0.0012, 0.0012, 0.03, 6), new THREE.MeshStandardMaterial({ color: '#d8dce2', metalness: 0.8, roughness: 0.2 }));
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.006, 0.008, 10), new THREE.MeshStandardMaterial({ color: '#ff9a3c', roughness: 0.5 }));
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 0.05, 6), new THREE.MeshStandardMaterial({ color: '#3a3d46' })), thumb = new THREE.Mesh(new THREE.CylinderGeometry(0.0105, 0.0105, 0.004, 12), rod.material);
+    liquid.position.y = -0.008; hub.position.y = -0.044; needle.position.y = -0.063; rod.position.y = 0.055; thumb.position.y = 0.081;
+    liquid.geometry.translate(0, 0.03, 0); liquid.position.y = -0.038; // menyusut dari atas (dasar tetap)
+    plunger.add(rod, thumb); syringe.add(barrel, liquid, hub, needle, plunger);
+    syringe.userData.liquid = liquid; syringe.scale.setScalar(1.45); }
+  // kaleng minuman energi (asal = pusat kaleng, tutup di +Y): badan, pita warna, tutup, cincin pembuka berengsel
   const can = new THREE.Group(), canTab = new THREE.Group();
   { const alu = new THREE.MeshStandardMaterial({ color: '#cfd4da', metalness: 0.85, roughness: 0.28 });
-    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.115, 20), new THREE.MeshStandardMaterial({ color: '#1f6fd6', metalness: 0.55, roughness: 0.35 }));
-    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0314, 0.0314, 0.03, 20), new THREE.MeshStandardMaterial({ color: '#ffd23f', metalness: 0.4, roughness: 0.4 }));
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.031, 0.008, 20), alu), bot = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.026, 0.008, 20), alu);
-    top.position.y = 0.0615; bot.position.y = -0.0615; band.position.y = 0.012;
-    const ring = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.002, 0.024), alu); ring.position.z = 0.012; // cincin: engsel di tengah tutup
-    canTab.add(ring); canTab.position.set(0, 0.0665, -0.006);
-    can.add(body, band, top, bot, canTab);
-    can.traverse((o) => { if (o.isMesh) o.frustumCulled = false; }); }
-  heal.add(foreL, foreR, handL, handR, wrap, roll, tail, kit, syringe, can);
-  // granat di tangan: grup genggam (origin = pusat badan granat) berisi tangan Blender fp_hand_nade + model granat;
-  // tanpa GLB → lengan & tangan prosedural
-  const nadeRig = new THREE.Group(), nadeFore = limb(0.034, 0.045), nadeHand = glovedHand(), nadeGrip = new THREE.Group(), nadeMesh = {};
-  nadeRig.add(nadeFore, nadeHand, nadeGrip);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.029, 0.112, 22), new THREE.MeshStandardMaterial({ color: '#1f6fd6', metalness: 0.55, roughness: 0.35 }));
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0293, 0.0293, 0.03, 22), new THREE.MeshStandardMaterial({ color: '#ffd23f', metalness: 0.4, roughness: 0.4 }));
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.029, 0.008, 22), alu), bot = new THREE.Mesh(new THREE.CylinderGeometry(0.029, 0.024, 0.008, 22), alu);
+    top.position.y = 0.06; bot.position.y = -0.06; band.position.y = 0.012;
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.002, 0.022), alu); ring.position.z = 0.011; // cincin: engsel di tengah tutup
+    const hole = new THREE.Mesh(new THREE.BoxGeometry(0.011, 0.001, 0.014), new THREE.MeshBasicMaterial({ color: '#15171b' })); hole.position.set(0, 0.0645, -0.013); hole.visible = false;
+    canTab.add(ring); canTab.position.set(0, 0.065, -0.004);
+    can.add(body, band, top, bot, canTab, hole);
+    can.userData.hole = hole; }
+  for (const o of [kit, syringe, can, roll, wrap, tail, ...shells, spl, spent]) o.traverse((m) => { if (m.isMesh) m.frustumCulled = false; });
+  heal.add(hArmL, hArmR, hArmC, wrap, tail, kit);
+  hArmR.add(roll, syringe, can);
+  // granat di tangan kanan (fp_hand_nade, asal = pusat granat) + tangan kiri untuk mencabut pin
+  const nadeRig = new THREE.Group(), nArm = armPiece('fp_hand_nade', AX_N), nArmL = armPiece('fp_hand_l', AX_L), nadeMesh = {};
+  nadeRig.add(nArm, nArmL);
   nadeRig.visible = false; // ditempel ke root hanya selama dipakai
-  const nadeGlbHand = glbNode('fp_hand_nade');
-  if (nadeGlbHand) { const c = nadeGlbHand.clone(true); c.position.set(0, 0, 0); dressVm(c, true); nadeGrip.add(c); nadeFore.visible = nadeHand.visible = false; }
   for (const nk of Object.keys(NADES)) {
     const src = glbNode(nk), m = src ? dressVm(src.clone(true), true) : new THREE.Mesh(gunGeometry(nk), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55 }));
     m.position.set(0, 0, 0); m.visible = false; m.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
-    nadeGrip.add(m); nadeMesh[nk] = m;
+    nArm.add(m); nadeMesh[nk] = m;
   }
-  // pose dasar lengan kiri disodorkan (ruang kamera): pergelangan W, siku E
-  const W0 = new THREE.Vector3(0.04, -0.165, -0.45), E0 = new THREE.Vector3(-0.4, -0.32, -0.25), ER = new THREE.Vector3(0.38, -0.47, -0.1);
-  const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tD = new THREE.Vector3(), q0 = new THREE.Quaternion(), UPV = new THREE.Vector3(0, 1, 0);
-  function placeLimb(m, a, b) { m.position.copy(a).add(b).multiplyScalar(0.5); m.scale.set(1, a.distanceTo(b), 1); m.quaternion.setFromUnitVectors(UPV, tD.copy(b).sub(a).normalize()); }
-  function placeHand(h, wrist, elbow, roll0) { // telapak di pergelangan, jari menunjuk menjauh dari siku
-    h.position.copy(wrist);
-    h.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), tD.copy(wrist).sub(elbow).normalize());
-    h.rotateZ(roll0);
-  }
+  const pinRing = new THREE.Mesh(new THREE.TorusGeometry(0.009, 0.0016, 6, 16), brassM); // cincin pin yang dicabut tangan kiri
+  pinRing.frustumCulled = false; nArmL.add(pinRing);
 
   // ---------- scope terpasang (aksesori): tabung berongga di atas pisir; dibuat sekali per senjata & perbesaran ----------
   const SCOPE_DY = 0.043; // tinggi sumbu tabung di atas garis pisir (m)
@@ -704,192 +762,573 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (pw && !G.sc[pw]) G.sc[pw] = buildScope(G, gk, pw);
     for (const k in G.sc) G.sc[k].visible = +k === pw;
   }
-  function heldPose(G) { // tangan kiri / magasin / pompa / bolt / silinder / laras ke posisi diam
-    if (G.handL) { G.handL.position.copy(G.handL0); G.handL.rotation.set(0, 0, 0); }
-    if (G.handR && G.handR0) G.handR.position.copy(G.handR0);
-    if (G.mag && G.mag0) { G.mag.position.copy(G.mag0); G.mag.rotation.set(0, 0, 0); G.mag.visible = true; }
+  // ---------- Persiapan animasi per senjata (setelah model GLB terpasang) ----------
+  // titik kerja tangan kiri (ruang senjata), magasin cadangan yang dijatuhkan, slide pistol (dipisah dari model)
+  const _bb = new THREE.Box3(), _m4 = new THREE.Matrix4(), _m4b = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _q3 = new THREE.Quaternion(), ONE = new THREE.Vector3(1, 1, 1);
+  function rigGun(G, kind) {
+    G.armL = !!(G.handL && G.handL.name === 'fp_hand_l');
+    G.armR = !!(G.handR && G.handR.name === 'fp_hand_r');
+    const R = G.handRest.toArray();
+    let mb = null;
+    if (G.mag) { // kotak magasin (ruang lokal magasin): tinggi & tengah untuk titik pegang
+      _bb.makeEmpty();
+      G.mag.updateMatrixWorld(true);
+      _m4.copy(G.mag.matrixWorld).invert();
+      G.mag.traverse((o) => { if (o.isMesh) { o.geometry.computeBoundingBox(); _bb.union(o.geometry.boundingBox.clone().applyMatrix4(_m4b.multiplyMatrices(_m4, o.matrixWorld))); } });
+      mb = { y0: _bb.min.y, y1: _bb.max.y, z: (_bb.min.z + _bb.max.z) / 2, z0: _bb.min.z, z1: _bb.max.z };
+      G.magDrop = G.mag.clone(true); // magasin lama yang jatuh (magasin baru = G.mag)
+      G.magDrop.visible = false;
+      G.g.add(G.magDrop);
+    }
+    const m0 = G.mag0 ? G.mag0.toArray() : vAdd(R, 0, -0.05, 0.2);
+    // titik pegang magasin (pusat genggaman) saat terpasang; pistol: pangkal magasin (didorong telapak dari bawah)
+    const pis = kind === 'pistol';
+    const mg = mb ? (pis ? [m0[0] - 0.004, m0[1] + mb.y0 - 0.012, m0[2] + mb.z + 0.004] : [m0[0] - 0.006, m0[1] + mb.y0 * 0.55, m0[2] + mb.z + 0.01]) : vAdd(R, 0, -0.08, 0.2);
+    const CH = { // titik kokang: tepuk tombol bolt (kiri, di atas lubang magasin) / tarik tuas samping / slide pistol
+      ar: [-0.036, 0.076, -0.068], burst: [-0.036, 0.076, -0.064], dmr: [-0.038, 0.08, -0.075],
+      smg: [-0.036, 0.112, -0.17], pdw: [-0.034, 0.118, -0.12], lmg: [-0.052, 0.112, -0.2],
+      pistol: [0.0, 0.112, 0.012], sniper: [0.05, 0.062, 0.042],
+    };
+    G.rp = {
+      mg, pre: vAdd(mg, -0.005, -0.075, 0.01), po: [R[0] - 0.2, R[1] - 0.6, Math.max(R[2] + 0.4, 0.15)],
+      ch: CH[kind] || vAdd(R, 0, 0.06, 0.1), port: kind === 'shotgun' ? [0, 0.03, -0.1] : null,
+    };
+    if (kind === 'pistol') { // slide = segitiga logam di atas rangka (y > 0,0618) → bisa mundur saat menembak / terkunci saat kosong
+      const parts = [];
+      G.g.traverse((o) => { if (o.isMesh && o.parent && (o.parent === G.g.children.find((c) => c.name === 'pistol') || o.parent.name === 'pistol' || o.name.startsWith('pistol'))) parts.push(o); });
+      const slide = new THREE.Group();
+      for (const m of parts) {
+        const nm = (m.material && m.material.name) || '';
+        if (!/^(metal|dark|gold)/.test(nm)) continue;
+        const g = m.geometry, pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, keep = [], sl = [];
+        for (let i = 0; i + 2 < n; i += 3) {
+          const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
+          (pos.getY(a) + pos.getY(b) + pos.getY(c) > 3 * 0.0618 ? sl : keep).push(a, b, c);
+        }
+        if (!sl.length) continue;
+        const mk = (ind) => { const ng = new THREE.BufferGeometry(); for (const k in g.attributes) ng.setAttribute(k, g.attributes[k]); ng.setIndex(ind); return ng; };
+        const sm = new THREE.Mesh(mk(sl), m.material);
+        sm.frustumCulled = false; sm.name = m.name + '_slide';
+        m.geometry = mk(keep);
+        m.updateWorldMatrix(true, false);
+        sm.matrix.copy(m.matrix); sm.matrix.decompose(sm.position, sm.quaternion, sm.scale); sm.matrixAutoUpdate = false; sm.updateMatrix();
+        slide.add(sm);
+      }
+      if (slide.children.length) { (parts[0].parent || G.g).add(slide); G.slide = slide; }
+    }
+  }
+  function heldPose(G) { // tangan / magasin / pompa / bolt / silinder / laras / slide ke posisi diam
+    if (G.handL) { G.handL.position.copy(G.handL0); G.handL.quaternion.identity(); }
+    if (G.handR && G.handR0) { G.handR.position.copy(G.handR0); G.handR.quaternion.identity(); }
+    if (G.mag && G.mag0) { G.mag.position.copy(G.mag0); G.mag.quaternion.identity(); G.mag.visible = true; }
+    if (G.magDrop) G.magDrop.visible = false;
     if (G.pump) G.pump.position.z = G.pumpZ0 ?? G.pump.position.z;
     for (const k of ['bolt', 'cyl', 'brk']) if (G[k]) { G[k].position.copy(G[k + '0']); G[k].quaternion.copy(G[k + 'Q']); }
-    shell.visible = false; shell2.visible = false; spl.visible = false;
+    if (G.slide) G.slide.position.z = st.mag === 0 ? 0.022 : 0;
+    for (const s of shells) s.visible = false;
+    spl.visible = spent.visible = false;
   }
-  // siklus bolt runduk (setelah tiap tembakan & di akhir isi ulang): tuas naik, tarik, dorong, turun; tangan kanan ikut
-  function boltPose(G, u) {
+
+  // ---------- Isi ulang ----------
+  // Pose senjata (diputar di pegangan): tilt = [pitch, yaw, roll] rad, shift = geser (m, ruang dasar ≈ kamera).
+  const RCFG = {
+    ar: { tilt: [0.16, 0.3, -0.6], shift: [-0.06, 0.06, 0.05], ch: 'slap' }, burst: { tilt: [0.16, 0.3, -0.6], shift: [-0.06, 0.06, 0.05], ch: 'slap' },
+    dmr: { tilt: [0.14, 0.3, -0.55], shift: [-0.06, 0.065, 0.06], ch: 'slap' }, smg: { tilt: [0.15, 0.28, -0.58], shift: [-0.05, 0.055, 0.05], ch: 'pull' },
+    pdw: { tilt: [0.15, 0.28, -0.58], shift: [-0.05, 0.055, 0.05], ch: 'pull' }, lmg: { tilt: [0.16, 0.32, -0.5], shift: [-0.07, 0.07, 0.06], ch: 'pull' },
+    sniper: { tilt: [0.13, 0.28, -0.5], shift: [-0.06, 0.065, 0.06], ch: 'bolt' }, pistol: { tilt: [0.3, 0.26, -0.48], shift: [-0.05, 0.055, 0.04], ch: 'rack' },
+    revolver: { tilt: [0.5, 0.3, -0.85], shift: [-0.06, 0.07, 0.05] }, shotgun: { tilt: [0.12, 0.32, -0.85], shift: [-0.06, 0.065, 0.05] },
+    dbs: { tilt: [-0.1, 0.3, -0.35], shift: [-0.05, 0.06, 0.05] },
+  };
+  // arah lengan bawah tangan kiri (ruang dasar): diam, memegang magasin di bawah senjata, ke kantong, menepuk/menarik tuas
+  const FD = { rest: AXL, mag: [-0.22, -0.88, 0.42], pouch: [-0.25, -0.75, 0.6], slap: [-0.42, -0.8, 0.44], pull: [-0.5, -0.55, 0.66], rack: [-0.45, -0.62, 0.64], port: [-0.25, -0.85, 0.45] };
+  // Lini waktu isi ulang magasin. Kunci (ruang senjata kecuali fdir): rot/pos = pose senjata, hand = pusat genggaman tangan
+  // kiri, fdir = arah lengan bawah, roll = putaran lengan. ev: out = magasin lepas, grab = magasin lama dipegang,
+  // seat = magasin baru terpasang, ch = kokang; cues = bunyi [u, jenis].
+  function magKeys(G, kind, empty) {
+    const C = RCFG[kind], T = C.tilt, Sh = C.shift, R = G.handRest.toArray(), rp = G.rp, MG = rp.mg, PRE = rp.pre, PO = rp.po, CHP = rp.ch;
+    const pis = kind === 'pistol', heavy = kind === 'lmg', snip = kind === 'sniper';
+    const Tc = [T[0] + 0.05, T[1] - 0.08, T[2] + 0.16]; // condong ke tangan saat mengokang
+    const rM = pis ? 0.9 : 0.35, rS = 0.6, rP = pis ? 1.9 : 0.4; // roll lengan: pegang magasin / tepuk / tarik
+    // waktu (fraksi durasi): sniper & lmg lebih santai, pistol lebih rapat
+    const X = snip ? { tin: 0.1, out: 0.04, po: 0.2, poE: 0.27, pre: 0.4, seat: 0.48, ch0: 0.58, ch: 0.62, chE: 0.86, back: 0.94 }
+      : heavy ? { tin: 0.08, out: 0.03, po: 0.24, poE: 0.36, pre: 0.5, seat: 0.6, ch0: 0.7, ch: 0.74, chE: 0.8, back: 0.92 }
+        : pis ? { tin: 0.12, out: 0.05, po: 0.22, poE: 0.28, pre: 0.44, seat: 0.54, ch0: 0.64, ch: 0.72, chE: 0.78, back: 0.92 }
+          : { tin: 0.15, out: 0.05, po: 0.22, poE: 0.3, pre: 0.46, seat: 0.56, ch0: 0.64, ch: 0.7, chE: 0.76, back: 0.9 };
+    const doCh = empty && C.ch !== 'bolt'; // runduk: kokang bolt dengan tangan kanan (lihat boltPose)
+    let hand, fdir, roll, ev, cues;
+    const rot = [kP(0, Z3), kP(0.035, [-0.035, 0.02, 0.03]), kP(X.tin, vAdd(T, 0.03, 0.02, -0.05)), kP(X.tin + 0.06, T)];
+    const pos = [kP(0, Z3), kP(0.035, [0.004, -0.012, 0.01]), kP(X.tin, vAdd(Sh, 0, 0.006, 0)), kP(X.tin + 0.06, Sh)];
+    if (empty) {
+      // magasin kosong: dijatuhkan (jempol kanan), tangan kiri ke kantong, magasin baru, masuk, (kokang), kembali
+      hand = [kP(0, R), kP(X.out + 0.03, vAdd(R, -0.02, -0.07, 0.07)), kP(X.po, PO, 1), kP(X.poE, PO, 1), kP(X.pre - 0.05, vAdd(PRE, -0.03, -0.09, 0.05)), kP(X.pre, PRE, 1), kP(X.seat, MG, 1), kP(X.seat + 0.025, vAdd(MG, 0, 0.004, 0)), kP(X.seat + 0.05, vAdd(MG, -0.01, -0.03, 0.02))];
+      fdir = [kP(0, AXL), kP(X.out + 0.03, FD.pouch), kP(X.po, FD.pouch), kP(X.poE, FD.pouch), kP(X.pre - 0.05, FD.mag), kP(X.pre, FD.mag), kP(X.seat + 0.05, FD.mag)];
+      roll = [kS(0, 0), kS(X.out + 0.03, 0.2), kS(X.pre - 0.05, rM), kS(X.seat + 0.05, rM)];
+      ev = { out: X.out, seat: X.seat, ch: doCh ? X.ch : -1, show: X.po };
+      cues = [[X.out, 'out'], [X.seat, 'in']];
+      if (doCh) {
+        const sl = C.ch === 'slap', rk = C.ch === 'rack', A0 = sl ? vAdd(CHP, -0.05, 0.01, 0.02) : rk ? vAdd(CHP, 0, 0.03, -0.01) : vAdd(CHP, -0.03, 0.01, 0.0);
+        const A1 = sl ? CHP : CHP, A2 = sl ? vAdd(CHP, -0.045, 0.0, 0.01) : rk ? vAdd(CHP, 0, 0.004, 0.045) : vAdd(CHP, -0.004, 0, 0.065);
+        hand.push(kP(X.ch0, A0), kP(X.ch, A1, 1), kP(X.chE, A2, rk || C.ch === 'pull' ? 1 : 0));
+        fdir.push(kP(X.ch0, sl ? FD.slap : rk ? FD.rack : FD.pull), kP(X.chE, sl ? FD.slap : rk ? FD.rack : FD.pull));
+        roll.push(kS(X.ch0, sl ? rS : rP), kS(X.chE, sl ? rS : rP));
+        cues.push([sl ? X.ch : X.chE, 'bolt']);
+        rot.push(kP(X.seat, T), kP(X.ch0, Tc), kP(X.chE, Tc));
+        pos.push(kP(X.seat, Sh), kP(X.ch0, vAdd(Sh, 0.01, 0.0, 0)), kP(X.chE, vAdd(Sh, 0.01, 0.0, 0)));
+      } else { rot.push(kP(X.seat + 0.06, T)); pos.push(kP(X.seat + 0.06, Sh)); }
+    } else {
+      // masih ada peluru: magasin lama dicabut & disimpan, magasin baru masuk, ditepuk; tanpa kokang
+      const g0 = X.tin - 0.02, sT = X.seat + 0.08;
+      hand = [kP(0, R), kP(g0 - 0.05, vAdd(MG, -0.025, -0.06, 0.05)), kP(g0, MG, 1), kP(g0 + 0.04, vAdd(MG, 0, -0.012, 0), 1), kP(g0 + 0.1, vAdd(MG, -0.01, -0.13, 0.03)), kP(X.po + 0.1, PO, 1), kP(X.poE + 0.1, PO, 1), kP(X.pre + 0.04, vAdd(PRE, -0.03, -0.09, 0.05)), kP(X.pre + 0.08, PRE, 1), kP(sT, MG, 1), kP(sT + 0.035, vAdd(MG, -0.008, -0.035, 0.02)), kP(sT + 0.06, vAdd(MG, 0, -0.008, 0.004), 1), kP(sT + 0.09, vAdd(MG, -0.015, -0.05, 0.03))];
+      fdir = [kP(0, AXL), kP(g0 - 0.05, FD.mag), kP(g0 + 0.1, FD.mag), kP(X.po + 0.1, FD.pouch), kP(X.poE + 0.1, FD.pouch), kP(X.pre + 0.04, FD.mag), kP(sT + 0.09, FD.mag)];
+      roll = [kS(0, 0), kS(g0 - 0.05, rM), kS(g0 + 0.1, rM), kS(X.po + 0.1, 0.2), kS(X.poE + 0.1, 0.2), kS(X.pre + 0.04, rM), kS(sT + 0.09, rM)];
+      ev = { grab: g0, out: g0 + 0.04, seat: sT, ch: -1, swap: (X.po + X.poE) / 2 + 0.1 };
+      cues = [[g0 + 0.04, 'out'], [sT, 'in'], [sT + 0.06, 'tap']];
+      rot.push(kP(sT, T), kP(sT + 0.06, vAdd(T, 0.02, 0, 0.03)));
+      pos.push(kP(sT, Sh), kP(sT + 0.06, Sh));
+    }
+    // kembali ke pegangan: senjata berputar balik dengan sedikit lewat lalu diam
+    const last = hand[hand.length - 1][0], b0 = Math.max(last + 0.04, X.back - 0.12);
+    hand.push(kP(X.back, vAdd(R, 0, -0.006, 0.008)), kP(1, R));
+    fdir.push(kP(X.back, AXL), kP(1, AXL));
+    roll.push(kS(X.back, 0), kS(1, 0));
+    rot.push(kP(b0, rot[rot.length - 1].slice(1, 4)), kP(X.back, [-0.03, -0.015, 0.035]), kP(1, Z3));
+    pos.push(kP(b0, pos[pos.length - 1].slice(1, 4)), kP(X.back, [0, 0.005, -0.004]), kP(1, Z3));
+    if (snip && empty) { ev.bolt = [X.ch0 - 0.04, X.chE]; cues.push([X.ch0 + (X.chE - X.ch0) * 0.42, 'bolt'], [X.ch0 + (X.chE - X.ch0) * 0.7, 'bolt']); }
+    if (pis && empty) ev.slide = X.chE; // slide maju (dilepas) di akhir tarikan
+    return { rot, pos, hand, fdir, roll, ev, cues, empty };
+  }
+  // Shotgun pompa: n selongsong lewat lubang isi di bawah receiver, satu per satu; kosong → dipompa di akhir.
+  function shotgunKeys(G, n, empty) {
+    const C = RCFG.shotgun, T = C.tilt, Sh = C.shift, R = G.handRest.toArray();
+    const c0 = 0.13, c1 = empty ? 0.78 : 0.86, cl = (c1 - c0) / n;
+    const rot = [kP(0, Z3), kP(0.035, [-0.03, 0.02, 0.03]), kP(0.1, vAdd(T, 0.02, 0, -0.06)), kP(0.16, T), kP(c1, T)];
+    const pos = [kP(0, Z3), kP(0.035, [0.004, -0.01, 0.01]), kP(0.1, vAdd(Sh, 0, 0.005, 0)), kP(0.16, Sh), kP(c1, Sh)];
+    const cues = [];
+    for (let i = 0; i < n; i++) cues.push([c0 + (i + 0.62) * cl, 'shell']);
+    if (empty) {
+      rot.push(kP(0.83, [0.05, 0.08, -0.15]), kP(0.88, [-0.04, 0.05, -0.1]), kP(0.93, [0.03, 0.02, -0.04]), kP(1, Z3));
+      pos.push(kP(0.83, [-0.02, 0.02, 0.02]), kP(0.88, [-0.01, 0.01, 0.04]), kP(0.93, [0, 0.004, 0]), kP(1, Z3));
+      cues.push([0.875, 'pump'], [0.925, 'pump']);
+    } else {
+      rot.push(kP(0.95, [-0.02, -0.01, 0.03]), kP(1, Z3));
+      pos.push(kP(0.95, [0, 0.004, -0.003]), kP(1, Z3));
+    }
+    return { rot, pos, ev: { c0, c1, cl, n, pump: empty ? [0.84, 0.95] : null }, cues, R };
+  }
+  // revolver: silinder diayun keluar, selongsong dikeluarkan, speedloader, silinder ditutup & diputar
+  function revolverKeys(G) {
+    const C = RCFG.revolver, T = C.tilt, Sh = C.shift, R = G.handRest.toArray(), cy = G.cyl0.toArray();
+    const rear = vAdd(cy, -0.045, 0.002, 0.05); // belakang silinder saat terbuka (titik masuk speedloader)
+    const rot = [kP(0, Z3), kP(0.08, vAdd(T, -0.25, 0, 0.1)), kP(0.16, [T[0] * 0.5, T[1], T[2] * 0.8]), kP(0.2, vAdd(T, 0.35, 0, 0)), kP(0.26, vAdd(T, 0.42, 0, 0)), kP(0.32, T), kP(0.62, T), kP(0.7, vAdd(T, 0.04, 0, 0.05)), kP(0.78, [0.15, 0.12, -0.25]), kP(0.88, [-0.03, -0.01, 0.03]), kP(1, Z3)];
+    const pos = [kP(0, Z3), kP(0.08, vAdd(Sh, 0, -0.02, 0)), kP(0.2, vAdd(Sh, 0, 0.02, 0)), kP(0.32, Sh), kP(0.7, Sh), kP(0.88, [0, 0.004, -0.003]), kP(1, Z3)];
+    const hand = [kP(0, R), kP(0.06, vAdd(cy, -0.04, -0.025, 0.02)), kP(0.1, vAdd(cy, -0.03, -0.02, 0.0), 1), kP(0.15, vAdd(cy, -0.06, -0.02, 0.01)), kP(0.2, vAdd(cy, -0.07, -0.01, -0.04), 1), kP(0.26, vAdd(cy, -0.07, -0.0, -0.06), 1), kP(0.38, vAdd(R, -0.15, -0.4, 0.2), 1), kP(0.42, vAdd(R, -0.15, -0.4, 0.2), 1), kP(0.52, vAdd(rear, -0.02, -0.07, 0.07)), kP(0.57, vAdd(rear, 0, 0, 0.035), 1), kP(0.61, rear, 1), kP(0.64, vAdd(rear, -0.03, -0.05, 0.05)), kP(0.7, vAdd(cy, -0.08, -0.02, 0.0)), kP(0.74, vAdd(cy, -0.04, 0.0, 0.0), 1), kP(0.82, vAdd(R, -0.02, -0.03, 0.03)), kP(0.9, R), kP(1, R)];
+    const fdir = [kP(0, AXL), kP(0.06, [-0.45, -0.6, 0.65]), kP(0.26, [-0.55, -0.55, 0.6]), kP(0.38, FD.pouch), kP(0.42, FD.pouch), kP(0.52, [-0.3, -0.8, 0.5]), kP(0.64, [-0.3, -0.8, 0.5]), kP(0.7, [-0.55, -0.55, 0.6]), kP(0.74, [-0.55, -0.55, 0.6]), kP(0.9, AXL), kP(1, AXL)];
+    const roll = [kS(0, 0), kS(0.06, 0.4), kS(0.26, 0.4), kS(0.38, 0.2), kS(0.52, 1.1), kS(0.64, 1.1), kS(0.7, 0.5), kS(0.74, 0.5), kS(0.9, 0), kS(1, 0)];
+    return { rot, pos, hand, fdir, roll, ev: { open: [0.08, 0.15], eject: 0.24, spl: [0.44, 0.63], close: [0.7, 0.75] }, cues: [[0.13, 'open'], [0.24, 'eject'], [0.6, 'in'], [0.74, 'close']], rear };
+  }
+  // laras ganda: laras dipatahkan, 2 selongsong terlontar, n selongsong baru, ditutup dengan sentakan
+  function dbsKeys(G, n) {
+    const C = RCFG.dbs, T = C.tilt, Sh = C.shift, R = G.handRest.toArray(), hb = G.brk0.toArray();
+    const br = vAdd(hb, 0, 0.03, 0.035); // belakang kamar peluru saat terbuka (ruang senjata, kira-kira)
+    const rot = [kP(0, Z3), kP(0.06, vAdd(T, 0.08, 0, 0.04)), kP(0.12, vAdd(T, -0.08, 0, 0)), kP(0.18, T), kP(0.7, T), kP(0.74, vAdd(T, 0.18, 0, 0)), kP(0.79, vAdd(T, -0.06, 0, 0)), kP(0.86, [0.02, 0.04, -0.05]), kP(0.94, [-0.02, -0.01, 0.02]), kP(1, Z3)];
+    const pos = [kP(0, Z3), kP(0.12, vAdd(Sh, 0, -0.015, 0)), kP(0.18, Sh), kP(0.74, Sh), kP(0.79, vAdd(Sh, 0, 0.015, 0)), kP(0.94, [0, 0.003, -0.002]), kP(1, Z3)];
+    const fore = vAdd(R, 0, -0.035, 0.0); // tangan menekan laras ke bawah (memegang popor depan)
+    const hand = [kP(0, R), kP(0.06, vAdd(R, 0, 0.012, 0)), kP(0.12, fore, 1), kP(0.18, vAdd(fore, -0.03, -0.05, 0.06)), kP(0.3, vAdd(R, -0.16, -0.4, 0.4), 1), kP(0.36, vAdd(R, -0.16, -0.4, 0.4), 1), kP(0.48, vAdd(br, -0.03, -0.06, 0.08))];
+    const fdir = [kP(0, AXL), kP(0.12, AXL), kP(0.3, FD.pouch), kP(0.36, FD.pouch), kP(0.48, [-0.3, -0.75, 0.6])];
+    const roll = [kS(0, 0), kS(0.12, 0), kS(0.3, 0.2), kS(0.48, 0.9)];
+    const cues = [[0.11, 'open'], [0.15, 'eject']];
+    for (let i = 0; i < n; i++) { const s0 = 0.5 + i * 0.09; hand.push(kP(s0, vAdd(br, i ? 0.012 : -0.012, -0.012, 0.03)), kP(s0 + 0.05, vAdd(br, i ? 0.012 : -0.012, -0.005, -0.012), 1)); cues.push([s0 + 0.05, 'shell']); }
+    const sE = 0.5 + n * 0.09;
+    hand.push(kP(sE + 0.04, vAdd(fore, -0.02, -0.03, 0.04)), kP(0.72, vAdd(fore, 0, -0.012, 0), 1), kP(0.76, vAdd(R, 0, 0.008, 0)), kP(0.86, R), kP(1, R));
+    fdir.push(kP(sE + 0.04, AXL), kP(1, AXL));
+    roll.push(kS(sE, 0.9), kS(sE + 0.04, 0), kS(1, 0));
+    cues.push([0.76, 'close']);
+    const sIn = [0.55, 0.64]; // waktu tiap selongsong masuk penuh
+    return { rot, pos, hand, fdir, roll, ev: { open: [0.07, 0.14], close: [0.72, 0.76], eject: 0.15, n, sE, sIn, sHand: 0.4 }, cues, br };
+  }
+  function reloadKeys(G, kind, A) {
+    const key = kind === 'shotgun' ? 's' + A.n + (A.empty ? 'e' : '') : kind === 'dbs' ? 'd' + Math.min(2, A.n) : kind === 'revolver' ? 'r' : A.empty ? 'e' : 't';
+    G.rl ||= {};
+    if (!G.rl[key]) G.rl[key] = kind === 'shotgun' ? shotgunKeys(G, A.n, A.empty) : kind === 'dbs' ? dbsKeys(G, Math.max(1, Math.min(2, A.n))) : kind === 'revolver' ? revolverKeys(G) : magKeys(G, kind, A.empty);
+    return G.rl[key];
+  }
+  const aPos = new THREE.Vector3(), aRot = new THREE.Vector3(), hp = new THREE.Vector3(), fd = new THREE.Vector3(), tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+  const qAct = new THREE.Quaternion(), qActInv = new THREE.Quaternion(), eAct = new THREE.Euler();
+  const _o3 = new THREE.Object3D();
+  function actQ() { qAct.setFromEuler(eAct.set(aRot.x, aRot.y, aRot.z)); qActInv.copy(qAct).invert(); }
+  // pose tangan kiri pada u (tanpa menyentuh adegan) → matriks ruang senjata (untuk offset magasin di tangan)
+  function handMatAt(G, K, u, out) {
+    curve(u, K.rot, aRot); actQ();
+    curve(u, K.hand, hp); curve(u, K.fdir, fd);
+    aimArm(_o3, AX_L, hp, fd, curve1(u, K.roll), qActInv);
+    return out.compose(_o3.position, _o3.quaternion, ONE);
+  }
+  // magasin menempel tangan: off = H⁻¹ · M0 (dihitung di awal isi ulang dari pose kunci, bukan per frame)
+  const _hm = new THREE.Matrix4(), _mm = new THREE.Matrix4();
+  function magOffset(G, K, u, out) { handMatAt(G, K, u, _hm).invert(); return out.multiplyMatrices(_hm, _mm.makeTranslation(G.mag0.x, G.mag0.y, G.mag0.z)); }
+  function attach(obj, hand, off) { // obj (anak senjata) = tangan · off
+    _m4.compose(hand.position, hand.quaternion, ONE).multiply(off);
+    _m4.decompose(obj.position, obj.quaternion, _v3);
+  }
+  // magasin lama jatuh bebas di ruang kamera (gravitasi + putaran), digambar sebagai anak senjata
+  const drop = { on: false, t: 0, p: new THREE.Vector3(), v: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(), G: null };
+  const _dq = new THREE.Quaternion(), _dm = new THREE.Matrix4(), _gm = new THREE.Matrix4();
+  function dropMag(G, vx, vy, vz) {
+    if (!G.magDrop) return;
+    G.g.updateMatrix();
+    _dm.multiplyMatrices(G.g.matrix, _mm.compose(G.mag.position, G.mag.quaternion, ONE));
+    _dm.decompose(drop.p, drop.q, _v3);
+    drop.v.set(vx, vy, vz); drop.w.set(-3 - Math.random() * 3, (Math.random() - 0.5) * 3, 2 + Math.random() * 2);
+    drop.t = 0; drop.on = true; drop.G = G;
+    G.magDrop.visible = true;
+  }
+  function updateDrop(dt) {
+    if (!drop.on) return;
+    const G = drop.G;
+    drop.t += dt;
+    drop.v.y -= 9.8 * dt;
+    drop.p.addScaledVector(drop.v, dt);
+    _dq.setFromAxisAngle(_v3.copy(drop.w).normalize(), drop.w.length() * dt);
+    drop.q.premultiply(_dq);
+    if (drop.t > 0.7 || !G.g.parent) { drop.on = false; G.magDrop.visible = false; return; }
+    _gm.copy(G.g.matrix).invert().multiply(_dm.compose(drop.p, drop.q, ONE));
+    _gm.decompose(G.magDrop.position, G.magDrop.quaternion, _v3);
+  }
+  // siklus bolt runduk (setelah tiap tembakan & di akhir isi ulang): tangan kanan ke tuas, naik, tarik, dorong, turun, kembali
+  const BOLT_FD = [0.3, -0.72, 0.62], boltTip = new THREE.Vector3();
+  function boltPose(G, u, w = 1) { // u 0..1 · w = bobot (pudar saat dibatalkan)
     if (!G.bolt) return;
-    const up = ease(Math.min(1, u / 0.2)) * (1 - ease((u - 0.72) / 0.2)), back = Math.max(0, Math.sin(Math.min(1, Math.max(0, (u - 0.2) / 0.52)) * Math.PI));
-    G.bolt.position.copy(G.bolt0); G.bolt.position.z += 0.075 * back;
-    G.bolt.quaternion.copy(G.boltQ); G.bolt.rotateZ(1.15 * up);
-    if (G.handR && G.handR0) { // telapak kanan ke kenop bolt (sisi kanan, di belakang), lalu kembali ke gagang
-      const k = Math.sin(Math.min(1, u / 0.1) * Math.PI / 2) * (1 - ease((u - 0.88) / 0.12));
-      G.handR.position.set(G.handR0.x + (0.03 - 0.0 * up) * k, G.handR0.y + (0.06 + 0.022 * up) * k, G.handR0.z + (0.03 + 0.075 * back) * k);
-    }
+    const up = ease(seg(u, 0.18, 0.3)) * (1 - ease(seg(u, 0.66, 0.76))), back = ease(seg(u, 0.32, 0.46)) * (1 - ease(seg(u, 0.5, 0.63)));
+    G.bolt.position.copy(G.bolt0); G.bolt.position.z += 0.075 * back * w;
+    G.bolt.quaternion.copy(G.boltQ); G.bolt.rotateZ(1.15 * up * w);
+    if (!G.handR || !G.handR0) return;
+    // ujung tuas (ruang senjata) mengikuti bolt
+    boltTip.set(0.05, -0.028, 0.035).applyQuaternion(G.bolt.quaternion).add(G.bolt.position);
+    const reach = ease(seg(u, 0.04, 0.18)) * (1 - ease(seg(u, 0.76, 0.94))) * w;
+    hp.copy(G.handR0).lerp(tmp.copy(boltTip).add(tmp2.set(0.012, -0.03, 0.02)), reach);
+    fd.set(AXR[0], AXR[1], AXR[2]).lerp(tmp.set(BOLT_FD[0], BOLT_FD[1], BOLT_FD[2]), reach);
+    if (G.armR) aimArm(G.handR, AX_R, hp, fd, -0.9 * reach, qActInv);
+    else G.handR.position.copy(hp);
   }
-  const aPos = new THREE.Vector3(), aRot = new THREE.Vector3(), hp = new THREE.Vector3(), hr = new THREE.Vector3(), tmp = new THREE.Vector3();
-  // isi ulang: hasil di aPos (geser senjata), aRot (putar senjata); tangan kiri, magasin, pompa, selongsong diatur langsung
-  function animReload(G, kind, u, A) {
-    const R = G.handRest, cfg = RL[kind];
-    if (kind === 'revolver' && G.cyl) { // ayun silinder ke kiri, moncong ke atas (selongsong jatuh), speedloader, tutup + putar
-      const t = cfg.tilt;
-      track(u, [K(0, Z3), K(0.12, t), K(0.3, [t[0] + 0.5, t[1], t[2]]), K(0.4, t), K(0.78, t), K(0.86, [t[0] * 0.4, t[1] * 0.3, t[2] * 0.3]), K(1, Z3)], aRot);
-      track(u, [K(0, Z3), K(0.12, cfg.shift), K(0.78, cfg.shift), K(1, Z3)], aPos);
-      const sw = ease(Math.min(1, u / 0.12)) * (1 - ease((u - 0.76) / 0.08));
-      G.cyl.position.copy(G.cyl0); G.cyl.position.x -= 0.032 * sw; G.cyl.position.y -= 0.012 * sw;
-      G.cyl.quaternion.copy(G.cylQ); G.cyl.rotateZ(u > 0.76 ? (u - 0.76) * 22 : 0); // putar saat ditutup
-      const cp = new THREE.Vector3().copy(G.cyl.position).add(tmp.set(0, 0, -0.035)); // depan silinder (titik masuk speedloader)
-      track(u, [K(0, R), K(0.12, add(R, -0.02, -0.06, 0.05)), K(0.3, POUCH), K(0.48, add(cp, 0, -0.08, -0.06)), K(0.6, add(cp, 0, -0.01, -0.015)), K(0.66, cp), K(0.72, add(cp, -0.02, -0.03, -0.06)), K(0.86, R), K(1, R)], hp);
-      G.handL.position.copy(G.handL0).add(tmp.copy(hp).sub(R));
-      G.handL.rotation.set(u > 0.3 && u < 0.72 ? -0.6 : 0, 0, 0);
-      spl.visible = u > 0.36 && u < 0.67;
-      if (spl.visible) { if (spl.parent !== G.g) G.g.add(spl); spl.position.set(hp.x, hp.y + 0.012, hp.z - 0.012); }
-      return;
+  // isi ulang: pose senjata → aPos/aRot; tangan kiri (kurva → aimArm), lalu barang yang menempel tangan (magasin,
+  // speedloader, selongsong). w = bobot (1 = penuh; turun ke 0 saat dibatalkan → kembali halus ke pose diam)
+  let rl = 0;
+  function animReload(G, kind, A) {
+    const u = A.u, w = A.w, K = A.K, ev = K.ev;
+    curve(u, K.rot, aRot); curve(u, K.pos, aPos);
+    if (w < 1) { aRot.multiplyScalar(w); aPos.multiplyScalar(w); }
+    actQ();
+    if (kind === 'shotgun') animShotgun(G, A, u, w);
+    else {
+      curve(u, K.hand, hp); curve(u, K.fdir, fd); rl = curve1(u, K.roll);
+      if (kind === 'revolver') animRevolver(G, A, u, w);
+      else if (kind === 'dbs') animDbs(G, A, u, w);
     }
-    if (kind === 'dbs' && G.brk) { // patah-buka: laras turun, 2 peluru dimasukkan, tutup dengan sentakan
-      const t = cfg.tilt, n = Math.max(1, Math.min(2, A.n));
-      track(u, [K(0, Z3), K(0.1, t), K(0.78, t), K(0.84, [t[0] - 0.2, t[1], t[2]]), K(0.9, t), K(1, Z3)], aRot);
-      track(u, [K(0, Z3), K(0.1, cfg.shift), K(0.85, cfg.shift), K(1, Z3)], aPos);
-      const open = ease(Math.min(1, u / 0.12)) * (1 - ease((u - 0.8) / 0.06));
-      G.brk.quaternion.copy(G.brkQ); G.brk.rotateX(-0.6 * open);
-      const port = cfg.port, keys = [K(0, R), K(0.12, add(R, 0, -0.06, 0.04)), K(0.3, POUCH)];
-      for (let i = 0; i < n; i++) { const s0 = 0.32 + i * 0.2; keys.push(K(s0 + 0.08, add(port, 0, -0.05, 0.04)), K(s0 + 0.15, port), K(s0 + 0.19, add(port, 0, -0.03, 0.06))); }
-      keys.push(K(0.8, add(R, 0, 0.05, 0.02)), K(0.86, R), K(1, R));
-      track(u, keys, hp);
-      G.handL.position.copy(G.handL0).add(tmp.copy(hp).sub(R));
-      G.handL.rotation.set(0, 0, u > 0.12 && u < 0.78 ? -0.4 : 0);
-      shell.visible = u > 0.34 && u < 0.32 + n * 0.2 - 0.02;
-      if (shell.visible) { if (shell.parent !== G.g) G.g.add(shell); shell.position.set(hp.x, hp.y + 0.03, hp.z - 0.01); }
-      return;
+    if (w < 1) { hp.lerp(G.handRest, 1 - w); fd.lerp(tmp.set(AXL[0], AXL[1], AXL[2]), 1 - w); rl *= w; }
+    if (G.armL) aimArm(G.handL, AX_L, hp, fd, rl, qActInv); else G.handL.position.copy(hp);
+    if (kind === 'shotgun' || kind === 'revolver' || kind === 'dbs') return;
+    if (G.mag && G.mag0) { // magasin: lama jatuh / dicabut, baru dibawa tangan dari bawah layar, pas saat terpasang
+      const inHand = u >= (K.empty ? ev.out : ev.grab) && u < ev.seat;
+      if (!A.dropped && K.empty && u >= ev.out && w > 0.5) { A.dropped = true; dropMag(G, -0.12, -0.45, 0.12); }
+      if (w < 0.5 || !inHand) { G.mag.position.copy(G.mag0); G.mag.quaternion.identity(); G.mag.visible = !(K.empty && inHand); }
+      else { attach(G.mag, G.handL, !K.empty && u < ev.swap ? A.offA : A.offB); G.mag.visible = !K.empty || u >= ev.show; }
     }
-    if (kind === 'shotgun') {
-      const port = cfg.port, n = A.n, c0 = 0.12, c1 = 0.8, cl = (c1 - c0) / n, below = add(port, 0, -0.2, 0.07);
-      track(u, [K(0, Z3), K(0.1, cfg.tilt), K(0.82, cfg.tilt), K(0.87, [0.06, 0.1, -0.25]), K(0.93, [0.1, 0, 0]), K(1, Z3)], aRot);
-      track(u, [K(0, Z3), K(0.1, cfg.shift), K(0.82, cfg.shift), K(1, Z3)], aPos);
-      const keys = [K(0, R), K(0.1, add(R, 0, -0.1, 0.12))];
-      for (let i = 0; i < n; i++) { const s = c0 + i * cl; keys.push(K(s + cl * 0.05, below), K(s + cl * 0.5, add(port, 0, -0.045, 0.03)), K(s + cl * 0.72, port), K(s + cl * 0.98, add(port, 0, -0.05, 0.04))); }
-      keys.push(K(0.84, add(R, 0, -0.05, 0.05)), K(0.87, R), K(0.9, add(R, 0, 0, 0.09)), K(0.94, R), K(1, R));
-      track(u, keys, hp);
-      G.handL.position.copy(G.handL0).add(tmp.copy(hp).sub(R));
-      G.handL.rotation.set(0, 0, u > 0.1 && u < 0.82 ? -0.5 * Math.min(1, (u - 0.1) / 0.05, (0.82 - u) / 0.05) : 0);
-      const ci = Math.floor((u - c0) / cl), cf = (u - c0) / cl - ci; // selongsong ke-ci, fase cf
-      shell.visible = u > c0 && u < c1 && cf > 0.05 && cf < 0.72;
-      if (shell.visible) { if (shell.parent !== G.g) G.g.add(shell); shell.position.set(hp.x, hp.y + 0.03, hp.z - 0.01); }
-      if (G.pump) G.pump.position.z = G.pumpZ0 + (u > 0.86 && u < 0.95 ? Math.max(0, hp.z - R.z) : 0);
-      return;
-    }
-    const pis = kind === 'pistol', grab = cfg.grab, bolt = cfg.bolt, pull = cfg.pull || 0;
-    const boltA = cfg.slap ? add(bolt, -0.03, 0, 0) : bolt, boltB = cfg.slap ? add(bolt, 0.012, 0, 0) : add(bolt, 0, 0, pull), boltC = cfg.slap ? add(bolt, -0.02, 0, 0) : add(bolt, 0, 0, pull * 0.3); // tepuk ke dalam / tarik ke belakang
-    if (pis) {
-      const t = cfg.tilt;
-      track(u, [K(0, Z3), K(0.1, t), K(0.55, t), K(0.58, add(t, 0.07, 0, 0)), K(0.62, [t[0] * 0.5, t[1] * 0.4, t[2] * 0.4]), K(0.7, [t[0] * 0.2, t[1] * 0.2, t[2] * 0.25]), K(0.74, [t[0] * 0.2 + 0.1, t[1] * 0.2, t[2] * 0.25]), K(0.9, Z3), K(1, Z3)], aRot);
-      const sh = cfg.shift;
-      track(u, [K(0, Z3), K(0.1, sh), K(0.55, sh), K(0.57, add(sh, 0, 0.012, 0)), K(0.62, sh), K(0.7, add(sh, 0, -0.01, 0)), K(0.74, add(sh, 0, 0.008, -0.01)), K(0.9, Z3), K(1, Z3)], aPos);
-      track(u, [K(0, R), K(0.1, add(R, -0.04, -0.12, 0.05)), K(0.28, POUCH), K(0.42, add(grab, 0, -0.12, 0.02)), K(0.53, add(grab, 0, -0.015, 0)), K(0.56, grab), K(0.6, add(grab, 0, 0.01, 0)), K(0.66, bolt), K(0.71, add(bolt, 0, 0, pull)), K(0.75, add(bolt, 0, 0.01, pull * 0.4)), K(0.9, R), K(1, R)], hp);
-      track(u, [K(0, Z3), K(0.12, [0.5, 0, 0]), K(0.56, [0.7, 0, 0]), K(0.62, [0.2, 0, -0.3]), K(0.76, [0.2, 0, -0.3]), K(0.88, Z3), K(1, Z3)], hr); // lengan menunjuk ke bawah saat ambil/pasang magasin
+    if (ev.bolt) { const b = seg(u, ev.bolt[0], ev.bolt[1]); if (b > 0 && b < 1) boltPose(G, b, w); else if (G.handR0) { G.handR.position.copy(G.handR0); G.handR.quaternion.identity(); } }
+    if (G.slide) G.slide.position.z = !K.empty ? 0 : !ev.slide ? 0.022 : u < ev.slide - 0.06 ? 0.022 : u < ev.slide ? 0.022 + 0.012 * ease(seg(u, ev.slide - 0.06, ev.slide)) : 0.034 * (1 - easeIn(seg(u, ev.slide, ev.slide + 0.02)));
+  }
+  // shotgun: jalur selongsong (ruang senjata) dihitung langsung, tangan mengikuti selongsong → selongsong pasti masuk lubang isi
+  function animShotgun(G, A, u, w) {
+    const K = A.K, ev = K.ev, port = G.rp.port, sh = shells[0], R = G.handRest;
+    const ci = Math.floor((u - ev.c0) / ev.cl), f = (u - ev.c0) / ev.cl - ci; // selongsong ke-ci, fase f
+    const s = u > ev.c0 && u < ev.c1 && ci >= 0 && ci < ev.n ? f : -1;
+    if (sh.parent !== G.g) G.g.add(sh);
+    // titik jalur: sabuk (bawah layar) → depan lubang → di lubang → terdorong ke tabung
+    const B = SG_BELT, Q = SG_PRE, I = SG_IN, T = SG_TUBE;
+    if (s >= 0 && s < 0.72) {
+      if (s < 0.4) tmp.set(port[0] + B[0], port[1] + B[1], port[2] + B[2]).lerp(tmp2.set(port[0] + Q[0], port[1] + Q[1], port[2] + Q[2]), easeOut(s / 0.4));
+      else if (s < 0.56) tmp.set(port[0] + Q[0], port[1] + Q[1], port[2] + Q[2]).lerp(tmp2.set(port[0] + I[0], port[1] + I[1], port[2] + I[2]), ease((s - 0.4) / 0.16));
+      else tmp.set(port[0] + I[0], port[1] + I[1], port[2] + I[2]).lerp(tmp2.set(port[0] + T[0], port[1] + T[1], port[2] + T[2]), easeIn((s - 0.56) / 0.16));
+      sh.visible = w > 0.5 && s > 0.08 && s < 0.7;
+      sh.position.copy(tmp);
+      sh.rotation.set(0.3 * (1 - ease(s / 0.56)), 0, 0); // ujung depan sedikit naik saat diarahkan ke lubang
+      hp.copy(tmp).add(tmp2.set(SG_HAND[0], SG_HAND[1], SG_HAND[2])); // genggaman di belakang-bawah selongsong, jempol mendorong
     } else {
-      const t = cfg.tilt;
-      track(u, [K(0, Z3), K(0.1, t), K(0.56, t), K(0.6, add(t, 0.06, 0, -0.06)), K(0.63, t), K(0.68, [t[0] * 0.6, t[1] * 0.5, t[2] * 0.55]), K(0.74, [t[0] * 0.6 + 0.05, t[1] * 0.5, t[2] * 0.55]), K(0.8, [t[0] * 0.5, t[1] * 0.4, t[2] * 0.4]), K(0.92, Z3), K(1, Z3)], aRot);
-      const sh = cfg.shift;
-      track(u, [K(0, Z3), K(0.1, sh), K(0.58, sh), K(0.6, add(sh, 0, 0.014, 0)), K(0.63, sh), K(0.7, add(sh, 0.01, -0.01, 0)), K(0.74, add(sh, 0.01, 0.006, -0.012)), K(0.92, Z3), K(1, Z3)], aPos);
-      track(u, [K(0, R), K(0.1, add(grab, -0.03, -0.06, 0.04)), K(0.17, grab), K(0.25, add(grab, 0, -0.12, 0.02)), K(0.36, POUCH), K(0.44, add(grab, 0, -0.16, 0.03)), K(0.55, add(grab, 0, -0.02, 0)), K(0.58, grab), K(0.6, add(grab, 0, 0.012, 0)), K(0.66, boltA), K(0.71, boltB), K(0.75, boltC), K(0.9, R), K(1, R)], hp);
-      track(u, [K(0, Z3), K(0.12, [0.35, 0, 0]), K(0.58, [0.45, 0, 0]), K(0.64, [0, 0.2, 0]), K(0.78, [0, 0.2, 0]), K(0.88, Z3), K(1, Z3)], hr);
+      sh.visible = false;
+      const back = s >= 0.72 ? easeOut((s - 0.72) / 0.28) : 1;
+      hp.set(port[0] + T[0] + SG_HAND[0], port[1] + T[1] + SG_HAND[1], port[2] + T[2] + SG_HAND[2]).lerp(tmp2.set(port[0] + B[0] + SG_HAND[0], port[1] + B[1] + SG_HAND[1], port[2] + B[2] + SG_HAND[2]), back);
     }
-    G.handL.position.copy(G.handL0).add(tmp.copy(hp).sub(R));
-    G.handL.rotation.set(hr.x, hr.y, hr.z);
-    if (!G.mag || !G.mag0) return;
-    // magasin: menempel tangan (lepas / baru), jatuh bebas setelah dilepas, tersembunyi sebentar, terpasang lagi
-    const [aOn, aOff, fallEnd, bOn, seat] = pis ? [-1, 0.12, 0.3, 0.42, 0.56] : [0.17, 0.25, 0.36, 0.4, 0.58];
-    const off = tmp.copy(G.mag0).sub(new THREE.Vector3(...grab)); // posisi magasin relatif titik pegang
-    G.mag.visible = true;
-    G.mag.rotation.set(0, 0, 0);
-    if (u >= aOn && u < aOff && aOn >= 0) G.mag.position.copy(hp).add(off);
-    else if (u >= aOff && u < fallEnd) { // jatuh: dari titik lepas, gravitasi + berputar
-      const t0 = (u - aOff) * A.dur, rel = pis ? G.mag0 : new THREE.Vector3(...add(grab, 0, -0.12, 0.02)).add(off);
-      G.mag.position.set(rel.x - 0.02 * t0, rel.y - 4.9 * t0 * t0 - 0.1 * t0, rel.z + 0.05 * t0);
-      G.mag.rotation.set(-1.8 * t0, 0, 1.2 * t0);
-    } else if (u >= fallEnd && u < bOn) G.mag.visible = false;
-    else if (u >= bOn && u < seat) G.mag.position.copy(hp).add(off);
-    else G.mag.position.copy(G.mag0);
-    if (kind === 'sniper' && G.bolt) boltPose(G, Math.max(0, Math.min(1, (u - 0.62) / 0.26))); // kokang bolt setelah magasin baru
+    // masuk/keluar fase isi: dari & ke pompa (pose diam)
+    const inK = ease(seg(u, 0.03, ev.c0 + 0.04)), outK = ease(seg(u, ev.c1 - 0.01, ev.c1 + 0.06));
+    hp.lerp(R, 1 - inK); hp.lerp(R, outK);
+    const kk = Math.min(inK, 1 - outK);
+    fd.set(AXL[0], AXL[1], AXL[2]).lerp(tmp.set(FD.port[0], FD.port[1], FD.port[2]), kk);
+    rl = SG_ROLL * kk;
+    let pz = 0;
+    if (ev.pump) { const p = seg(u, ev.pump[0], ev.pump[1]); pz = 0.085 * (ease(seg(p, 0, 0.42)) - ease(seg(p, 0.5, 0.92))); hp.z += pz; }
+    if (G.pump) G.pump.position.z = G.pumpZ0 + pz * w;
   }
-  // obat: rig lengan (ruang kamera). u 0..1; kind 'band' | 'kit'; out = seberapa jauh senjata diturunkan (0..1)
+  const SG_BELT = [-0.06, -0.17, 0.12], SG_PRE = [-0.004, -0.045, 0.025], SG_IN = [0, -0.004, 0], SG_TUBE = [0, 0.002, -0.055], SG_HAND = [-0.012, -0.036, 0.036], SG_ROLL = 0.5;
+  function animRevolver(G, A, u, w) {
+    const ev = A.K.ev;
+    if (!G.cyl) return;
+    // silinder berayun ke kiri di engsel (bawah-kiri silinder), lalu ditutup & berputar
+    const sw = ease(seg(u, ev.open[0], ev.open[1])) * (1 - ease(seg(u, ev.close[0], ev.close[1]))) * w;
+    const ang = 1.25 * sw, px = -0.02, py = -0.026; // engsel relatif pusat silinder
+    G.cyl.position.set(G.cyl0.x + px - px * Math.cos(ang) + py * Math.sin(ang), G.cyl0.y + py - px * Math.sin(ang) - py * Math.cos(ang), G.cyl0.z);
+    G.cyl.quaternion.copy(G.cylQ); G.cyl.rotateZ(ang + (u > ev.close[1] ? easeOut(seg(u, ev.close[1], ev.close[1] + 0.07)) * Math.PI * 1.33 : 0));
+    // selongsong kosong jatuh dari belakang silinder (moncong menghadap ke atas)
+    const ej = (u - ev.eject) * A.dur;
+    spent.visible = w > 0.5 && ej > 0 && ej < 0.45;
+    if (spent.visible) {
+      if (spent.parent !== G.g) G.g.add(spent);
+      spent.position.set(G.cyl.position.x - 0.1 * ej, G.cyl.position.y - 0.03 * ej - 2.2 * ej * ej, G.cyl.position.z + 0.02 + 0.25 * ej + 1.5 * ej * ej);
+      spent.rotation.set(-3 * ej, 0, 1.5 * ej);
+    }
+    // speedloader: dibawa tangan dari bawah, sejajar sumbu silinder di belakangnya, didorong masuk; tangan mengikuti
+    const s0 = ev.spl[0], s1 = ev.spl[1];
+    spl.visible = w > 0.5 && u > s0 && u < s1;
+    if (u > s0 && u < s1 + 0.02) {
+      if (spl.parent !== G.g) G.g.add(spl);
+      const rz = G.cyl.position.z + 0.023, k1 = ease(seg(u, s0, s1 - 0.08)), k2 = ease(seg(u, s1 - 0.07, s1 - 0.02));
+      tmp.set(G.cyl.position.x - 0.03, G.cyl.position.y - 0.12, rz + 0.12).lerp(tmp2.set(G.cyl.position.x, G.cyl.position.y, rz + 0.045), k1);
+      tmp.lerp(tmp2.set(G.cyl.position.x, G.cyl.position.y, rz + 0.012), k2);
+      spl.position.copy(tmp); spl.quaternion.copy(G.cyl.quaternion);
+      const k = ease(seg(u, s0, s0 + 0.05)) * (1 - ease(seg(u, s1 - 0.005, s1 + 0.02)));
+      hp.lerp(tmp.add(tmp2.set(-0.004, -0.036, 0.03)), k);
+    }
+  }
+  function animDbs(G, A, u, w) {
+    const ev = A.K.ev;
+    if (!G.brk) return;
+    const open = ease(seg(u, ev.open[0], ev.open[1])) * (1 - easeIn(seg(u, ev.close[0], ev.close[1]))) * w;
+    G.brk.quaternion.copy(G.brkQ); G.brk.rotateX(-0.62 * open - 0.05 * Math.sin(seg(u, ev.open[1], ev.open[1] + 0.06) * Math.PI) * w);
+    const t = (u - ev.eject) * A.dur;
+    for (let i = 0; i < 2; i++) {
+      const s = shells[i], x = i ? 0.012 : -0.012;
+      if (s.parent !== G.g) G.g.add(s);
+      s.visible = false;
+      if (w < 0.5) continue;
+      if (t > 0 && t < 0.45 && i < ev.n) { // dua selongsong kosong terlontar naik-mundur dari kamar
+        tmp.set(x, 0.03, 0.01).applyQuaternion(G.brk.quaternion).add(G.brk.position);
+        s.position.set(tmp.x + (0.35 + x * 6) * t, tmp.y + 0.55 * t - 4.9 * t * t, tmp.z + 0.18 * t);
+        s.rotation.set(-6 * t, 0, (i ? 1 : -1) * 2.5 * t);
+        s.visible = true; continue;
+      }
+      const sIn = ev.sIn[i]; // selongsong baru: di tangan → sejajar di belakang kamar → masuk
+      if (i >= ev.n || u < ev.sHand || u > ev.close[1]) continue;
+      s.visible = true;
+      if (u < sIn - 0.05) { s.position.copy(hp).add(tmp.set(x * 0.8, 0.03, -0.012)); s.rotation.set(0.5, 0, 0); continue; }
+      const k = ease(seg(u, sIn - 0.05, sIn));
+      tmp.set(x, 0.03, 0.06 * (1 - k) - 0.024 * k).applyQuaternion(G.brk.quaternion).add(G.brk.position);
+      s.position.copy(tmp); s.quaternion.copy(G.brk.quaternion);
+      if (u < sIn + 0.01) hp.copy(tmp).sub(tmp2.set(x * 0.8, 0.03, -0.012)); // tangan mendorong selongsong ini
+    }
+  }
+  function endReload(kind) { const G = guns[kind]; if (G) heldPose(G); }
+  // ---------- Obat (ruang kamera) ----------
+  // Lengan = potongan GLB yang diarahkan (aimArm2): telapak/genggaman di titik kunci, lengan bawah ke siku di luar layar,
+  // putaran lengan dari arah barang yang dipegang (sumbu kaleng, jarum, gulungan) atau arah telapak. Senjata turun di awal
+  // dan naik lagi tepat di akhir durasi aksi. scr(nx, ny, d): titik ruang kamera dari posisi layar (−1..1) & jarak d (m).
+  const scr = (nx, ny, d) => [nx * 0.906 * d, ny * 0.51 * d, -d];
+  const PALM = new THREE.Vector3(0, -1, 0), GRIPY = new THREE.Vector3(0, 1, 0), NEEDLE = new THREE.Vector3(0, -1, 0); // sumbu lokal: telapak kiri (ke bawah = telungkup), genggaman kanan
+  const OFF_L = scr(-0.75, -1.9, 0.38), OFF_R = scr(0.8, -1.9, 0.36), FOFF_L = [-0.55, -0.8, 0.3], FOFF_R = [0.5, -0.8, 0.35];
+  const ARM_P = scr(0.06, -0.36, 0.42), ARM_F = [-0.92, -0.26, 0.29], FR = [0.45, -0.72, 0.55]; // lengan kiri disodorkan melintang
+  const DOWN = [0, -1, 0.15], UP = [0, 1, -0.1];
+  const HEAL_K = {
+    band: { // perban 3,5 dtk: lengan kiri disodorkan, gulungan memutari lengan 3 kali, ujung ditekan, turun
+      gun: [0.07, 0.86],
+      L: [kP(0, OFF_L), kP(0.04, OFF_L), kP(0.17, ARM_P, 1), kP(0.5, vAdd(ARM_P, 0.004, 0.006, 0)), kP(0.82, ARM_P, 1), kP(0.95, OFF_L)],
+      Lf: [kP(0, FOFF_L), kP(0.17, ARM_F), kP(0.82, ARM_F), kP(0.95, FOFF_L)],
+      Lt: [kP(0, DOWN), kP(0.17, DOWN), kP(0.5, [0.25, -1, 0.3]), kP(0.82, DOWN), kP(0.95, DOWN)],
+      R: [kP(0, OFF_R), kP(0.08, OFF_R), kP(0.2, scr(0.0, -0.1, 0.4)), kP(0.8, scr(-0.05, -0.12, 0.4)), kP(0.86, scr(-0.04, -0.2, 0.4)), kP(0.96, OFF_R)],
+      Rf: [kP(0, FOFF_R), kP(0.2, FR), kP(0.86, FR), kP(0.96, FOFF_R)],
+      wrap: [0.21, 0.78], tuck: [0.79, 0.85],
+    },
+    kit: { // P3K 6 dtk: kotak dibuka, suntikan diambil & dijentik, disuntikkan ke lengan kiri, dibuang
+      gun: [0.045, 0.9],
+      L: [kP(0, OFF_L), kP(0.02, OFF_L), kP(0.12, scr(-0.3, -0.42, 0.42), 1), kP(0.42, scr(-0.28, -0.44, 0.42), 1), kP(0.5, OFF_L, 1), kP(0.53, OFF_L), kP(0.62, ARM_P, 1), kP(0.84, vAdd(ARM_P, 0, 0.004, 0)), kP(0.94, OFF_L)],
+      Lf: [kP(0, FOFF_L), kP(0.12, [-0.45, -0.8, 0.4]), kP(0.42, [-0.45, -0.8, 0.4]), kP(0.5, FOFF_L), kP(0.53, FOFF_L), kP(0.62, ARM_F), kP(0.84, ARM_F), kP(0.94, FOFF_L)],
+      Lt: [kP(0, UP), kP(0.12, UP), kP(0.42, UP), kP(0.5, DOWN), kP(0.53, UP), kP(0.62, UP), kP(0.84, UP), kP(0.94, UP)],
+      R: [kP(0, OFF_R), kP(0.09, OFF_R), kP(0.16, scr(-0.12, -0.12, 0.4)), kP(0.19, scr(-0.15, -0.02, 0.41), 1), kP(0.235, scr(-0.12, -0.0, 0.43)), kP(0.29, scr(-0.22, -0.3, 0.42), 1), kP(0.36, scr(0.12, -0.02, 0.38)), kP(0.41, scr(0.14, 0.02, 0.38), 1), kP(0.44, scr(0.15, 0.0, 0.38)), kP(0.56, scr(0.12, -0.05, 0.4)), kP(0.6, scr(0.0, -0.12, 0.41), 1), kP(0.82, scr(0.0, -0.13, 0.41), 1), kP(0.86, scr(0.12, -0.05, 0.39)), kP(0.94, OFF_R)],
+      Rf: [kP(0, FOFF_R), kP(0.16, FR), kP(0.29, FR), kP(0.36, [0.5, -0.75, 0.42]), kP(0.6, [0.4, -0.78, 0.48]), kP(0.86, FR), kP(0.94, FOFF_R)],
+      Rt: [kP(0, [-0.6, -0.6, -0.5]), kP(0.29, [-0.6, -0.6, -0.5]), kP(0.36, [-0.75, -0.2, -0.6]), kP(0.44, [-0.75, -0.25, -0.6]), kP(0.56, [-0.4, -0.85, -0.2]), kP(0.6, [-0.25, -0.95, -0.15]), kP(0.82, [-0.25, -0.95, -0.15]), kP(0.88, [0.3, -0.9, 0.2]), kP(0.94, [0.3, -0.9, 0.2])],
+      lid: [0.17, 0.235], syr: [0.27, 0.9], inj: [0.6, 0.625, 0.79, 0.82], flick: [0.41, 0.44],
+    },
+    drink: { // minuman 4 dtk: kaleng diangkat, cincin ditarik tangan kiri, diminum (makin miring), kaleng diturunkan
+      gun: [0.06, 0.88],
+      L: [kP(0, OFF_L), kP(0.12, OFF_L), kP(0.19, scr(0.16, -0.12, 0.36)), kP(0.215, scr(0.2, -0.08, 0.36), 1), kP(0.24, scr(0.12, -0.04, 0.37)), kP(0.33, OFF_L)],
+      Lf: [kP(0, FOFF_L), kP(0.19, [-0.75, -0.45, 0.5]), kP(0.24, [-0.75, -0.45, 0.5]), kP(0.33, FOFF_L)],
+      Lt: [kP(0, DOWN), kP(0.19, [0.3, -0.6, -0.7]), kP(0.24, [0.3, -0.6, -0.7]), kP(0.33, DOWN)],
+      R: [kP(0, OFF_R), kP(0.03, OFF_R), kP(0.15, scr(0.36, -0.42, 0.38), 1), kP(0.28, scr(0.35, -0.4, 0.38), 1), kP(0.335, [0.1, -0.06, -0.26]), kP(0.39, [0.06, -0.05, -0.21]), kP(0.81, [0.057, -0.044, -0.205]), kP(0.89, OFF_R)],
+      Rf: [kP(0, FOFF_R), kP(0.15, FR), kP(0.28, FR), kP(0.335, [0.9, -0.4, -0.1]), kP(0.39, [0.9, -0.4, 0.1]), kP(0.81, [0.9, -0.42, 0.1]), kP(0.89, FOFF_R)],
+      Rt: [kP(0, [0, 1, 0]), kP(0.15, [0.05, 1, 0.12]), kP(0.28, [0.05, 1, 0.12]), kP(0.335, [-0.95, 0.1, -0.2]), kP(0.39, [-0.15, -0.6, 0.8]), kP(0.81, [-0.1, -0.85, 0.5]), kP(0.89, [0, 1, 0])],
+      tab: 0.215, sip: [0.39, 0.81],
+    },
+  };
+  const hp2 = new THREE.Vector3(), fd2 = new THREE.Vector3(), tg = new THREE.Vector3(), wristL = new THREE.Vector3(), axisL = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3(), endP = new THREE.Vector3();
+  const AXOFF = new THREE.Vector3(-0.008, 0.016, 0.005); // titik sumbu lengan baju dekat asal fp_hand_l
+  // u 0..1, kind 'band' | 'kit' | 'drink', cancel 0..1 (dibatalkan: lengan turun keluar layar) → seberapa jauh senjata diturunkan
   function animHeal(u, kind, cancel) {
-    const enter = ease(Math.min(1, (u - 0.06) / 0.1)), leave = ease(Math.min(1, Math.max(0, (u - 0.9) / 0.1)));
-    const up = Math.min(enter, 1 - leave) * (1 - cancel);
-    const gunDown = ease(Math.min(1, u / 0.09)) * (1 - ease(Math.max(0, (u - 0.92) / 0.08))) * (1 - cancel); // senjata turun keluar layar
-    heal.visible = up > 0.01;
-    const drop = (1 - up) * 0.45;
-    // lengan kiri disodorkan (pose dasar); untuk P3K mula-mula memegang kotak lebih rendah & ke depan
-    const kitPhase = kind === 'kit' ? 1 - ease(Math.min(1, Math.max(0, (u - 0.44) / 0.12))) : 0;
-    const wrist = tA.copy(W0).add(tmp.set(-0.05 * kitPhase, -0.06 * kitPhase - drop, -0.02 * kitPhase));
-    const elbow = tB.copy(E0).add(tmp.set(0, -drop, 0));
-    if (kind === 'kit' && u > 0.44 && u < 0.56) { const k = Math.sin((u - 0.44) / 0.12 * Math.PI); wrist.y -= 0.1 * k; elbow.y -= 0.1 * k; }
-    const popK = ease((u - 0.25) / 0.04); // cincin kaleng ditarik
-    if (kind === 'drink') { // tangan kiri: naik ke atas kaleng untuk menarik cincin, lalu turun keluar layar
-      const tk = ease((u - 0.14) / 0.09) * (1 - ease((u - 0.3) / 0.08));
-      wrist.set(-0.08, -0.56, -0.35).lerp(tC.set(-0.03, -0.075 + 0.03 * popK, -0.4 + 0.035 * popK), tk); wrist.y -= drop;
-      elbow.y -= 0.25 * (1 - tk);
-    }
-    placeLimb(foreL, elbow, tC.copy(wrist).lerp(elbow, 0.02));
-    placeHand(handL, wrist, elbow, kitPhase > 0.5 ? 0 : -1.2);
-    const axis = tD.copy(elbow).sub(wrist), len = axis.length(); axis.normalize();
-    const n1 = new THREE.Vector3().crossVectors(axis, UPV).normalize(), n2 = new THREE.Vector3().crossVectors(n1, axis).normalize();
-    const handRpos = new THREE.Vector3();
+    const H = HEAL_K[kind] || HEAL_K.band;
+    const gunDown = easeIn(seg(u, 0, H.gun[0])) * (1 - easeOut(seg(u, H.gun[1], 1))) * (1 - easeOut(cancel));
+    const exit = easeIn(cancel) * 0.4; // batal: lengan jatuh keluar layar
+    heal.visible = u > 0.01 && u < 0.99 && cancel < 1;
+    curve(u, H.L, hp); curve(u, H.Lf, fd); curve(u, H.Lt, tg); hp.y -= exit;
+    aimArm2(hArmL, AX_L, hp, fd, PALM, tg);
+    curve(u, H.R, hp2); hp2.y -= exit;
+    if (H.Rf) curve(u, H.Rf, fd2);
+    // sumbu lengan bawah kiri (untuk perban & suntikan): titik pergelangan & dua arah tegak lurus
+    axisL.copy(AX_L).applyQuaternion(hArmL.quaternion);
+    wristL.copy(AXOFF).applyQuaternion(hArmL.quaternion).add(hArmL.position).addScaledVector(axisL, 0.09);
+    n1.crossVectors(axisL, UPV).normalize(); n2.crossVectors(n1, axisL).normalize(); // n2 ≈ atas lengan, n1 ≈ menjauhi kamera
     roll.visible = tail.visible = wrap.visible = kit.visible = syringe.visible = can.visible = false;
+    hArmC.visible = false; hArmR.visible = true;
     if (kind === 'band') {
-      const p0 = 0.1, wrapU = Math.max(0, Math.min(1, (u - 0.2) / 0.62)), p = p0 + wrapU * 0.22; // dari dekat pergelangan ke arah siku
-      if (u < 0.2) handRpos.copy(ER).lerp(tC.copy(wrist).addScaledVector(axis, p0 * len).addScaledVector(n2, 0.07), ease((u - 0.08) / 0.12));
-      else if (u < 0.82) { const th = wrapU * Math.PI * 2 * 3.2, ctr = tC.copy(wrist).addScaledVector(axis, p * len); handRpos.copy(ctr).addScaledVector(n1, Math.cos(th) * 0.075).addScaledVector(n2, Math.sin(th) * 0.075 + 0.01); }
-      else { const ctr = tC.copy(wrist).addScaledVector(axis, (p0 + 0.22) * len), k = Math.sin(Math.min(1, (u - 0.82) / 0.08) * Math.PI); handRpos.copy(ctr).addScaledVector(n2, 0.075).addScaledVector(n1, 0.05 * k).add(tmp.set(0, 0, 0)); if (u > 0.9) handRpos.lerp(ER, ease((u - 0.9) / 0.1)); }
-      handRpos.y -= drop;
-      // balutan tumbuh sepanjang lengan
-      const wl = Math.max(0.001, wrapU * 0.22 * len);
-      wrap.visible = wrapU > 0.01 && up > 0.01;
-      wrap.position.copy(wrist).addScaledVector(axis, (p0 * len) + wl / 2);
-      wrap.scale.set(0.048, wl, 0.048);
-      wrap.quaternion.setFromUnitVectors(UPV, axis);
-      roll.visible = u > 0.12 && u < 0.88 && up > 0.01;
-      roll.position.copy(handRpos).addScaledVector(n2, 0.012);
-      roll.scale.setScalar(1 - 0.35 * wrapU);
-      roll.quaternion.setFromUnitVectors(UPV, axis); roll.rotateY(wrapU * 40);
-      tail.visible = roll.visible && u > 0.2 && u < 0.86;
-      if (tail.visible) { const end = tC.copy(wrist).addScaledVector(axis, p * len).addScaledVector(n2, 0.046); placeLimb(tail, roll.position, end); tail.scale.x = 1; tail.scale.z = 1; }
-    } else if (kind === 'drink') {
-      // minuman: kaleng diangkat tangan kanan → tangan kiri menarik cincin → kaleng ke mulut, dimiringkan makin tinggi sambil diteguk → turun
-      const H = [0.08, -0.13, -0.42], M = [0.02, -0.1, -0.27], cp = new THREE.Vector3();
-      track(u, [K(0, ER), K(0.07, ER), K(0.16, H), K(0.33, H), K(0.42, M), K(0.82, M), K(0.9, H), K(1, ER)], cp);
-      const sip = ease((u - 0.34) / 0.09) * (1 - ease((u - 0.82) / 0.07)), prog = Math.max(0, Math.min(1, (u - 0.42) / 0.4));
-      cp.y += -0.012 * Math.sin(Math.max(0, Math.min(1, (u - 0.25) / 0.06)) * Math.PI) + 0.005 * Math.sin(u * 38) * sip - drop; // sentakan saat dibuka + tegukan
-      can.visible = u > 0.07 && u < 0.95 && up > 0.01;
-      can.position.copy(cp);
-      can.rotation.set(sip * (0.95 + 0.55 * prog + 0.05 * Math.sin(u * 38)), 0.3, 0); // mulut kaleng mengarah ke kamera
-      canTab.rotation.x = -1.9 * popK;
-      handRpos.copy(cp).add(tmp.set(0.042, -0.012, 0.022));
+      const wu = seg(u, H.wrap[0], H.wrap[1]), wl = 0.015 + 0.13 * ease(wu), th = wu * Math.PI * 2 * 3;
+      const k = ease(seg(u, H.wrap[0] - 0.06, H.wrap[0])) * (1 - ease(seg(u, H.wrap[1], H.tuck[1])));
+      // gulungan memutari lengan (atas → depan → bawah → belakang), maju ke arah siku
+      endP.copy(wristL).addScaledVector(axisL, 0.02 + wl).addScaledVector(n2, Math.cos(th) * 0.075).addScaledVector(n1, -Math.sin(th) * 0.075);
+      hp2.lerp(endP, k);
+      if (u > H.tuck[0] && u < H.tuck[1]) hp2.addScaledVector(n2, 0.02 - 0.03 * Math.sin(seg(u, H.tuck[0], H.tuck[1]) * Math.PI)); // ujung ditekan
+      aimArm2(hArmR, AX_R, hp2, fd2, GRIPY, axisL); // sumbu gulungan sejajar lengan
+      wrap.visible = u > H.wrap[0] && cancel < 1;
+      wrap.position.copy(wristL).addScaledVector(axisL, 0.02 + wl / 2);
+      wrap.scale.set(0.05, wl, 0.05);
+      wrap.quaternion.setFromUnitVectors(UPV, axisL);
+      roll.visible = u > 0.05 && u < H.tuck[0] + 0.01;
+      roll.scale.setScalar(1 - 0.4 * wu);
+      roll.position.set(0, 0, 0); roll.rotation.set(0, th, 0);
+      tail.visible = roll.visible && u > H.wrap[0] && u < H.wrap[1] + 0.01;
+      if (tail.visible) { // pita dari gulungan ke ujung balutan
+        hArmR.updateMatrix();
+        tmp.set(0, 0, 0).applyMatrix4(hArmR.matrix);
+        endP.copy(wristL).addScaledVector(axisL, 0.02 + wl).addScaledVector(n2, Math.cos(th - 0.6) * 0.05).addScaledVector(n1, -Math.sin(th - 0.6) * 0.05);
+        tail.position.copy(tmp).add(endP).multiplyScalar(0.5); tail.scale.set(1, tmp.distanceTo(endP), 1);
+        tail.quaternion.setFromUnitVectors(UPV, tmp2.copy(endP).sub(tmp).normalize());
+      }
+    } else if (kind === 'kit') {
+      kit.visible = u < 0.5;
+      if (kit.parent !== hArmL) hArmL.add(kit);
+      // kotak dipegang di tepi kirinya; orientasi kotak (ruang kamera) tetap: tutup di atas, sedikit menghadap kamera
+      _aq.copy(hArmL.quaternion).invert();
+      kit.quaternion.copy(_aq).multiply(KIT_Q);
+      kit.position.set(kit.userData.w * 0.5 - 0.006, -kit.userData.h * 0.45, 0).applyQuaternion(KIT_Q).applyQuaternion(_aq);
+      lid.rotation.x = -1.95 * backOut(seg(u, H.lid[0], H.lid[1])) * (1 - ease(seg(u, 0.44, 0.5)));
+      syringe.visible = u > H.syr[0] && u < H.syr[1];
+      const i = H.inj, inK = ease(seg(u, i[0], i[1])) * (1 - ease(seg(u, i[2], i[3]))), press = ease(seg(u, i[1] + 0.01, i[2]));
+      if (u > i[0] - 0.04 && u < i[3] + 0.02) { // ujung jarum ke sisi dalam lengan kiri (menghadap atas)
+        const k = ease(seg(u, i[0] - 0.04, i[0])) * (1 - ease(seg(u, i[3], i[3] + 0.02)));
+        endP.copy(wristL).addScaledVector(axisL, 0.06).addScaledVector(n2, 0.04 + 0.04 * (1 - inK));
+        hp2.lerp(tmp.copy(endP).addScaledVector(tg.set(0.25, 0.95, 0.15).normalize(), 0.085), k); // genggaman di belakang tabung suntikan
+      }
+      if (u > H.flick[0] && u < H.flick[1]) hp2.y += 0.006 * Math.sin(seg(u, H.flick[0], H.flick[1]) * Math.PI * 4); // dijentik
+      curve(u, H.Rt, tg);
+      aimArm2(hArmR, AX_R, hp2, fd2, NEEDLE, tg);
+      syringe.position.set(0, 0, 0); syringe.rotation.set(0, 0, 0);
+      plunger.position.y = -0.042 * press;
+      syringe.userData.liquid.scale.y = Math.max(0.02, 1 - press);
     } else {
-      // P3K: kotak di tangan kiri, tutup terbuka, ambil suntikan, kotak turun, suntik lengan, buang
-      kit.visible = u < 0.56 && up > 0.01;
-      kit.position.copy(wrist).add(tmp.set(-0.02, 0.012, -0.01));
-      kit.rotation.set(0.25, 0.35, 0);
-      lid.rotation.x = -1.75 * ease((u - 0.16) / 0.08) * (1 - ease((u - 0.42) / 0.06));
-      const kTop = tC.copy(kit.position).add(tmp.set(0, kit.userData.h + 0.03, 0));
-      const inj = new THREE.Vector3().copy(wrist).addScaledVector(axis, 0.3 * len).addScaledVector(n2, 0.06);
-      const keys = [K(0, ER), K(0.24, ER), K(0.32, kTop), K(0.36, add(kTop, 0, -0.03, 0)), K(0.44, add(kTop, 0.08, 0.08, 0.04)), K(0.58, add(inj, 0.03, 0.09, 0.02)), K(0.64, add(inj, 0, 0.035, 0)), K(0.76, add(inj, 0, 0.03, 0)), K(0.82, add(inj, 0.05, 0.1, 0.03)), K(0.9, ER), K(1, ER)];
-      track(u, keys, handRpos);
-      handRpos.y -= drop;
-      syringe.visible = u > 0.35 && u < 0.86 && up > 0.01;
-      const needle = new THREE.Vector3(-0.35, -1, -0.3).normalize(); // jarum mengarah ke lengan (bawah-kiri-depan)
-      syringe.quaternion.setFromUnitVectors(UPV, tmp.copy(needle).negate());
-      if (u >= 0.6 && u < 0.84) { // suntik: ujung jarum di permukaan lengan, tangan di belakang tabung
-        const k1 = ease((u - 0.6) / 0.05), k2 = ease((u - 0.78) / 0.05);
-        const tip = new THREE.Vector3().copy(wrist).addScaledVector(axis, 0.3 * len).addScaledVector(n2, 0.042 + 0.05 * (1 - k1) + 0.07 * k2);
-        syringe.position.copy(tip).addScaledVector(needle, -0.081);
-        handRpos.copy(syringe.position).add(tmp.set(0.035, 0.012, 0.03));
-      } else syringe.position.copy(handRpos).add(tmp.set(-0.03, -0.004, -0.03));
-      const press = ease((u - 0.66) / 0.11);
-      plunger.position.y = -0.04 * press;
-      syringe.userData.liquid.scale.y = 1 - 0.9 * press;
+      const sip = ease(seg(u, H.sip[0], H.sip[0] + 0.05)) * (1 - ease(seg(u, H.sip[1] - 0.04, H.sip[1])));
+      can.visible = u > 0.02 && u < 0.92;
+      hp2.y += 0.003 * Math.sin(u * 4 * 2 * Math.PI * 2.1) * sip; // tegukan
+      hp2.y -= 0.01 * Math.sin(seg(u, H.tab - 0.01, H.tab + 0.03) * Math.PI); // sentakan saat dibuka
+      if (can.parent !== hArmR) hArmR.add(can);
+      can.position.set(0, 0, 0); can.rotation.set(0, 0, 0);
+      canTab.rotation.x = -1.6 * ease(seg(u, H.tab - 0.015, H.tab + 0.01)) * (1 - 0.6 * ease(seg(u, H.tab + 0.02, H.tab + 0.05)));
+      can.userData.hole.visible = u > H.tab;
+      curve(u, H.Rt, tg);
+      aimArm2(hArmR, AX_R, hp2, fd2, GRIPY, tg);
     }
-    placeLimb(foreR, tC.copy(ER).add(tmp.set(0, -drop, 0)), handRpos);
-    placeHand(handR, handRpos, tC.copy(ER).add(tmp.set(0, -drop, 0)), 1.0);
     return gunDown;
   }
+  const KIT_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.6, 0.35, -0.1));
+
+  // ---------- Pegas (sentakan tembakan, sentakan aksi, mendarat) ----------
+  // 0 mundur (m) · 1 dongak (rad) · 2 guling (rad) · 3 naik-turun (m) · 4 dongak lambat (rad)
+  const SPK = [380, 260, 300, 190, 150], SPC = [26, 22, 24, 17, 15], spx = new Float32Array(5), spv = new Float32Array(5);
+  function springs(dt) {
+    const n = dt > 1 / 90 ? Math.ceil(dt * 120) : 1, h = dt / n;
+    for (let s = 0; s < n; s++) for (let i = 0; i < 5; i++) { spv[i] += (-SPK[i] * spx[i] - SPC[i] * spv[i]) * h; spx[i] += spv[i] * h; }
+  }
+  function jolt(y, p) { spv[3] += y; spv[4] += p; } // dorongan aksi (magasin masuk, kokang, mendarat)
+  function onFire(kind) { // sentakan per jenis senjata (membidik: setengah), pompa / slide ikut bergerak
+    const r = WEAPONS[kind] ? WEAPONS[kind].recoil : 1, a = 1 - 0.45 * st.ads;
+    spv[0] += Math.min(3.2, 1.0 + 0.55 * r) * a;
+    spv[1] += Math.min(6, 1.2 + 1.1 * r) * a;
+    spv[2] += (Math.random() - 0.5) * (0.6 + 0.4 * r) * a;
+    if (kind === 'shotgun') st.pumpT = 0;
+    if (kind === 'pistol') st.slideT = 0;
+  }
+
+  // ---------- Granat (ruang kamera) ----------
+  const NADE_UP = [0.15, -0.12, -0.38], NADE_BACK = [0.22, -0.06, -0.27], NADE_FWD = [0.06, 0.02, -0.58], NADE_END = [-0.08, -0.5, -0.4];
+  const NK = { // tahan: naik (0–0,3 dtk), tangan kiri mencabut pin (0,25–0,6), lalu ditarik ke belakang selama ditahan
+    hold: [kP(0, [0.3, -0.6, -0.25]), kP(0.12, [0.26, -0.4, -0.3]), kP(0.3, NADE_UP, 1)],
+    pinL: [kP(0, [-0.25, -0.6, -0.3]), kP(0.3, [-0.2, -0.45, -0.32]), kP(0.42, [0.115, -0.07, -0.36], 1), kP(0.47, [0.09, -0.06, -0.37], 1), kP(0.56, [-0.06, -0.12, -0.38]), kP(0.72, [-0.3, -0.6, -0.3])],
+    // lempar (dari pose tahan): ayun cepat ke depan-atas (granat lepas di awal), lanjut turun ke kiri, keluar layar
+    thr: [kP(0, NADE_BACK), kP(0.1, NADE_FWD), kP(0.22, [0.0, -0.18, -0.5]), kP(0.36, NADE_END)],
+  };
+  const nP = new THREE.Vector3(), nF = new THREE.Vector3(), nHold = new THREE.Vector3().fromArray(NADE_UP);
+  function animNade(N, dt) { // → seberapa jauh senjata diturunkan
+    N.t += dt;
+    let lower;
+    nadeRig.visible = true;
+    if (N.phase === 'hold') {
+      lower = easeIn(seg(N.t, 0, 0.18));
+      curve(N.t, NK.hold, nP);
+      const wind = ease(seg(N.t, 0.5, 1.1)); // makin lama ditahan makin jauh ditarik
+      nP.x += (NADE_BACK[0] - NADE_UP[0]) * wind; nP.y += (NADE_BACK[1] - NADE_UP[1]) * wind; nP.z += (NADE_BACK[2] - NADE_UP[2]) * wind;
+      nP.y += Math.sin(st.t * 3) * 0.003;
+      nF.set(0.45, -0.75, 0.5).lerp(tmp.set(0.55, -0.45, 0.7), wind);
+      aimArm(nArm, AX_N, nP, nF, -0.3 - 0.3 * wind);
+      nArmL.visible = N.t < 0.72 && !N.quick;
+      if (nArmL.visible) { curve(N.t, NK.pinL, hp2); aimArm(nArmL, AX_L, hp2, tmp.set(-0.55, -0.55, 0.62), 1.3); }
+      pinRing.visible = N.t > 0.44 && N.t < 0.72;
+      pinRing.position.set(0.0, 0.03, -0.03);
+      for (const nk in nadeMesh) nadeMesh[nk].visible = nk === N.kind;
+      nHold.copy(nP);
+    } else {
+      // lempar: mulai dari posisi tangan terakhir saat ditahan
+      const t = N.t;
+      lower = 1 - backOut(seg(t, 0.24, 0.5));
+      curve(t, NK.thr, nP);
+      nP.lerp(nHold, 1 - ease(seg(t, 0, 0.1)));
+      nF.set(0.55, -0.45, 0.7).lerp(tmp.set(0.2, -0.85, 0.5), ease(seg(t, 0.06, 0.3)));
+      aimArm(nArm, AX_N, nP, nF, -0.6 + 1.2 * ease(seg(t, 0.04, 0.2)));
+      nArmL.visible = false; pinRing.visible = false;
+      for (const nk in nadeMesh) nadeMesh[nk].visible = false; // granat sudah di dunia
+      if (t > 0.5) { st.nade = null; nadeRig.visible = false; }
+    }
+    return lower;
+  }
+  // periksa senjata (I, 2,6 dtk): diputar memperlihatkan sisi kiri, digulingkan memperlihatkan magasin (ditepuk), kembali
+  const IK = {
+    rot: [kP(0, Z3), kP(0.16, [0.06, 0.48, 0.18]), kP(0.4, [0.1, 0.56, 0.24]), kP(0.56, [0.16, 0.3, -0.62]), kP(0.72, [0.14, 0.26, -0.7]), kP(0.86, [-0.03, -0.03, 0.05]), kP(1, Z3)],
+    pos: [kP(0, Z3), kP(0.16, [-0.05, 0.045, 0.07]), kP(0.4, [-0.055, 0.05, 0.075]), kP(0.56, [-0.05, 0.055, 0.06]), kP(0.72, [-0.05, 0.05, 0.06]), kP(0.86, [0, 0.004, -0.004]), kP(1, Z3)],
+  };
+  function animInspect(G, kind, u, w) { // w = bobot (dibatalkan tembakan → pudar cepat)
+    curve(u, IK.rot, aRot); curve(u, IK.pos, aPos);
+    if (w < 1) { aRot.multiplyScalar(w); aPos.multiplyScalar(w); }
+    actQ();
+    if (!G.handL) return;
+    // tangan kiri menepuk magasin di tengah (senjata bermagasin), lainnya tetap di penyangga
+    const k = G.mag && G.mag0 && kind !== 'shotgun' ? ease(seg(u, 0.52, 0.6)) * (1 - ease(seg(u, 0.7, 0.8))) * w : 0;
+    if (k <= 0) { G.handL.position.copy(G.handL0); G.handL.quaternion.identity(); return; }
+    const tap = Math.sin(seg(u, 0.61, 0.67) * Math.PI) * 0.012;
+    hp.copy(G.handRest).lerp(tmp.set(G.rp.mg[0], G.rp.mg[1] - tap, G.rp.mg[2]), k);
+    fd.set(AXL[0], AXL[1], AXL[2]).lerp(tmp.set(FD.mag[0], FD.mag[1], FD.mag[2]), k);
+    if (G.armL) aimArm(G.handL, AX_L, hp, fd, 0.35 * k, qActInv); else G.handL.position.copy(hp);
+  }
+  for (const k in guns) if (GLB) rigGun(guns[k], k);
+  function fadeAct() { // aksi berjalan diganti aksi baru → dipudarkan (isi ulang: pose kembali ke diam; obat: lengan turun)
+    const A = st.act;
+    if (!A) return;
+    if (st.fade && st.fade !== A && st.fade.type === 'reload') endReload(st.fade.kind);
+    if (A.type === 'reload') A.cut = true; else A.cancel = Math.max(A.cancel, 0.001);
+    st.fade = A; st.act = null;
+  }
+  const cue = props.cue || null; // bunyi aksi (magasin lepas/masuk, kokang, pompa, …) dari lini waktu animasi
+  const mBase = new THREE.Matrix4(), mAct = new THREE.Matrix4(), qBase = new THREE.Quaternion(), eBase = new THREE.Euler(), pBase = new THREE.Vector3();
 
   return {
     // pantulan lingkungan untuk logam senjata (dipanggil sekali dengan renderer)
@@ -908,12 +1347,12 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       if (Math.abs(envK - envNow) > 0.01) { envNow = envK; for (const m of VM_MATS.values()) if (m.userData.env0 !== undefined) m.envMapIntensity = m.userData.env0 * envK; }
     },
     scene, camera, flashTex: flash.material.map,
-    // ganti senjata: yang lama turun & disarungkan (0,2 dtk), yang baru naik (0,25 dtk)
+    // ganti senjata: yang lama turun & disarungkan (0,2 dtk, makin cepat), yang baru naik (0,25 dtk, sedikit lewat lalu diam)
     show(kind) {
       const cur = st.kind;
-      if (st.act && st.act.type === 'reload') { const G0 = guns[st.act.kind]; if (G0) heldPose(G0); st.act = null; }
+      if (st.act && st.act.type === 'reload' && kind !== st.act.kind) st.act.cut = true; // isi ulang batal: pose dibekukan selama senjata turun
       if (cur && kind !== cur && guns[cur] && guns[cur].g.visible && !(st.act && st.act.type === 'heal')) { st.prev = cur; st.prevT = 0; }
-      else if (st.prev) { guns[st.prev].g.visible = false; st.prev = null; }
+      else if (st.prev) { endReload(st.prev); guns[st.prev].g.visible = false; st.prev = null; }
       for (const k in guns) guns[k].g.visible = k === (st.prev || kind);
       syncGuns();
       st.kind = kind;
@@ -933,16 +1372,35 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       }
       if (def && def.bolt) st.boltT = { t: 0, dur: def.bolt * 0.92 }; // runduk: kokang bolt setelah tiap tembakan
       if (st.kind === 'revolver') st.cylT = 1; // silinder berputar 60°
+      onFire(st.kind); // sentakan pegas, pompa, slide
     },
-    reload(sec, missing) { if (!st.kind) return; const G = guns[st.kind]; if (G) heldPose(G); st.act = { type: 'reload', kind: st.kind, t: 0, dur: sec, n: Math.max(1, Math.min(5, missing || 4)) }; st.inspect = 0; },
-    heal(kind, sec) { st.act = { type: 'heal', kind, t: 0, dur: sec, cancel: 0 }; st.inspect = 0; },
+    // isi ulang: sec = durasi di logika game, missing = peluru yang diisi (shotgun: jumlah selongsong). Kosong (magasin 0 dari
+    // update terakhir) → magasin dijatuhkan & dikokang; masih ada → magasin dicabut, disimpan, tanpa kokang.
+    reload(sec, missing) {
+      if (!st.kind) return;
+      const G = guns[st.kind];
+      if (!G) return;
+      if (st.act) { if (st.act.type === 'reload' && st.act.kind === st.kind) endReload(st.act.kind); else fadeAct(); }
+      if (st.fade && st.fade.type === 'reload' && st.fade.kind === st.kind) { endReload(st.fade.kind); st.fade = null; }
+      heldPose(G);
+      const A = st.act = { type: 'reload', kind: st.kind, t: 0, u: 0, w: 1, dur: sec, n: Math.max(1, Math.min(8, missing || 4)), empty: st.mag === 0, cue: 0, cut: false, dropped: false, ejected: false, K: null, offA: G.offA ||= new THREE.Matrix4(), offB: G.offB ||= new THREE.Matrix4() };
+      st.boltT = null;
+      A.K = reloadKeys(G, st.kind, A);
+      if (G.mag && G.mag0 && A.K.hand && A.K.ev.seat !== undefined) { // magasin di tangan: lama (dipegang saat dicabut) & baru (pas saat terpasang)
+        if (!A.empty) magOffset(G, A.K, A.K.ev.grab, A.offA);
+        magOffset(G, A.K, A.K.ev.seat, A.offB);
+        aRot.set(0, 0, 0); actQ();
+      }
+      st.inspect = 0;
+    },
+    heal(kind, sec) { fadeAct(); st.act = { type: 'heal', kind, t: 0, u: 0, dur: sec, cancel: 0 }; st.inspect = 0; },
     // granat: genggam (tahan G) → lempar (lepas G) → senjata kembali
-    nadeHold(kind) { st.nade = { kind, t: 0, phase: 'hold' }; st.inspect = 0; },
-    nadeThrow() { if (st.nade) { st.nade.phase = 'throw'; st.nade.t = 0; } },
-    nadeCancel() { if (st.nade) { st.nade = null; nadeRig.visible = false; st.swap = Math.max(st.swap, 0.6); } },
+    nadeHold(kind) { st.nade = { kind, t: 0, phase: 'hold', quick: false }; st.inspect = 0; },
+    nadeThrow() { if (st.nade) { if (st.nade.t < 0.42) st.nade.quick = true; st.nade.phase = 'throw'; st.nade.t = 0; } },
+    nadeCancel() { if (st.nade) { st.nade = null; nadeRig.visible = false; st.swap = 1; } }, // senjata naik lagi dari bawah
     inspect() { if (!st.act && st.kind && !st.prev) st.inspect = 1; },
     resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); },
-    // o: { dt, ads 0/1, moving 0..1, sprint, mdx, mdy (gerak mouse frame ini), grounded, scoped, reloading, healing }
+    // o: { dt, ads 0/1, moving 0..1, sprint, mdx, mdy (gerak mouse frame ini), grounded, scoped, reloading, healing, mag }
     update(o) {
       const dt = o.dt, k = (r) => 1 - Math.exp(-dt * r);
       st.t += dt * (1 + o.moving * (o.sprint ? 2.2 : 1.3));
@@ -952,67 +1410,92 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       st.swap = Math.max(0, st.swap - dt * 4);
       st.swayX += (Math.max(-1, Math.min(1, -o.mdx * 0.02)) - st.swayX) * k(10);
       st.swayY += (Math.max(-1, Math.min(1, o.mdy * 0.02)) - st.swayY) * k(10);
-      if (o.grounded && !st.wasGround) st.land = 1; // mendarat: senjata sedikit turun
+      if (o.grounded && !st.wasGround) jolt(-0.55, -0.35); // mendarat: senjata turun lalu memantul pelan
       st.wasGround = !!o.grounded;
-      st.land = Math.max(0, st.land - dt * 5);
-      // aksi berjalan: isi ulang / obat (batal → kembali halus)
+      if (o.mag !== undefined) st.mag = o.mag;
+      springs(dt);
+      // aksi berjalan: isi ulang / obat. Batal / diganti → pose dibekukan & dipudarkan halus (bukan meloncat ke pose diam)
       const A = st.act;
       if (A) {
-        A.t += dt / A.dur;
-        if (A.type === 'reload' && ((o.reloading === false && A.t < 0.85) || A.kind !== st.kind)) { const G0 = guns[A.kind]; if (G0) heldPose(G0); st.act = null; st.swap = Math.max(st.swap, 0.6); } // dibatalkan
-        else if (A.type === 'heal' && o.healing === false && A.t < 1) { A.cancel = Math.min(1, A.cancel + dt / 0.2); if (A.cancel >= 1) { st.act = null; heal.visible = false; st.swap = Math.max(st.swap, 0.8); } }
-        else if (A.t >= 1 || (A.type === 'reload' && o.reloading === false)) { if (A.type === 'reload') { const G0 = guns[A.kind]; if (G0) heldPose(G0); } else { heal.visible = false; st.swap = Math.max(st.swap, 0.7); } st.act = null; }
+        if (A.type === 'reload') {
+          if (!A.cut) {
+            A.t += dt / A.dur; A.u = Math.min(1, A.t);
+            for (const c = A.K.cues; A.cue < c.length && c[A.cue][0] <= A.u; A.cue++) {
+              const ck = c[A.cue][1];
+              if (cue) cue(ck);
+              if (ck === 'in' || ck === 'close') jolt(0.32, 0.28); else if (ck === 'bolt' || ck === 'pump') jolt(0.16, -0.16); else if (ck === 'shell' || ck === 'tap') jolt(0.08, 0.06);
+            }
+            if (o.reloading === false || A.kind !== st.kind) { if (A.t >= 0.97 && A.kind === st.kind) { endReload(A.kind); st.act = null; } else A.cut = true; }
+          }
+          if (A.cut) { A.w = Math.max(0, A.w - dt / 0.22); if (A.w <= 0) { endReload(A.kind); if (st.act === A) st.act = null; } }
+        } else {
+          if (A.cancel <= 0) { A.t += dt / A.dur; A.u = Math.min(1, A.t); }
+          if (o.healing === false && A.t < 0.97) A.cancel = Math.min(1, A.cancel + dt / 0.3); // dibatalkan: lengan turun, senjata naik
+          if (A.t >= 1 || A.cancel >= 1 || (o.healing === false && A.t >= 0.97)) { st.act = null; heal.visible = false; }
+        }
+      }
+      const F = st.fade; // aksi lama yang diganti aksi baru (mis. isi ulang saat mengobati): dipudarkan
+      if (F) {
+        if (F.type === 'reload') { F.w = Math.max(0, F.w - dt / 0.22); if (F.w <= 0) { endReload(F.kind); st.fade = null; } }
+        else { F.cancel = Math.min(1, F.cancel + dt / 0.3); if (F.cancel >= 1) st.fade = null; }
       }
       const act = st.act;
-      let lower = 0; // 0..1 senjata diturunkan keluar layar (obat)
-      if (act && act.type === 'heal') lower = animHeal(Math.min(1, act.t), act.kind, act.cancel);
+      let lower = 0; // 0..1 senjata diturunkan keluar layar (obat / granat)
+      const hA = act && act.type === 'heal' ? act : F && F.type === 'heal' ? F : null;
+      if (hA) lower = animHeal(hA.u, hA.kind, hA.cancel);
       else heal.visible = false;
-      if (st.nade) { // granat: senjata turun, lengan kanan menggenggam granat di kanan layar; lempar = ayun ke depan-atas
-        const N = st.nade;
-        N.t += dt;
-        const ka = N.phase === 'hold' ? ease(Math.min(1, N.t / 0.18)) : 1, sw = N.phase === 'throw' ? Math.min(1, N.t / 0.32) : 0;
-        lower = Math.max(lower, ka * (1 - ease((sw - 0.75) / 0.25)));
-        nadeRig.visible = true;
-        for (const nk in nadeMesh) nadeMesh[nk].visible = nk === N.kind && N.phase !== 'throw'; // dilepas: granat sudah di dunia
-        const wob = Math.sin(st.t * 3) * 0.004;
-        const hand = tA.set(0.2 - 0.1 * sw, -0.12 + 0.17 * Math.sin(sw * Math.PI) - 0.3 * (1 - ka) - (sw > 0.6 ? (sw - 0.6) * 0.9 : 0), -0.34 - 0.32 * Math.sin(Math.min(1, sw * 1.4) * Math.PI / 2) + wob);
-        const elbow = tB.set(0.36, -0.42 - 0.3 * (1 - ka), -0.05);
-        if (!nadeGlbHand) { placeLimb(nadeFore, elbow, hand); placeHand(nadeHand, hand, elbow, 1.4); }
-        nadeGrip.position.copy(hand).add(tmp.set(-0.02, 0.035, -0.03));
-        nadeGrip.rotation.set(-0.3 - sw * 2, 0.2, 0.15);
-        if (N.phase === 'throw' && N.t > 0.42) { st.nade = null; nadeRig.visible = false; st.swap = Math.max(st.swap, 0.7); }
-      } else nadeRig.visible = false;
+      if (st.nade) lower = Math.max(lower, animNade(st.nade, dt));
+      else nadeRig.visible = false;
       // ganti senjata: yang lama turun dulu
       if (st.prev) {
         st.prevT += dt / 0.2;
-        if (st.prevT >= 1) { guns[st.prev].g.visible = false; st.prev = null; if (st.kind && guns[st.kind]) { guns[st.kind].g.visible = true; st.swap = 1; } syncGuns(); }
+        if (st.prevT >= 1) { endReload(st.prev); guns[st.prev].g.visible = false; st.prev = null; if (st.kind && guns[st.kind]) { guns[st.kind].g.visible = true; st.swap = 1; } syncGuns(); }
       }
       const gk = st.prev || st.kind, G = gk && guns[gk];
       if (G) {
         const a = st.ads, bobA = o.moving * (1 - a * 0.85) * (o.grounded ? 1 : 0.2);
         const bx = Math.sin(st.t * 5.2) * 0.011 * bobA, by = -Math.abs(Math.cos(st.t * 5.2)) * 0.012 * bobA;
         const breathe = Math.sin(st.t * 1.4) * 0.0025 * (1 - a * 0.7);
-        aPos.set(0, 0, 0); aRot.set(0, 0, 0);
-        if (act && act.type === 'reload' && act.kind === gk) animReload(G, gk, Math.min(1, act.t), act);
-        else if (st.boltT && G.bolt) { st.boltT.t += dt / st.boltT.dur; boltPose(G, Math.min(1, st.boltT.t)); aRot.x += 0.06 * Math.sin(Math.min(1, st.boltT.t) * Math.PI); aRot.z -= 0.1 * Math.sin(Math.min(1, st.boltT.t) * Math.PI); if (st.boltT.t >= 1) { st.boltT = null; heldPose(G); } }
-        if (st.cylT > 0 && G.cyl && !(act && act.type === 'reload')) { st.cylT = Math.max(0, st.cylT - dt * 6); G.cyl.quaternion.copy(G.cylQ); G.cyl.rotateZ((1 - st.cylT) * Math.PI / 3); }
-        const out = st.prev ? ease(st.prevT) : 0; // disarungkan: turun, miring
-        if (st.inspect > 0) { st.inspect = Math.max(0, st.inspect - dt / 2.6); const u = 1 - st.inspect, s1 = Math.sin(Math.min(1, u / 0.5) * Math.PI), s2 = Math.sin(Math.max(0, (u - 0.45) / 0.55) * Math.PI); aRot.set(aRot.x + 0.25 * s1 - 0.15 * s2, aRot.y + 0.95 * s1 - 0.6 * s2, aRot.z - 0.35 * s1 + 0.9 * s2); aPos.set(aPos.x - 0.07 * s1 - 0.04 * s2, aPos.y + 0.03 * s1 + 0.02 * s2, aPos.z + 0.09 * s1 + 0.05 * s2); }
+        aPos.set(0, 0, 0); aRot.set(0, 0, 0); qActInv.identity();
+        const rA = act && act.type === 'reload' && act.kind === gk ? act : F && F.type === 'reload' && F.kind === gk ? F : null;
+        if (rA) animReload(G, gk, rA);
+        else if (st.boltT && G.bolt) { st.boltT.t += dt / st.boltT.dur; const bu = Math.min(1, st.boltT.t), s = Math.sin(seg(bu, 0.05, 0.95) * Math.PI); aRot.set(0.07 * s, -0.06 * s, -0.26 * s); aPos.set(-0.012 * s, 0.012 * s, 0); actQ(); boltPose(G, bu); if (st.boltT.t >= 1) { st.boltT = null; heldPose(G); } }
+        if (st.cylT > 0 && G.cyl && !rA) { st.cylT = Math.max(0, st.cylT - dt * 6); G.cyl.quaternion.copy(G.cylQ); G.cyl.rotateZ((1 - st.cylT) * Math.PI / 3); }
+        const out = st.prev ? easeIn(st.prevT) : 0; // disarungkan: turun makin cepat, miring
+        if (st.inspect > 0 && !st.prev && !rA) { st.inspect = Math.max(0, st.inspect - dt / 2.6); st.inspU = 1 - st.inspect; st.inspW = 1; animInspect(G, gk, st.inspU, 1); if (st.inspect <= 0) { st.inspW = 0; heldPose(G); } }
+        else if (st.inspW > 0) { st.inspW = rA || st.prev ? 0 : Math.max(0, st.inspW - dt / 0.16); if (st.inspW > 0) animInspect(G, gk, st.inspU, ease(st.inspW)); else heldPose(G); } // dibatalkan
         const scN = (o.att && o.att.scope) | 0;
         if (!st.prev) syncScope(G, gk, scN); // selama ganti senjata, model yang turun masih senjata lama
         const hip = [0.17, -0.2, -0.52], adsP = [-(G.sightX || 0), -SIGHT_Y[gk] - (G.builtin ? (scN ? 0 : -0.006) : scN ? SCOPE_DY : 0), (G.builtin && scN ? -0.3 : -0.36) - (G.sightZ || 0)]; // DMR / runduk tanpa scope: bidik di atas rel
-        const low = Math.max(lower, out), sw = st.swap;
-        G.g.position.set(
-          hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + st.sprint * 0.04 + aPos.x + low * 0.06,
-          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - st.sprint * 0.05 - sw * 0.28 - low * 0.42 - st.land * 0.035 + aPos.y,
-          hip[2] + (adsP[2] - hip[2]) * a + st.kick * 0.045 * (1 - a * 0.4) + aPos.z + low * 0.08,
+        const sw = st.swap > 0 ? 1 - backOut(1 - st.swap) : 0, low = Math.max(lower, out); // naik: sedikit lewat lalu diam
+        const spr = st.sprint * (rA || hA ? 0.35 : 1); // berlari sambil beraksi: pose lari dikurangi
+        const ka = 1 - a * 0.4;
+        pBase.set(
+          hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + spr * 0.04 + low * 0.06,
+          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3] * 0.06,
+          hip[2] + (adsP[2] - hip[2]) * a + spx[0] * ka + low * 0.08,
         );
-        G.g.rotation.set(st.kick * 0.09 * (1 - a * 0.5) - sw * 0.7 - low * 1.1 - st.sprint * 0.25 + aRot.x, st.sprint * 0.75 + st.swayX * 0.06 + aRot.y + sw * 0.25, st.kickR * st.kick * 0.06 - st.sprint * 0.3 + aRot.z + sw * 0.35 + low * 0.5);
+        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] * 0.12 - sw * 0.7 - low * 1.1 - spr * 0.25, spr * 0.75 + st.swayX * 0.06 + sw * 0.25, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5));
+        mBase.compose(pBase, qBase, ONE);
+        if (aPos.x || aPos.y || aPos.z || aRot.x || aRot.y || aRot.z) { mBase.multiply(mAct.compose(aPos, qAct, ONE)); mBase.decompose(G.g.position, G.g.quaternion, _v3); }
+        else { G.g.position.copy(pBase); G.g.quaternion.copy(qBase); }
+        G.g.updateMatrix();
         G.g.visible = low < 0.98;
-        if (!(act && act.type === 'reload')) { // pompa shotgun mundur-maju setelah menembak
-          if (G.pump && G.pumpZ0 !== undefined) G.pump.position.z = G.pumpZ0 + (st.kick > 0 && st.kick < 0.75 ? Math.sin((0.75 - st.kick) / 0.75 * Math.PI) * 0.08 : 0);
+        if (!rA) { // pompa shotgun mundur-maju setelah menembak (tangan kiri ikut)
+          if (G.pump && G.pumpZ0 !== undefined && st.pumpT !== undefined && st.pumpT < 0.6) {
+            st.pumpT += dt;
+            const pz = 0.085 * (ease(seg(st.pumpT, 0.14, 0.29)) - ease(seg(st.pumpT, 0.33, 0.47)));
+            G.pump.position.z = G.pumpZ0 + pz;
+            if (G.handL) G.handL.position.z = G.handL0.z + pz;
+            if (st.pumpT >= 0.29 && st.pumpT - dt < 0.29) { if (cue) cue('pump'); jolt(0.1, -0.08); }
+          }
+          if (G.slide) { // slide pistol: mundur saat menembak, terkunci di belakang bila magasin kosong
+            st.slideT = st.slideT === undefined ? 1 : st.slideT + dt;
+            const back = Math.sin(seg(st.slideT, 0, 0.07) * Math.PI);
+            G.slide.position.z = Math.max(st.mag === 0 && gk === st.kind ? 0.022 : 0, back * 0.026);
+          }
         }
-        if (G.handL && G.pump && !(act && act.type === 'reload')) G.handL.position.z = G.handL0.z + (G.pump.position.z - G.pumpZ0); // tangan ikut pompa
+        updateDrop(dt);
       }
       st.flashT -= dt;
       flash.visible = st.flashT > 0 && !o.scoped && !!G;

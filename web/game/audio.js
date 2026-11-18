@@ -95,6 +95,21 @@ export function kill() { if (!ok()) return; tone({ f0: 880, f1: 880, dur: 0.12, 
 export function hurt() { if (ok()) { burst({ dur: 0.09, freq: 500, gain: 0.5 }); tone({ f0: 90, f1: 50, dur: 0.12, gain: 0.5 }); } }
 export function click(t = 0) { if (ok()) burst({ t, dur: 0.035, freq: 4200, type: 'bandpass', q: 3, gain: 0.35 }); }
 export function reload(sec) { if (!ok()) return; click(0.05); click(sec * 0.45); click(sec * 0.85); }
+// bunyi aksi dari lini waktu animasi orang pertama (game/weapons.js): magasin lepas/masuk, kokang, pompa, selongsong, …
+export function cue(kind) {
+  if (!ok()) return;
+  switch (kind) {
+    case 'out': burst({ dur: 0.05, freq: 1900, type: 'bandpass', q: 2, gain: 0.3 }); tone({ f0: 210, f1: 120, dur: 0.05, gain: 0.12 }); break; // magasin lepas
+    case 'in': burst({ dur: 0.04, freq: 2700, type: 'bandpass', q: 2.5, gain: 0.42 }); tone({ f0: 160, f1: 85, dur: 0.07, gain: 0.3 }); break; // magasin masuk
+    case 'bolt': case 'pump': burst({ dur: 0.035, freq: 3600, type: 'bandpass', q: 3, gain: 0.4 }); burst({ t: 0.06, dur: 0.04, freq: 2500, type: 'bandpass', q: 2.5, gain: 0.34 }); break; // kokang / pompa
+    case 'shell': burst({ dur: 0.03, freq: 3000, type: 'bandpass', q: 3, gain: 0.26 }); tone({ f0: 300, f1: 180, dur: 0.04, gain: 0.08 }); break;
+    case 'open': case 'close': burst({ dur: 0.04, freq: kind === 'open' ? 2300 : 3100, type: 'bandpass', q: 2.5, gain: 0.36 }); tone({ f0: 190, f1: 110, dur: 0.06, gain: 0.18 }); break;
+    case 'eject': for (let i = 0; i < 3; i++) burst({ t: 0.18 + i * 0.05, dur: 0.03, freq: 5200 - i * 400, type: 'bandpass', q: 4, gain: 0.12 }); break; // selongsong jatuh
+    case 'tab': burst({ dur: 0.02, freq: 3800, type: 'bandpass', q: 3, gain: 0.3 }); burst({ t: 0.015, dur: 0.22, freq: 5200, type: 'highpass', q: 0.5, gain: 0.16 }); break; // kaleng dibuka
+    case 'pin': burst({ dur: 0.03, freq: 4400, type: 'bandpass', q: 4, gain: 0.25 }); break;
+    default: click();
+  }
+}
 export function pickup() { if (ok()) { tone({ f0: 660, f1: 990, dur: 0.09, gain: 0.18, type: 'triangle' }); } }
 export function beep(hi = false) { if (ok()) tone({ f0: hi ? 1050 : 700, f1: hi ? 1050 : 700, dur: 0.16, gain: 0.22, type: 'square' }); }
 export function heal() { if (ok()) { tone({ f0: 520, f1: 780, dur: 0.25, gain: 0.15, type: 'sine' }); tone({ t: 0.12, f0: 780, f1: 1040, dur: 0.25, gain: 0.12 }); } }

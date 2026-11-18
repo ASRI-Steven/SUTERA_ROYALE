@@ -30,7 +30,7 @@ const ARC_DRIVER = 100 * D2R, ARC_PASS = 150 * D2R;
 export function createPlayer(ctx) {
   const { scene, camera, renderer, col, loot, combat, hud, agent: me } = ctx;
   const cvs = renderer.domElement;
-  const vm = createViewModel({ kit: propGeometry('kit'), band: propGeometry('band') }); // barang Blender untuk animasi obat
+  const vm = createViewModel({ kit: propGeometry('kit'), band: propGeometry('band'), cue: (k) => audio.cue(k) }); // barang Blender untuk animasi obat; bunyi aksi dari lini waktu animasi
   const char = buildCharacter(OUTFIT, { pack: true, hair: true, stripe: true }, { variant: 'm1', hair: 0 });
   // perlengkapan karakter orang ketiga diatur ulang hanya saat berubah (bukan tiap frame)
   const GUN_KEYS = Object.keys(WEAPONS), GUN_GEAR = {};
@@ -260,8 +260,7 @@ export function createPlayer(ctx) {
     if (!w || st.reloadEnd || st.nade || w.inst.mag >= magCap(w.inst) || me.ammo[w.def.ammo] <= 0) return;
     st.reloadEnd = now + w.def.reload;
     st.reloadFor = w.inst;
-    vm.reload(w.def.reload, magCap(w.inst) - w.inst.mag); // animasi isi ulang (shotgun: jumlah selongsong)
-    audio.reload(w.def.reload);
+    vm.reload(w.def.reload, magCap(w.inst) - w.inst.mag); // animasi isi ulang (shotgun: jumlah selongsong); bunyinya dari animasi (vm cue)
     st.healEnd = 0;
   }
   function heal(kind) {
@@ -1082,7 +1081,7 @@ export function createPlayer(ctx) {
       const fp = (me.state === 'ground' && !st.tpp && me.alive) || vfp;
       const w = weapon();
       const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
-      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null });
+      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1 });
       st.mdx = st.mdy = 0;
       const targetFov = fp && st.ads && w ? adsFov(w.inst) : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : 75; // kamera belakang: zoom bidik
       camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 14));
