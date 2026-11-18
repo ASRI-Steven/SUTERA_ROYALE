@@ -367,11 +367,14 @@ function makeUni(R, atlas, U) {
       vec3 cA = texture2D(tDetA, dUv / uDet.x).rgb, pA = texture2D(tPlA, dUv / uDet.y).rgb;
       float cR = texture2D(tDetR, dUv / uDet.x).g;
       nz = cA.g / uDet.z - 1.0;
-      wP = (vSurf > 1.5 && vSurf < 2.5) || vSurf > 4.5 ? 1.0 : 0.0;
-      float k = vSurf < 0.5 ? 0.0 : vSurf < 1.5 ? 0.62 : vSurf < 2.5 ? 0.3 : vSurf < 3.5 ? 0.18 : vSurf < 4.5 ? 0.55 : 0.2;
+      // beton tegak (tiang, dinding cor) memakai tekstur plester: tekstur ubin beton punya nat yang tampak seperti
+      // sambungan pada tiang; ubin beton hanya untuk muka datar (alas, puncak)
+      float cv = vSurf > 0.5 && vSurf < 1.5 && an.y < 0.6 ? 1.0 : 0.0;
+      wP = (vSurf > 1.5 && vSurf < 2.5) || vSurf > 4.5 || cv > 0.5 ? 1.0 : 0.0;
+      float k = vSurf < 0.5 ? 0.0 : vSurf < 1.5 ? (cv > 0.5 ? 0.45 : 0.62) : vSurf < 2.5 ? 0.3 : vSurf < 3.5 ? 0.18 : vSurf < 4.5 ? 0.55 : 0.2;
       vec3 det = mix(cA / uDet.z, pA / uDet.w, wP);
       diffuseColor.rgb *= mix(vec3(1.0), clamp(det, 0.35, 1.9), k);
-      kN = vSurf < 0.5 ? 0.0 : vSurf < 1.5 ? 0.9 : vSurf < 2.5 ? 0.45 : vSurf < 3.5 ? 0.25 : vSurf < 4.5 ? 1.1 : 0.3;
+      kN = vSurf < 0.5 ? 0.0 : vSurf < 1.5 ? (cv > 0.5 ? 0.5 : 0.9) : vSurf < 2.5 ? 0.45 : vSurf < 3.5 ? 0.25 : vSurf < 4.5 ? 1.1 : 0.3;
       dRough = vSurf > 0.5 && vSurf < 4.5 && wP < 0.5 ? (cR - 0.5) * (vSurf > 2.5 && vSurf < 3.5 ? 0.45 : 0.3) : 0.0;
     #endif
     float hz = 0.9 + 0.45 * nz;
