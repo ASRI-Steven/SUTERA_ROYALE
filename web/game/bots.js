@@ -526,6 +526,8 @@ export function createBots(ctx, n = 50) {
   // gz = tinggi tujuan (lantai 2 rumah → rute: ke tangga, naik/turun, lalu ke tujuan)
   function go(b, x, y, spd, gz = 0) {
     const a = b.ai, px = b.pos.x, py = -b.pos.z;
+    if (a.lift && a.nav && a.nav.kind === 'lift') return; // sedang di dalam lift: perintah gerak baru menunggu sampai tiba (dulu
+    // anggota yang mengikuti pemimpin ke atap memesan ulang tiap 0,6 dtk sehingga perjalanan lift tak pernah selesai)
     a.route = null;
     // atap menara: lewat lift (pintu lift → naik/turun → tujuan), sama seperti pemain
     const tR = roofLift(x, y, gz), bR = roofLift(px, py, b.pos.y);
@@ -958,8 +960,12 @@ export function createBots(ctx, n = 50) {
     a.seenAt = now;
     a.lastSeen.copy(e.pos);
     a.losOk = true;
-    if (!b.weapons.some(Boolean)) { // tangan kosong → kabur
-      if (a.mode !== 'flee') { a.mode = 'flee'; go(b, x + (x - ex) / (d || 1) * 60, y + (y - ey) / (d || 1) * 60, SKILL.sprint); }
+    if (!b.weapons.some(Boolean)) { // tangan kosong → kabur (lagi, kalau pelarian sebelumnya sudah selesai/gagal tapi musuh masih terlihat)
+      if (a.mode !== 'flee' || (!a.nav && !a.route)) {
+        a.mode = 'flee';
+        const k = 45 / (d || 1), f = col.findFree(x + (x - ex) * k + rnd(-12, 12), y + (y - ey) * k + rnd(-12, 12), 10, 0.4) || [x + (x - ex) * k, y + (y - ey) * k];
+        go(b, f[0], f[1], SKILL.sprint);
+      }
       return;
     }
     if (b.healEnd) { if (d > 35 && a.cover) return; b.healEnd = 0; }
