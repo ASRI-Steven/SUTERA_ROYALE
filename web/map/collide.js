@@ -105,17 +105,17 @@ export function createCollider(D, inArea, homes) {
     };
     parts(H.parts, 0, H.ceil);
     furn(H.furn, 0);
-    for (const cv of H.canopies || []) { // kanopi ruko / pintu masuk mal (di atas kepala) + tiang
+    for (const cv of H.canopies || []) { // kanopi ruko / pintu masuk mal (di atas kepala, atapnya bisa dipijak) + tiang
       const e = cv.e, P = (s, v) => [e.a[0] + e.ux * s + e.nx * v, e.a[1] + e.uy * s + e.ny * v], rect = (s0, s1, v0, v1) => [P(s0, v0), P(s1, v0), P(s1, v1), P(s0, v1)].flat();
-      addPoly(rect(cv.s0, cv.s1, -cv.d, 0), cv.z + 0.18, b, 1, cv.z - 0.22);
+      addPoly(rect(cv.s0, cv.s1, -cv.d, 0), cv.z + 0.18, b, 1, cv.z - 0.22, { floor: cv.z + 0.18 });
       if (cv.cols) for (const s of [cv.s0 + 0.3, cv.s1 - 0.3]) addPoly(rect(s - 0.18, s + 0.18, -cv.d + 0.12, -cv.d + 0.48), cv.z, b, 1, 0);
     }
-    if (H.porch) { // teras: lantai +15 cm (bisa dipijak), dua tiang, kanopi di atas kepala
+    if (H.porch) { // teras: lantai +15 cm (bisa dipijak), dua tiang, kanopi di atas kepala (atapnya bisa dipijak: lompat dari jendela lantai 2)
       const pr = H.porch, e = pr.e, P = (s, v) => [e.a[0] + e.ux * s + e.nx * v, e.a[1] + e.uy * s + e.ny * v];
       const rect = (s0, s1, v0, v1) => [P(s0, v0), P(s1, v0), P(s1, v1), P(s0, v1)].flat();
       addPoly(rect(pr.s0, pr.s1, -pr.D, 0), 0.15, b, 1, 0, { floor: 0.15 });
       for (const s of [pr.s0 + 0.2, pr.s1 - 0.2]) addPoly(rect(s - 0.11, s + 0.11, -pr.D + 0.09, -pr.D + 0.31), pr.h, b, 1, 0);
-      addPoly(rect(pr.s0 - 0.12, pr.s1 + 0.12, -pr.D - 0.3, 0), pr.h + 0.12, b, 1, pr.h);
+      addPoly(rect(pr.s0 - 0.12, pr.s1 + 0.12, -pr.D - 0.3, 0), pr.h + 0.12, b, 1, pr.h, { floor: pr.h + 0.12 });
     }
     if (H.up) { parts(H.parts, H.up.floor, H.up.ceil); furn(H.up.furn, H.up.floor); } // lantai atas: sekat sama dengan lantai dasar
   }
@@ -174,6 +174,23 @@ export function createCollider(D, inArea, homes) {
     }
   });
   const lastTouch = { b: -1, t: 0 };
+  // Rintangan tambahan dari modul lain (benda lingkungan: tiang, halte, papan reklame, pagar, dst.). Koordinat data (m).
+  // Bentuk: { pts: [x0, y0, x1, y1, …] } poligon · { x, y, r } lingkaran (jadi segi-8) · { x, y, w, d, rot } kotak.
+  // h = tinggi puncak, z0 = dasar (bawaan 0; > 1,9 = di atas kepala, hanya menahan peluru/kamera), floor: true = puncaknya
+  // bisa dipijak (atap halte, panggung). Indeks gedung −3 (bukan gedung, bukan air). Panggil sebelum bot mulai bernavigasi
+  // (sel navigasi bot di-cache saat pertama dipakai).
+  function addObstacles(list) {
+    for (const o of list) {
+      let flat = o.pts;
+      if (!flat && o.r != null) { flat = []; for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; flat.push(o.x + Math.cos(a) * o.r, o.y + Math.sin(a) * o.r); } }
+      else if (!flat) {
+        const c = Math.cos(o.rot || 0), s = Math.sin(o.rot || 0), hw = o.w / 2, hd = o.d / 2;
+        flat = [];
+        for (const [a, d] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) flat.push(o.x + a * c - d * s, o.y + a * s + d * c);
+      }
+      addPoly(flat, o.h, -3, 1, o.z0 || 0, o.floor ? { floor: o.h } : null);
+    }
+  }
 
   function near(x, y, r, fn) {
     for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++)
@@ -406,5 +423,5 @@ export function createCollider(D, inArea, homes) {
     }
     return -1;
   }
-  return { polys, trees, segs, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, lastTouch, inArea };
+  return { polys, trees, segs, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, lastTouch, inArea, addObstacles };
 }
