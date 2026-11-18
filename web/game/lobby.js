@@ -343,7 +343,7 @@ export function createLobby(o) {
     const tools = gun ? `<div class="lb-pv">
         <div class="lb-kinds" role="group" aria-label="Peragakan di senjata">${SHOW_KINDS.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === showKind}">${esc(WEAPONS[k].short)}</button>`).join('')}</div>
         <div class="lb-pv-a"><button type="button" class="lb-btn ghost" data-hear="${id}">${ic('sound', 'lb-i-s')}${th.voice ? 'Dengar tembakan' : 'Tembakan pabrik'}</button>
-        <button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Efek kill</button></div></div>` : '';
+        <button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Spanduk kill</button></div></div>` : '';
     return `<div class="lb-detail r-${s.rarity}" style="--rc:${r.color}"><div class="lb-detail-m"><span class="lb-rar">${esc(r.label)} · ${gun ? 'Skin senjata' : 'Skin karakter'} · ${esc(cl.name)}</span><h3>${esc(s.name)}</h3><p>${esc(s.desc || '')}</p>
       ${feats ? `<div class="lb-feats">${feats}</div>` : ''}${!has && lack > 0 && !gun ? '<p class="lb-hint">Selesaikan misi untuk mengumpulkan Koin Sutera.</p>' : ''}${tools}</div><div class="lb-detail-a">${act}</div></div>`;
   }
@@ -553,13 +553,10 @@ export function createLobby(o) {
     if (d.skin) { selSkin = d.skin; killN = 0; drawPanel(); preview(); return; }
     if (d.kind) { showKind = d.kind; for (const b of $$('[data-kind]')) b.setAttribute('aria-pressed', String(b.dataset.kind === showKind)); preview(); return; }
     if (d.hear) { const s = skinById(d.hear); audio.previewShot(showKind, s && s.th ? s.th.voice || null : null); return; }
-    if (d.killfx) { // pratinjau efek kill: hitungan beruntun naik tiap klik (1 → 5), kamera mundur sebentar lalu kembali ke etalase
+    if (d.killfx) { // pratinjau spanduk & denting kill: hitungan beruntun naik tiap klik (1 → 5); kamera tetap di etalase
       audio.unlockAudio();
       killN = killN % 5 + 1;
-      stage.aim('kill');
       stage.killPreview(d.killfx, killN, menu);
-      clearTimeout(killT);
-      killT = setTimeout(() => { if (panel === 'toko' || panel === 'koleksi') stage.aim(selSkin.startsWith('gun_') ? 'show' : 'member', 0); }, 2600);
       return;
     }
     if (d.claim) { const [scope, i] = d.claim.split(':'), got = claimQuest(scope, +i); if (got) toast(`${coin}<b>+${fmt(got)}</b> Koin Sutera`, 'gold'); refresh(); return; }

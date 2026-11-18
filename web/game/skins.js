@@ -125,7 +125,7 @@ export function skinFeatures(s) {
     const th = s.th || {};
     if (th.glow) f.push(['anim', 'Animasi & pendar']);
     if (th.voice) f.push(['sound', 'Suara tembakan khusus']);
-    if (th.kill) f.push(['kill', 'Efek & spanduk kill']);
+    if (th.kill) f.push(['kill', 'Spanduk & denting kill khusus']);
     if (th.tracer) f.push(['tracer', th.flash ? 'Pelacak & kilatan khusus' : 'Pelacak berwarna']);
     if (th.muzzle) f.push(['muzzle', 'Partikel moncong']);
   } else {
