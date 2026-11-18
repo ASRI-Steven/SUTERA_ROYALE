@@ -258,8 +258,8 @@ export function createBots(ctx, n = 50) {
   const G = buildGraph(ctx.D, col);
   const nav = createNav(col, ctx.homes || null); // pintu & celah sekat rumah = titik wakil sel grid
   const homes = ctx.homes || null; // tata letak gedung (tangga rumah 2 lantai)
-  let budget = 0; // jatah pencarian jalur/perlindungan per frame (biar tidak tersendat)
-  const spend = () => (budget > 0 ? (budget--, true) : false);
+  let budget = 0, frameT0 = 0; // jatah pencarian jalur/perlindungan per frame (biar tidak tersendat): jumlah & waktu (≤ 3 ms)
+  const spend = () => (budget > 0 && performance.now() - frameT0 < 3 ? (budget--, true) : false);
   const crowd = createCrowd(scene, n);
   // payung & bayangan bulat (instans)
   const chuteGLB = propGeometry('parachute'), chuteY = chuteGLB ? 1.45 : 4.4; // parasut Blender (asal di titik gantung)
@@ -601,10 +601,10 @@ export function createBots(ctx, n = 50) {
   function hop(b, x, y, d, spd) {
     const a = b.ai, px = b.pos.x, py = -b.pos.z;
     for (let q = 0; q < HOP_ANG.length * 2; q++) { // 80 m dulu, lalu 40 m (di tepi kawasan / di antara gedung besar)
-      if (budget <= 0) return false;
+      if (!spend()) return false; // satu jatah per percobaan (findFree + pencarian jalur)
       const ang = HOP_ANG[q % HOP_ANG.length], k = (q < HOP_ANG.length ? 80 : 40) / d, dx = (x - px) * k, dy = (y - py) * k;
       const c = Math.cos(ang), sn = Math.sin(ang), f = col.findFree(px + dx * c - dy * sn, py + dx * sn + dy * c, 8, 0.4, true);
-      if (!f || !spend()) continue;
+      if (!f) continue;
       const pts = nav.path(px, py, f[0], f[1], 9000, 0);
       if (!pts) continue;
       const rest = a.route;
@@ -1521,6 +1521,15 @@ export function createBots(ctx, n = 50) {
 
   // ---------- Gerak & tembak per frame ----------
   const dir = new THREE.Vector3();
+  // tiarap / tumbang: badan rebah ±0,9 m searah hadap — kepala & kaki didorong keluar dinding (col.fitProne), badan ikut
+  // bergeser halus. Tanpa ini hanya lingkaran 0,35 m di tengah badan yang bertabrakan: kepala menembus dinding & bisa
+  // ditembak dari baliknya. r = hasil col.step/resolve (objek baru) → diubah di tempat.
+  function fitBody(b, r, dt) {
+    if (!col.fitProne) return r;
+    const f = col.fitProne(r.x, r.y, Math.sin(b.yaw), -Math.cos(b.yaw), b.pos.y), k = Math.min(1, dt * 14);
+    r.x += (f.x - r.x) * k; r.y += (f.y - r.y) * k;
+    return r;
+  }
   function steer(b, dt, now) {
     const a = b.ai;
     if (a.mode === 'drive') { driveStep(b, dt, now); return; }
@@ -1642,6 +1651,7 @@ export function createBots(ctx, n = 50) {
         else if (fighting && a.tac === 'engage') a.strafe = -a.strafe;
       }
     } else { a.stuckT = Math.max(0, a.stuckT - dt); if (b.moveSpeed > 1) a.stuckN = 0; }
+    if (b.prone) fitBody(b, r, dt);
     b.pos.x = r.x;
     b.pos.z = -r.y;
     // pengawas kemajuan: berniat jalan (punya jalur) tapi tidak berpindah ≥ 2,5 m selama WD_T dtk — termasuk yang
@@ -1734,6 +1744,7 @@ export function createBots(ctx, n = 50) {
     sp.y += (my - sp.y) * k;
     const r = col.step(x, y, x + sp.x * dt, y + sp.y * dt, 0.35, false, b.pos.y);
     b.moveSpeed = Math.hypot(r.x - x, r.y - y) / Math.max(dt, 1e-4);
+    fitBody(b, r, dt); // rebah: kepala & kaki tidak menembus dinding
     b.pos.x = r.x; b.pos.z = -r.y;
     if (b.moveSpeed > 0.2) b.yaw += clamp(wrap(Math.atan2(r.x - x, -(r.y - y)) - b.yaw), -dt * 3, dt * 3);
     b.moveYaw = 0;
@@ -1768,6 +1779,7 @@ export function createBots(ctx, n = 50) {
     // dt detik, now detik, flight = { t, pos(t) }, cam = posisi kamera
     update(dt, now, flight, cam) {
       budget = 4 + Math.round(n / 20); // jatah pencarian jalur/perlindungan per frame
+      frameT0 = performance.now();
       for (const b of bots) {
         if (!b.alive && b.state === 'dead') {
           const a = b.ai; // lepaskan klaim barang/kendaraan milik bot yang tersingkir
