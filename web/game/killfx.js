@@ -198,7 +198,7 @@ export function createKillFx({ scene, hud }) {
   let clock = 0, streak = 0, last = -1e9, sting = null;
   const e = { x: 0, y: 0, z: 0, h: 1.7, n: 1, knock: false, c1: '#ffc64a', c2: '#fff1c8', emblem: 'std' };
   function fx(victim, n, knock, th) {
-    const p = victim.pos, down = victim.prone || victim.down || victim.state === 'dead';
+    const p = victim.pos, down = victim.prone || victim.down; // korban yang tadinya tumbang berbaring; yang lain masih tegak saat efek muncul
     Object.assign(e, { x: p.x, y: p.y + (victim.state === 'drive' ? (victim.sitY || 0) - p.y : 0), z: p.z, h: down ? 0.55 : victim.crouch ? 1.2 : 1.7, n, knock, c1: th.color, c2: th.color2, emblem: th.emblem });
     (STYLES[th.kill] || STYLES.burst)(A, B, e, knock ? 0.45 : 1 + 0.25 * Math.min(4, n - 1));
   }

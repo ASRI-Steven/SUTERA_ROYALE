@@ -679,7 +679,7 @@ const KB_EMB = { // lambang 48×48 (diisi gradien tema)
 };
 const KB_LBL = ['', 'Kill', 'Ganda', 'Tripel', 'Beringas', 'Amuk'];
 let KB_ID = 0;
-const KB_PIPS = [-56, -28, 0, 28, 56].map((a) => { const r = a * Math.PI / 180; return `<path class="kb-pip" transform="translate(${(Math.sin(r) * 52).toFixed(2)} ${(-Math.cos(r) * 52).toFixed(2)}) rotate(${a})" d="M0-6 4 0 0 6-4 0z"/>`; }).join('');
+const KB_PIPS = [-50, -25, 0, 25, 50].map((a) => { const r = a * Math.PI / 180; return `<g transform="translate(${(Math.sin(r) * 55).toFixed(2)} ${(-Math.cos(r) * 55).toFixed(2)}) rotate(${a})"><path class="kb-pip" d="M0-8.5 5 0 0 8.5-5 0z"/></g>`; }).join(''); // animasi CSS di <path>, letak di <g>
 export function createKillBanner(parent) {
   const el = document.createElement('div'), gid = 'kbG' + (++KB_ID); // id gradien unik per spanduk (HUD & pratinjau toko)
   el.className = 'kb';

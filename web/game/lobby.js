@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { buildCharacter, characterVariants } from '../map/rig.js';
 import { profile, saveProfile, owns, buy, equip, setName, ensureSquad, setMate, partySlots, setParty } from './profile.js';
-import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, setCharAura, gunTheme, skinRenderer } from './skins.js';
+import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, setCharAura, gunTheme, compileSkinAsync } from './skins.js';
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
 import { tickSkins } from './skinfx.js';
@@ -164,8 +164,8 @@ function createStage({ scene, camera, col, sunDir }) {
     hold.visible = false;
     show.root.add(hold);
     show.root.visible = true;
-    const R = skinRenderer(), done = () => { if (show.obj === hold) hold.visible = true; };
-    if (R && R.compileAsync) R.compileAsync(hold, camera, scene).then(done, done); else done();
+    const done = () => { if (show.obj === hold) hold.visible = true; };
+    compileSkinAsync(hold, camera, scene).then(done, done);
   }
   function gunHide() { show.root.visible = false; }
   // efek kill (pratinjau): kolam partikel sendiri di adegan lobi + spanduk di DOM lobi

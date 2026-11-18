@@ -158,8 +158,8 @@ float sfPetal(float a, float k, float s) { return pow(abs(cos(a * k * 0.5)), s);
 // pamor keris (lapisan nikel bergelombang di baja): 0..1 = kadar garis terang
 float sfPamor(vec3 p) {
   float w = sfN3(p * 30.0) * 2.8 + sfN3(p * 78.0 + 5.0) * 1.1;
-  float l = sin(p.y * 290.0 + p.x * 90.0 + w * 5.5 + sin(p.z * 34.0 + w * 2.0) * 2.6);
-  return smoothstep(0.55, 0.92, l);
+  float l = sin(p.y * 380.0 + p.x * 110.0 + w * 7.0 + sin(p.z * 40.0 + w * 2.4) * 3.0);
+  return smoothstep(0.72, 0.97, l) + 0.25 * smoothstep(0.2, 0.6, sin(p.y * 190.0 + w * 3.5 + p.z * 9.0));
 }
 // mata bulu merak (dadak merak): rgb + kadar inti (untuk pendar). d = posisi di dalam bulu (÷ jari-jari), r = |d|
 vec4 sfPeacock(vec2 d, float r, float id, float vdn) {

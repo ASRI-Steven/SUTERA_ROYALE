@@ -203,14 +203,14 @@ export function applyGunSkin(root, id) {
 }
 
 // ---------- Aura karakter legendaris: serbuk cahaya yang naik berputar & tertinggal saat bergerak ----------
-// Satu THREE.Points (ruang dunia, aditif, ±48 partikel). Diperbarui lewat onSkinTick (detak skin per frame); hanya
+// Satu THREE.Points (ruang dunia, aditif, ±64 partikel). Diperbarui lewat onSkinTick (detak skin per frame); hanya
 // memancar selama karakternya tampil. root = akar karakter yang diikuti. Dilepas dengan dispose().
 const AURA_VS = `attribute vec4 col; attribute float size; uniform float uH; varying vec4 vC;
 void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
-  gl_PointSize = min(40.0, size * uH * projectionMatrix[1][1] * 0.5 / max(0.05, -mv.z)); vC = col; vC.a *= smoothstep(0.3, 1.2, -mv.z); }`;
+  gl_PointSize = min(48.0, size * uH * projectionMatrix[1][1] * 0.5 / max(0.05, -mv.z)); vC = col; vC.a *= smoothstep(0.3, 1.2, -mv.z); }`;
 const AURA_FS = `varying vec4 vC; void main() { vec2 c = gl_PointCoord - 0.5; float a = exp(-dot(c, c) * 18.0) + exp(-dot(c, c) * 160.0); if (a * vC.a < 0.003) discard; gl_FragColor = vec4(vC.rgb * a * vC.a, a * vC.a); }`;
 export function createAura(color, root, scene) {
-  const N = 48, pos = new Float32Array(N * 3), col = new Float32Array(N * 4), size = new Float32Array(N), S = new Float32Array(N * 8); // vx vy vz t life ph r0 s0
+  const N = 64, pos = new Float32Array(N * 3), col = new Float32Array(N * 4), size = new Float32Array(N), S = new Float32Array(N * 8); // vx vy vz t life ph r0 s0
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('col', new THREE.BufferAttribute(col, 4));
@@ -229,12 +229,12 @@ export function createAura(color, root, scene) {
     for (let o = root.parent; on && o; o = o.parent) if (!o.visible) on = false;
     if (on) {
       wp.setFromMatrixPosition(root.matrixWorld);
-      acc += dt * 26;
+      acc += dt * 34;
       while (acc >= 1 && n < N) {
         acc -= 1;
         const i = n++, a = Math.random() * Math.PI * 2, r = 0.22 + Math.random() * 0.22, k = i * 8;
         pos[i * 3] = wp.x + Math.cos(a) * r; pos[i * 3 + 1] = wp.y + 0.1 + Math.random() * 1.6; pos[i * 3 + 2] = wp.z + Math.sin(a) * r;
-        S[k] = Math.cos(a) * 0.05; S[k + 1] = 0.25 + Math.random() * 0.45; S[k + 2] = Math.sin(a) * 0.05; S[k + 3] = 0; S[k + 4] = 0.9 + Math.random() * 0.9; S[k + 5] = a; S[k + 6] = r; S[k + 7] = 0.025 + Math.random() * 0.035;
+        S[k] = Math.cos(a) * 0.05; S[k + 1] = 0.25 + Math.random() * 0.45; S[k + 2] = Math.sin(a) * 0.05; S[k + 3] = 0; S[k + 4] = 0.9 + Math.random() * 0.9; S[k + 5] = a; S[k + 6] = r; S[k + 7] = 0.04 + Math.random() * 0.05;
       }
       if (acc >= 1) acc = 0;
     }
@@ -247,7 +247,7 @@ export function createAura(color, root, scene) {
       if (on) { pos[i * 3] = wp.x + x * ca - z * sa; pos[i * 3 + 2] = wp.z + x * sa + z * ca; }
       pos[i * 3] += S[k] * dt; pos[i * 3 + 1] += S[k + 1] * dt; pos[i * 3 + 2] += S[k + 2] * dt;
       const a = Math.sin(Math.PI * f) * (0.75 + 0.25 * Math.sin(t * 9 + k));
-      col[i * 4] = c.r * 2.4; col[i * 4 + 1] = c.g * 2.4; col[i * 4 + 2] = c.b * 2.4; col[i * 4 + 3] = a;
+      col[i * 4] = c.r * 4.5; col[i * 4 + 1] = c.g * 4.5; col[i * 4 + 2] = c.b * 4.5; col[i * 4 + 3] = a;
       size[i] = S[k + 7] * (1 - 0.5 * f);
     }
     geo.setDrawRange(0, n);
@@ -285,6 +285,17 @@ export function applyEquipped(char, vm, base = DEFAULT_OUTFIT) {
 }
 let RTW = null;
 const warmRT = () => RTW || (RTW = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true }));
+// Kompilasi shader obj di latar (KHR_parallel_shader_compile) dengan parameter program jalur render-ke-target (sama dengan
+// post-processing & gambar pratinjau): lobi tidak tersendat saat pratinjau/gambar kecil skin baru dibuat. → Promise
+export function compileSkinAsync(obj, camera, scene) {
+  const R = R0;
+  if (!R || !R.compileAsync) return Promise.resolve();
+  const prev = R.getRenderTarget();
+  R.setRenderTarget(warmRT());
+  let p;
+  try { p = R.compileAsync(obj, camera, scene); } catch (e) { p = Promise.resolve(); } finally { R.setRenderTarget(prev); }
+  return p.catch(() => {});
+}
 
 // ---------- Pratinjau ----------
 // Objek 3D siap pakai untuk lobi/toko. previewCharacter: { root, rig, char } berpose diam; previewWeapon: grup senjata.
@@ -342,7 +353,7 @@ function shoot(obj, S, frame) {
   return CV;
 }
 const TM = new Uint8Array(256).map((_, v) => Math.round(255 * Math.pow(Math.min(1, (v / 255) / (1 + 0.15 * v / 255)), 1 / 2.2)));
-function renderThumb(id, size) {
+async function renderThumb(id, size) {
   const s = BY.get(id);
   if (!s || !R0) return '';
   const S = size * 2;
@@ -358,6 +369,8 @@ function renderThumb(id, size) {
   } else {
     const gun = previewWeapon('ar', id);
     if (!gun) return '';
+    thumbScene();
+    await compileSkinAsync(gun, TCAM, TS); // program shader skin dikompilasi di latar dulu (frame lobi tidak tertahan)
     const hold = new THREE.Group();
     hold.add(gun);
     hold.rotation.set(0.42, 0, 0); // laras naik: komposisi diagonal mengisi bingkai persegi
@@ -382,10 +395,10 @@ export function skinThumb(id, size = 256) {
   const key = id + '@' + size;
   if (THUMBS.has(key)) return Promise.resolve(THUMBS.get(key));
   // satu per satu dengan jeda (tidak menahan frame); gagal → '' dan boleh dicoba lagi nanti
-  const p = chain.then(() => new Promise((res) => setTimeout(() => {
+  const p = chain.then(() => new Promise((res) => setTimeout(async () => {
     if (THUMBS.has(key)) { res(THUMBS.get(key)); return; }
     let url = '';
-    try { url = renderThumb(id, size); } catch (e) { console.warn('Pratinjau skin gagal:', id, e.message); }
+    try { url = await renderThumb(id, size); } catch (e) { console.warn('Pratinjau skin gagal:', id, e.message); }
     if (url) THUMBS.set(key, url);
     res(url);
   }, 12)));
