@@ -360,7 +360,8 @@ function makeCableMat(U) {
 }
 
 // ---------------------------------------------------------------- pembuat utama
-export function createEnvProps(W, A, col) {
+// homes (opsional, map/interiors.js planHomes): pintu gedung — benda yang menghalangi jalan masuk tidak dipasang
+export function createEnvProps(W, A, col, homes) {
   const stub = { obstacles: [], update() {}, group: null, stats: {} };
   if (!A || !A.data || !A.man || !A.gltf) return stub;
   const { scene, renderer, camera, inArea } = W, R = W.real;
@@ -403,6 +404,28 @@ export function createEnvProps(W, A, col) {
     col.near(x, y, r + 0.5, (c) => { if (hit) return; for (const ti of c.t) { const t = col.trees[ti]; if (Math.hypot(t.x - x, t.y - y) < r + t.r) { hit = true; return; } } });
     return hit;
   };
+  // titik 0,8 m di luar tiap pintu gedung (sel 8 m): benda lingkungan tidak boleh menutup jalan masuk
+  const doorG = new Map(), DC = 8, dk = (x, y) => Math.floor(x / DC) * 100003 + Math.floor(y / DC);
+  if (homes) for (const H of homes.values()) for (const d of H.doors || []) {
+    const e = d.e, s0 = (d.s0 + d.s1) / 2, x = e.a[0] + e.ux * s0 - e.nx * 0.8, y = e.a[1] + e.uy * s0 - e.ny * 0.8, k = dk(x, y);
+    (doorG.get(k) || doorG.set(k, []).get(k)).push(x, y);
+  }
+  const nearDoor = (x, y, r) => {
+    for (let cx = Math.floor((x - r) / DC); cx <= Math.floor((x + r) / DC); cx++) for (let cy = Math.floor((y - r) / DC); cy <= Math.floor((y + r) / DC); cy++) {
+      const L = doorG.get(cx * 100003 + cy);
+      if (L) for (let i = 0; i < L.length; i += 2) if (Math.hypot(L[i] - x, L[i + 1] - y) < r) return true;
+    }
+    return false;
+  };
+  // tiang antena atap: duduk di lantai atap menara (map/world.js D.roofs → col.roofAt), mundur ke tengah atap bila di
+  // parapet atau terhalang penthouse/AC
+  if (col.roofAt) for (const o of inst) {
+    if (o.z < 0.5) continue;
+    for (let k = 0; k < 14; k++) {
+      const x = o.x - o.fx * k * 1.5, y = o.y - o.fy * k * 1.5, z = col.roofAt(x, y, 1e4);
+      if (z > 0.5 && !col.blocked(x, y, 1.4, z)) { o.x = x; o.y = y; o.z = z; break; }
+    }
+  }
   let dropped = 0;
   for (const o of inst) {
     if (o.top || o.z > 0.5) continue;
@@ -411,8 +434,8 @@ export function createEnvProps(W, A, col) {
     let bad = false;
     for (const c of C) {
       if (c.z0 > 1.9) continue;
-      if (c.c) { const [x, y] = P(o, c.c[0], c.c[1]); if (nearTree(x, y, c.c[2] + 0.05) || (o.k !== 'sutet' && col.inBuilding(x, y) >= 0)) bad = true; }
-      else if (c.b) { const [x, y] = P(o, c.b[0], c.b[1]), r = Math.min(c.b[2], c.b[3]) / 2; if (nearTree(x, y, r) || (o.k !== 'sutet' && col.inBuilding(x, y) >= 0)) bad = true; }
+      if (c.c) { const [x, y] = P(o, c.c[0], c.c[1]); if (nearTree(x, y, c.c[2] + 0.05) || (o.k !== 'sutet' && col.inBuilding(x, y) >= 0) || nearDoor(x, y, c.c[2] + 0.7)) bad = true; }
+      else if (c.b) { const [x, y] = P(o, c.b[0], c.b[1]), r = Math.min(c.b[2], c.b[3]) / 2; if (nearTree(x, y, r) || (o.k !== 'sutet' && col.inBuilding(x, y) >= 0) || nearDoor(x, y, Math.max(c.b[2], c.b[3]) / 2 + 0.7)) bad = true; }
       if (bad) break;
     }
     if (bad) { o.ok = false; dropped++; }
@@ -614,7 +637,7 @@ export function createEnvProps(W, A, col) {
   };
   const GALV = [0.42, 0.44, 0.46], PB_GALV = [255, 115, 200, 0], ZINC = [0.62, 0.64, 0.66], PB_ZINC = [255, 110, 170, 0];
   const roadNear = (x, y, pad) => { let hit = false; col.near(x, y, 14, (c) => { if (hit) return; for (const si of c.s) { const s = col.segs[si], dx = s.bx - s.ax, dy = s.by - s.ay, L = dx * dx + dy * dy, t = L > 0 ? Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / L)) : 0; if (Math.hypot(x - s.ax - dx * t, y - s.ay - dy * t) < s.w / 2 + pad) { hit = true; return; } } }); return hit; };
-  const freeAt = (x, y) => inArea(x, y) && !roadNear(x, y, 0.4) && col.inBuilding(x, y) < 0 && !col.waterAt(x, y);
+  const freeAt = (x, y) => inArea(x, y) && !roadNear(x, y, 0.4) && col.inBuilding(x, y) < 0 && !col.waterAt(x, y) && !nearDoor(x, y, 1.6);
   let fenceM = 0, hoardM = 0;
   (D.fences || []).forEach((F) => {
     const p = F.p, n = p.length / 2, H = F.h * M, wire = !!F.wire, gate = F.gate;

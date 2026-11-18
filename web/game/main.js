@@ -129,7 +129,7 @@ function start(D, realAssets, envAssets) {
   // ---------- Sistem ----------
   const homes = planHomes(D); // rumah yang bisa dimasuki (lantai dasar): pintu, sekat, perabot
   const col = createCollider(D, inArea, homes);
-  const envProps = createEnvProps(W, envAssets, col); // menara SUTET/BTS, lampu jalan, tiang + kabel, halte, gerbang, reklame, dst. (map/envprops.js)
+  const envProps = createEnvProps(W, envAssets, col, homes); // menara SUTET/BTS, lampu jalan, tiang + kabel, halte, gerbang, reklame, dst. (map/envprops.js)
   col.addObstacles(envProps.obstacles); // sebelum kendaraan diparkir & bot bernavigasi (sel navigasi di-cache)
   const interiors = createInteriors(scene, W, homes);
   const mapImg = makeMapImage(D, bb);
