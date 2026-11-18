@@ -238,7 +238,7 @@ function buildGraph(D, col) {
       if (arr) for (const i of arr) {
         const d = Math.hypot(X[i] - px, Y[i] - py);
         if (d >= 45 || srcBuf.length >= 24) continue;
-        const ok = vis && d < 32 && (nv++ < 8) && vis(X[i], Y[i]); // terlihat lurus: tanpa denda (uji dibatasi 8 simpul)
+        const ok = vis && d < 30 && (nv++ < 5) && vis(X[i], Y[i]); // terlihat lurus: tanpa denda (uji dibatasi 5 simpul)
         srcBuf.push(i, ok ? d : d * 1.3 + 8);
       }
     }
@@ -669,6 +669,11 @@ export function createBots(ctx, n = 50) {
     a.nav = { kind: 'local', pts, i: 0, nc: 0, then: N.then || null };
     return true;
   }
+  // dari (x, y) terlihat lurus sampai 4 m melewati titik p ke arah titik berikutnya q? (uji sudut saat menerima titik antara)
+  function aheadOk(x, y, p, q, lv) {
+    const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, k = Math.min(4, L) / L;
+    return nav.walkable(x, y, p[0] + dx * k, p[1] + dy * k, lv);
+  }
   function navTarget(b) { // titik yang dituju frame ini, null = sudah sampai (rute antar lantai: lanjut ke potongan berikutnya)
     let p = navStep(b);
     for (let k = 0; !p && !b.ai.nav && b.ai.route && k < 6; k++) { nextLeg(b); p = navStep(b); }
@@ -699,8 +704,9 @@ export function createBots(ctx, n = 50) {
       const sx = G.X[j] - G.X[i], sy = G.Y[j] - G.Y[i], sl = Math.hypot(sx, sy) || 1;
       const lw = Math.max(0, G.W[i] / 2 - 0.8), lane = clamp(a.lane, -lw, lw); // lajur tetap di badan jalan (gang sempit: tengah)
       const tx = G.X[i] - sy / sl * lane, ty = G.Y[i] + sx / sl * lane, dn = Math.hypot(tx - x, ty - y);
-      // simpul dianggap lewat ≤ 3 m hanya kalau simpul berikutnya terlihat lurus dari sini (tidak memotong sudut gedung)
-      if (dn < 1.2 || (dn < 3 && (N.pi + 1 >= N.path.length || (N.nc++ < 4 && nav.walkable(x, y, G.X[j], G.Y[j]))))) {
+      // simpul dianggap lewat ≤ 3 m hanya kalau ruas berikutnya terlihat lurus dari sini (tidak memotong sudut gedung):
+      // diuji sampai 6 m ke arah simpul berikutnya — cukup untuk sudut, murah walau ruasnya panjang
+      if (dn < 1.2 || (dn < 3 && (N.pi + 1 >= N.path.length || (N.nc++ < 4 && nav.walkable(x, y, G.X[i] + sx / sl * Math.min(6, sl), G.Y[i] + sy / sl * Math.min(6, sl)))))) {
         N.pi++; N.nc = 0;
         if (N.pi >= N.path.length) goLevel(b, a.goal[0], a.goal[1], a.spd, a.lv || 0); // ujung jaringan jalan → ke titik tujuan persis
       }
@@ -711,7 +717,7 @@ export function createBots(ctx, n = 50) {
       const last = N.i >= N.pts.length - 1, p = N.pts[Math.min(N.i, N.pts.length - 1)], d = Math.hypot(p[0] - x, p[1] - y);
       // titik antara dianggap lewat ≤ 1,1 m hanya kalau titik berikutnya terlihat lurus dari posisi sekarang — kalau tidak,
       // bot memotong sudut dan tersangkut di ujung perabot / kusen pintu
-      if (last ? d < 0.6 : d < 0.45 || (d < 1.1 && N.nc++ < 4 && nav.walkable(x, y, N.pts[N.i + 1][0], N.pts[N.i + 1][1], a.lv || 0))) {
+      if (last ? d < 0.6 : d < 0.45 || (d < 1.1 && N.nc++ < 4 && aheadOk(x, y, p, N.pts[N.i + 1], a.lv || 0))) {
         if (last) { a.nav = N.then || null; return N.then ? navStep(b) : null; } // jalan memutar selesai → lanjut di jalan raya
         N.i++; N.nc = 0;
       }
