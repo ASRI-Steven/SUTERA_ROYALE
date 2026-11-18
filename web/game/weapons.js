@@ -1228,7 +1228,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       L: [kP(0, OFF_L), kP(0.04, OFF_L), kP(0.17, ARM_P, 1), kP(0.5, vAdd(ARM_P, 0.004, 0.006, 0)), kP(0.82, ARM_P, 1), kP(0.95, OFF_L)],
       Lf: [kP(0, FOFF_L), kP(0.17, ARM_F), kP(0.82, ARM_F), kP(0.95, FOFF_L)],
       Lt: [kP(0, DOWN), kP(0.17, DOWN), kP(0.5, [0.25, -1, 0.3]), kP(0.82, DOWN), kP(0.95, DOWN)],
-      R: [kP(0, OFF_R), kP(0.08, OFF_R), kP(0.2, scr(0.0, -0.1, 0.4)), kP(0.8, scr(-0.05, -0.12, 0.4)), kP(0.86, scr(-0.04, -0.2, 0.4)), kP(0.96, OFF_R)],
+      R: [kP(0, OFF_R), kP(0.08, OFF_R), kP(0.2, scr(0.0, -0.1, 0.4)), kP(0.8, scr(-0.5, -0.6, 0.38)), kP(0.86, scr(-0.4, -0.72, 0.38)), kP(0.96, scr(0.1, -1.9, 0.36))], // ujung perban ditekan di dekat siku, lalu turun
       Rf: [kP(0, FOFF_R), kP(0.2, FR), kP(0.86, FR), kP(0.96, FOFF_R)],
       wrap: [0.21, 0.78], tuck: [0.79, 0.85],
     },
@@ -1304,14 +1304,15 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       lid.rotation.x = -1.95 * backOut(seg(u, H.lid[0], H.lid[1])) * (1 - ease(seg(u, 0.44, 0.5)));
       syringe.visible = u > H.syr[0] && u < H.syr[1];
       const i = H.inj, inK = ease(seg(u, i[0], i[1])) * (1 - ease(seg(u, i[2], i[3]))), press = ease(seg(u, i[1] + 0.01, i[2]));
-      if (u > i[0] - 0.04 && u < i[3] + 0.02) { // ujung jarum ke sisi dalam lengan kiri (menghadap atas)
-        const k = ease(seg(u, i[0] - 0.04, i[0])) * (1 - ease(seg(u, i[3], i[3] + 0.02)));
-        endP.copy(wristL).addScaledVector(axisL, 0.06).addScaledVector(n2, 0.04 + 0.04 * (1 - inK));
-        hp2.lerp(tmp.copy(endP).addScaledVector(tg.set(0.25, 0.95, 0.15).normalize(), 0.085), k); // genggaman di belakang tabung suntikan
-      }
       if (u > H.flick[0] && u < H.flick[1]) hp2.y += 0.006 * Math.sin(seg(u, H.flick[0], H.flick[1]) * Math.PI * 4); // dijentik
       curve(u, H.Rt, tg);
       aimArm2(hArmR, AX_R, hp2, fd2, NEEDLE, tg);
+      if (u > i[0] - 0.04 && u < i[3] + 0.02) { // ujung jarum tepat di sisi atas lengan bawah kiri: tangan digeser dari arah jarum sebenarnya
+        const k = ease(seg(u, i[0] - 0.04, i[0])) * (1 - ease(seg(u, i[3], i[3] + 0.02)));
+        endP.copy(wristL).addScaledVector(axisL, 0.07).addScaledVector(n2, 0.043 + 0.05 * (1 - inK)); // titik tusuk (masuk ±1 cm saat inK = 1)
+        tmp.set(0, -0.112, 0).applyQuaternion(hArmR.quaternion); // ujung jarum relatif genggaman (suntikan ×1,45)
+        hArmR.position.lerp(tmp2.copy(endP).sub(tmp), k);
+      }
       syringe.position.set(0, 0, 0); syringe.rotation.set(0, 0, 0);
       plunger.position.y = -0.042 * press;
       syringe.userData.liquid.scale.y = Math.max(0.02, 1 - press);
