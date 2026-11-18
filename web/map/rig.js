@@ -10,7 +10,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { CHAR_SKIN_GLSL } from '../game/skinfx.js';
+import { CHAR_SKIN_GLSL, SF_U } from '../game/skinfx.js';
 
 const PI = Math.PI;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -636,6 +636,7 @@ function bodyMaterial3(map, normalMap, orm) {
   const m = new THREE.MeshStandardMaterial({ map, normalMap, roughnessMap: orm, aoMap: orm, roughness: 1, metalness: 0, envMapIntensity: 0.4, aoMapIntensity: 0.9 });
   m.normalScale.set(1, -1); // uv gaya glTF (tekstur tanpa flipY) + tangen dari turunan layar
   m.onBeforeCompile = (sh) => {
+    sh.uniforms.uSfT = SF_U.uSfT; // waktu animasi skin (game/skinfx.js tickSkins)
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aSlot;\nvarying vec3 vTint;\nflat varying vec3 vFx;\nvarying vec3 vRestP;\nvarying vec3 vRestN;')
       .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n\tvTint = texelFetch( boneTexture, ivec2( ' + PAL0 + ' + int( aSlot ), int( aRow ) ), 0 ).rgb;\n'
@@ -644,7 +645,7 @@ function bodyMaterial3(map, normalMap, orm) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vTint;\nflat varying vec3 vFx;\nvarying vec3 vRestP;\nvarying vec3 vRestN;\n' + CHAR_SKIN_GLSL)
       .replace('#include <map_fragment>', '#include <map_fragment>\n\tvec3 sfTint = vTint, sfEmis = vec3( 0.0 ); float sfMetal = 0.0, sfRough = -1.0;\n'
-        + '\tif ( vFx.x > 0.5 ) sfChar( int( vFx.x + 0.5 ), int( vFx.y + 0.5 ), vRestP, normalize( vRestN ), vFx.z, sfTint, sfMetal, sfRough, sfEmis );\n\tdiffuseColor.rgb *= sfTint;')
+        + '\tif ( vFx.x > 0.5 ) sfChar( int( vFx.x + 0.5 ), int( vFx.y + 0.5 ), vRestP, normalize( vRestN ), vFx.z, abs( dot( normalize( vNormal ), normalize( vViewPosition ) ) ), sfTint, sfMetal, sfRough, sfEmis );\n\tdiffuseColor.rgb *= sfTint;')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n\tif ( sfRough >= 0.0 ) roughnessFactor = sfRough;')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n\tmetalnessFactor = max( metalnessFactor, sfMetal );')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += sfEmis;')

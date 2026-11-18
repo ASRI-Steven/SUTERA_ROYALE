@@ -27,6 +27,7 @@ import { createPostFX, TIERS } from './postfx.js';
 import { createGovernor } from './governor.js';
 import { matchHooks } from './hooks.js';
 import { initSkins } from './skins.js';
+import { createKillFx } from './killfx.js';
 import { createLobby } from './lobby.js';
 import { profile, partySlots } from './profile.js';
 
@@ -174,6 +175,7 @@ function start(D, realAssets, envAssets) {
     g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(cv);
   }
+  const kills = createKillFx({ scene, hud }); // kill pemain: spanduk beruntun, denting & partikel bertema skin senjata (game/killfx.js)
 
   // ---------- Pertempuran ----------
   const BLAST = { def: { short: 'Ledakan' } }, NADE_HIT = { def: { short: 'Granat' } };
@@ -215,7 +217,7 @@ function start(D, realAssets, envAssets) {
   function fire(shooter, origin, dir, w, spreadDeg, tracerFrom) {
     const def = w.def, n = def.pellets || 1, dist = shooter.isPlayer ? 0 : camera.position.distanceTo(origin);
     const muffled = !shooter.isPlayer && dist > 3 && col.inBuilding(origin.x, -origin.z) >= 0 && col.inBuilding(camera.position.x, -camera.position.z) < 0; // dari dalam gedung
-    audio.shot(def.sound, dist, shooter.isPlayer ? 0 : panOf(origin), muffled);
+    audio.shot(def.sound, dist, shooter.isPlayer ? 0 : panOf(origin), muffled, shooter.isPlayer); // pemain: suara skin senjata
     shooter.lastShot = now;
     if (!shooter.isPlayer) { gunTip.copy(origin).addScaledVector(dir, 0.75); gunTip.y -= 0.12; if (dist < 300) fx.muzzle(gunTip); }
     else if (shooter.state === 'drive' && tracerFrom && !player.st.vfp) fx.muzzle(tracerFrom); // menembak dari kendaraan, kamera belakang
@@ -226,7 +228,7 @@ function start(D, realAssets, envAssets) {
       const vh = vehicles.ray(origin, d, hit ? hit.t : tw, shooter);
       end.copy(origin).addScaledVector(d, vh ? vh.t : hit ? hit.t : tw);
       if (loot.cans.length) shootCans(origin, d, vh ? vh.t : hit ? hit.t : tw, shooter);
-      if (i % 3 === 0) fx.tracer(tracerFrom || (shooter.isPlayer ? origin : gunTip), end, shooter.isPlayer ? 1 : 0.85);
+      if (i % 3 === 0) fx.tracer(tracerFrom || (shooter.isPlayer ? origin : gunTip), end, shooter.isPlayer ? 1 : 0.85, shooter.isPlayer);
       if (vh) { // kendaraan: pengendara/penumpang motor & jip terbuka kena langsung, kaca mobil kadang tembus ke yang duduk di dekatnya
         const dm = def.dmg * falloff(def, vh.t), drv = vh.who;
         if (vh.part === 'rider' && drv) { const head = vh.h > (drv.aimY || 1.4) + 0.24; damage(drv, dm * (head ? 2.1 : 1), head ? 'head' : 'body', shooter, w); fx.burst(end, 'hit', 7); }
@@ -330,7 +332,7 @@ function start(D, realAssets, envAssets) {
     t.reviveT = 0; t.reviver = null; t.revBot = null; t.reviving = null;
     t.prone = true; t.crouch = false; t.reloadEnd = 0; t.healEnd = 0;
     downed.push(t);
-    if (attacker && attacker !== t) { attacker.knocks = (attacker.knocks || 0) + 1; if (attacker.isPlayer) { stat.knocks++; credit(t, w, part); audio.kill(); } }
+    if (attacker && attacker !== t) { attacker.knocks = (attacker.knocks || 0) + 1; if (attacker.isPlayer) { stat.knocks++; credit(t, w, part); kills.knock(t, part === 'head'); } }
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part, true);
     if (t.isPlayer) { player.onDown(); hud.message('Kamu tumbang', 'Merangkak ke rekan · mereka bisa memulihkanmu', 'warn'); audio.beep(true); }
     else bots.downed(t);
@@ -393,7 +395,7 @@ function start(D, realAssets, envAssets) {
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
     const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, vestHp: t.vestHp, helmetHp: t.helmetHp, bag: t.bag | 0, fuel: t.fuel | 0 };
     if (c.bag || c.fuel || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
-    if (attacker && attacker.isPlayer) audio.kill(); // spanduk kill pemain ditampilkan hud.feed
+    if (attacker && attacker.isPlayer) kills.kill(t, part === 'head'); // spanduk beruntun, denting & efek kill bertema skin (game/killfx.js)
     // regu: anggota terakhir yang berdiri jatuh → yang tumbang ikut tersingkir; regu habis → peringkat regu
     const sq = t.sq;
     refreshSquad(sq);
@@ -401,27 +403,52 @@ function start(D, realAssets, envAssets) {
       for (const m of sq.members) if (m.alive && m.down) kill(m, m.downBy, m.downW, m.downPart, null);
       return; // pemanggilan di atas sudah mengurus akhir regu
     }
+    if (t.isPlayer) me.diedAt = now;
     if (sq.aliveN === 0 && !sq.rank) {
       sq.rank = squadsLeft;
       squadsLeft--;
-      if (sq === mySquad) { deathRank = sq.rank; finish(false); return; }
-      if (squadsLeft <= 1 && mySquad.aliveN > 0) { finish(true); return; }
+      // regu pemain habis: tinggal satu regu → pertandingan selesai; selain itu kartu "Tersingkir" + menonton
+      if (sq === mySquad) { deathRank = sq.rank; if (squadsLeft <= 1) finish(false); else eliminated(attacker === t ? null : attacker, w, part); return; }
+      if (squadsLeft <= 1) { finish(mySquad.aliveN > 0); return; } // pemain sudah tersingkir & sedang menonton → juara sudah ada
     }
-    if (t.isPlayer) me.diedAt = now;
     if (t.isPlayer && !DOWNS) { deathRank = squadsLeft; finish(false); return; } // pertandingan pemain selesai: peringkat = jumlah regu yang masih bertahan
     if (t.isPlayer && phase === 'play') { // pemain tersingkir tetapi rekan masih hidup → menonton rekan
       player.onDead();
       specNext(1);
       hud.message('Kamu tersingkir', 'Menonton rekan · Spasi / klik ganti rekan', 'warn');
-    } else if (spec === t && phase === 'play') specNext(1);
+    } else if (spec === t && phase === 'play') specTo(specAll && attacker !== t ? attacker : null); // yang ditonton tersingkir → ikuti penyingkirnya
   }
-  // ---------- Menonton rekan (pemain sudah tersingkir) ----------
-  let spec = null;
+  // ---------- Menonton (pemain sudah tersingkir) ----------
+  // Rekan masih hidup → menonton rekan. Regu pemain habis → kartu "Tersingkir" (ringkasan & hadiah langsung dihitung),
+  // lalu menonton siapa saja yang masih hidup, mulai dari yang menyingkirkan; kalau yang ditonton tersingkir, kamera pindah
+  // ke penyingkirnya. Selesai saat pemain kembali ke lobi (kartu / menu Esc) atau pertandingan berakhir.
+  let spec = null, specAll = false;
   function specNext(dir) {
-    const L = mySquad.members, n = L.length, at = spec ? L.indexOf(spec) : 0;
+    const L = specAll ? agents : mySquad.members, n = L.length, at = spec ? L.indexOf(spec) : 0;
     spec = null;
-    for (let k = 1; k <= n; k++) { const m = L[((at + dir * k) % n + n) % n]; if (m.alive && !m.isPlayer) { spec = m; break; } }
+    // yang masih di pesawat (posisinya belum ikut pesawat) hanya dipilih kalau tidak ada yang lain
+    for (let pass = 0; pass < 2 && !spec; pass++) for (let k = 1; k <= n; k++) { const m = L[((at + dir * k) % n + n) % n]; if (m.alive && !m.isPlayer && (pass || m.state !== 'plane')) { spec = m; break; } }
     player.spectate(spec);
+  }
+  function specTo(a) { if (a && a.alive && !a.isPlayer && a.state !== 'plane') { spec = a; player.spectate(a); } else specNext(1); }
+  const CAUSE = { zone: 'Terjebak di luar zona', drown: 'Tenggelam', crash: 'Kecelakaan kendaraan', bleed: 'Kehabisan darah', blast: 'Terkena ledakan' };
+  function eliminated(killer, w, part) {
+    specAll = true;
+    endAt = now;
+    summary(false); // hadiah & misi dihitung sekarang (menonton tidak mengubah hasil)
+    player.onDead();
+    Object.assign(player.st, { firing: false, ads: false });
+    specTo(killer && !killer.isPlayer ? killer : null);
+    hud.death({ rank: deathRank, total: squads.length, by: killer && killer !== me ? killer.name : '', weapon: w && w.def ? w.def.name || w.def.short || '' : '', cause: CAUSE[part] || '',
+      kills: me.kills, dmg: me.dmg, sec: (me.diedAt || now) - startedAt }, () => { hud.death(null); ctx.lock(); }, leaveMatch);
+    audio.beep(true);
+    document.exitPointerLock(); // tombol kartu bisa diklik (tidak dianggap jeda, lihat pointerlockchange)
+  }
+  function leaveMatch() { hud.death(null); finish(false, true); }
+  // baris kecil di bawah nama yang ditonton: regu, kill, senjata, keadaan
+  function specSub(a) {
+    const w = a.cur >= 0 && a.weapons[a.cur], def = w && WEAPONS[w.kind];
+    return (a.team === me.team ? 'Rekan' : 'Regu ' + (a.team + 1)) + ' · ' + a.kills + ' kill' + (def ? ' · ' + def.short : '') + (a.down ? ' · tumbang' : a.state === 'drive' ? ' · berkendara' : a.state === 'fall' || a.state === 'chute' ? ' · terjun' : a.state === 'plane' ? ' · di pesawat' : '');
   }
   // jarak ke benda pertama di sinar (gedung, orang, kendaraan selain milik penembak): titik di bawah bidikan
   function probe(shooter, o, d, maxT) {
@@ -655,6 +682,7 @@ function start(D, realAssets, envAssets) {
     onStart: () => { audio.unlockAudio(); startMatch(); ctx.lock(); },
   });
   $('resumeBtn').addEventListener('click', () => { ctx.lock(); });
+  $('lobbyBtn').addEventListener('click', () => { if (specAll && phase === 'play') { pause.hidden = true; paused = false; leaveMatch(); } });
   document.addEventListener('pointerlockchange', () => {
     const locked = ctx.locked();
     if (locked) player.st.wantLock = false;
@@ -663,8 +691,9 @@ function start(D, realAssets, envAssets) {
     const escClose = !locked && performance.now() - (player.st.escAt || -1e9) < 1500;
     if (escClose) player.st.wantLock = true;
     if (phase === 'play') {
-      paused = !locked && big.el.hidden && !player.st.lootUI && !escClose; // panel loot terbuka: mouse bebas, game tidak dijeda
+      paused = !locked && big.el.hidden && !player.st.lootUI && !escClose && !hud.deathOpen(); // panel loot / kartu tersingkir terbuka: mouse bebas, game tidak dijeda
       pause.hidden = !paused;
+      if (paused) { $('lobbyBtn').hidden = !specAll; $('resumeBtn').textContent = specAll ? 'Lanjut menonton' : 'Lanjut'; } // menonton: menu Esc bisa kembali ke lobi
       if (paused) { player.st.firing = false; player.st.ads = false; }
     }
   });
@@ -702,14 +731,12 @@ function start(D, realAssets, envAssets) {
     if (matchHooks.onStart) matchHooks.onStart({ diff });
     hud.message('SUTERA ROYALE', (mySquad.members.length > 1 ? 'Regu ' + mySquad.members.length + ' orang' : 'Solo') + ' · bot ' + DIFFICULTY[diff].label.toLowerCase() + ' · tekan F untuk terjun · M = peta');
   }
-  function finish(win) {
-    if (phase !== 'play') return;
-    phase = 'end';
-    border.hide();
-    endAt = now;
-    audio.engineLevel(0);
-    audio.windLevel(0);
-    // ringkasan pertandingan untuk lapisan meta (misi, koin): lihat game/hooks.js
+  // ringkasan pertandingan untuk lapisan meta (misi, koin): lihat game/hooks.js. Sekali per pertandingan — saat regu pemain
+  // tersingkir (lalu menonton) atau saat pertandingan selesai.
+  let summarySent = false;
+  function summary(win) {
+    if (summarySent) return;
+    summarySent = true;
     if (matchHooks.onEnd) matchHooks.onEnd({
       win, rank: win ? 1 : deathRank, total: squads.length, squadMode: true, squadSize: mySquad.members.length, players: BOTS + 1, diff,
       kills: me.kills, knocks: stat.knocks, assists: stat.assists, revives: stat.revives, headshots: stat.headshots, damage: Math.round(me.dmg),
@@ -717,13 +744,28 @@ function start(D, realAssets, envAssets) {
       lootCount: me.looted || 0, onFootM: Math.round(stat.onFootM), drivenM: Math.round(stat.drivenM), healsUsed: stat.healsUsed, roadKills: stat.roadKills, nadeKills: stat.nadeKills, weaponKills: { ...stat.weaponKills },
       squadKills: mySquad.members.reduce((n, m) => n + m.kills, 0), timesDowned: me.downN || 0, alive: me.alive,
     });
+  }
+  // quick = kembali ke lobi dari kartu tersingkir / menu Esc saat menonton (layar akhir langsung)
+  function finish(win, quick) {
+    if (phase !== 'play') return;
+    phase = 'end';
+    border.hide();
+    if (!summarySent) endAt = now;
+    audio.engineLevel(0);
+    audio.windLevel(0);
+    summary(win);
+    if (specAll && !quick) { // sedang menonton: umumkan juaranya dulu
+      const champ = agents.find((a) => a.alive && !a.isPlayer);
+      hud.message('Pertandingan selesai', champ ? 'Juara: regu ' + champ.name : '', '');
+    }
     setTimeout(() => {
+      hud.death(null);
       document.exitPointerLock();
       pause.hidden = true;
       big.close();
       lobby.showEnd(); // hasil, statistik, kemajuan misi & hadiah (ringkasan diterima lobi lewat matchHooks.onEnd di atas)
       hud.show(false);
-    }, win ? 1200 : 2400);
+    }, quick ? 0 : win ? 1200 : specAll ? 3200 : 2400);
   }
 
   // ---------- Loop ----------
@@ -825,6 +867,7 @@ function start(D, realAssets, envAssets) {
       grass.update(camera.position, t / 1000, me.state === 'ground' && me.alive ? me.pos : null);
       interiors.update(camera.position);
       fx.update(dt);
+      kills.update(dt);
       loot.update(now, camera.position);
       if (F.state === 'ground' && shadowC.distanceTo(F.pos) > 40 && !F.swim) refreshShadows(F.pos);
       else if (F.state === 'drive' && shadowC.distanceTo(F.pos) > 95) refreshShadows(F.pos, 300);
@@ -838,7 +881,7 @@ function start(D, realAssets, envAssets) {
         if (now - placeT > 0.5) { placeT = now; placeName = F.state === 'plane' ? '' : placeAt(F.pos.x, -F.pos.z); }
         const rv = me.reviving, rb = me.down && me.reviver && me.reviver.reviving === me ? me.reviver : null; // memulihkan rekan / sedang dipulihkan
         hud.update({
-          squads: squadsLeft, squad: squadRows(), spec: spec && !me.alive ? spec.name : '', specSlot: spec ? spec.slot : 0,
+          squads: squadsLeft, squad: squadRows(), spec: spec && !me.alive ? spec.name : '', specSlot: spec ? spec.slot : 0, specAll, specSub: spec && !me.alive ? specSub(spec) : '', specHp: spec ? (spec.down ? 0 : spec.hp) : 0,
           down: me.down && me.alive ? me.hp / DOWN_HP : -1, downLeft: me.down ? me.hp / Math.max(0.01, me.bleed) : 0,
           revive: rv ? rv.reviveT / REVIVE_T : rb ? me.reviveT / REVIVE_T : 0, reviveLeft: rv ? REVIVE_T - rv.reviveT : rb ? REVIVE_T - me.reviveT : 0, reviveName: rv ? rv.name : rb ? rb.name : '', reviveBy: !!rb,
           state: me.state, place: placeName, alive: aliveCount, kills: me.kills, hp: me.hp, vest: me.vest, helmet: me.helmet, vestPct: armorPct('vest', me.vest, me.vestHp), helmPct: armorPct('helmet', me.helmet, me.helmetHp), band: me.heals.band, kit: me.heals.kit, drink: me.heals.drink | 0, boost: me.boost || 0, bag: me.bag | 0, bagPct: bagWeight(me) / bagCap(me) * 100,
@@ -857,6 +900,7 @@ function start(D, realAssets, envAssets) {
       if (!big.el.hidden && t - hudT > 50) { big.draw(); hudT = t; }
     }
     const postOn = !!post && post.tier.post;
+    if (R) R.uPost.value = postOn ? 1 : 0; // daun/rumput: alfa = topeng AO hanya untuk post; tanpa post (Hemat) alfa harus utuh, kalau tidak kanvas tembus ke latar halaman (rumput tampak putih)
     const alt = Math.max(0, camera.position.y), under = camera.position.y < 0.06 && phase === 'play' && col.waterAt(camera.position.x, -camera.position.z);
     if (under) { // di bawah air: kabut hijau-toska yang makin gelap & pendek seiring kedalaman (pandang ±25 → 17 m), tanpa langit
       const k = Math.min(1, Math.max(0, -camera.position.y / 8));
