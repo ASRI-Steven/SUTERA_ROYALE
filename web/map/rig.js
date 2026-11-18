@@ -146,13 +146,29 @@ const GRIP = { pistol: [[0, -0.07, -0.03], [0.025, -0.085, -0.01]], smg: [[0, -0
 //      fire (impuls), hit (impuls), dead, freefall, chute, sit ('car' | 'bike' | null), steer (−1 kiri … 1 kanan),
 //      reload (0..1 kemajuan isi ulang, null = tidak), heal (bool), swap (impuls ganti senjata), prone (bool),
 //      gunKind ('pistol'|'smg'|'ar'|'shotgun'|'dmr', untuk posisi tangan), swim (bool: berenang),
-//      chuteDrive (saat payung: 1 = melaju/condong maju, −1 = mengerem/kaki diangkat siap mendarat) }
+//      chuteDrive (saat payung: 1 = melaju/condong maju, −1 = mengerem/kaki diangkat siap mendarat),
+//      healKind ('band' | 'kit' | 'drink', opsional — bawaan: membalut), throw (impuls melempar granat), nadeHold (bool: granat
+//      digenggam, lengan ditarik ke belakang) }
 // Saat duduk, root diletakkan setinggi jok − 0,93 (pinggul tepat di atas jok).
 // (pose dipanggil tiap frame untuk banyak karakter: tanpa closure/array/objek baru per panggilan)
 let _kdt = 0;
 const k = (r) => 1 - Math.exp(-_kdt * r);
-const RL_T = [0, 0.16, 0.32, 0.48, 0.64, 0.8, 0.94, 1]; // isi ulang: waktu kunci & [lengan atas x, z, lengan bawah x] (null = pose dasar)
-const RL_V = [null, [-0.42, 0.55, -1.95], [-0.05, 0.5, -1.7], [0.12, 0.2, -0.55], [-0.4, 0.55, -1.9], [-0.42, 0.55, -1.95], null, null];
+// isi ulang (IK tangan kiri): penyangga → lubang magasin (pegang) → magasin ditarik → kantong rompi → di bawah lubang →
+// masuk → tuas kokang → penyangga. Waktu kunci (0..1); titik dihitung di rl3Point (ruang senjata, kecuali kantong = dada)
+const RL3_T = [0, 0.12, 0.22, 0.38, 0.52, 0.6, 0.72, 0.86];
+const _ra = new THREE.Vector3(), _rb = new THREE.Vector3(), _rc = new THREE.Vector3();
+function rl3Point(i, G, pis, gun, out) {
+  const g0 = G[0], g1 = G[1], mz = pis ? g0[2] : (g0[2] + g1[2]) * 0.5 - 0.02, my = pis ? g0[1] - 0.07 : g0[1] - 0.03;
+  if (i === 3) return out.set(0.1, 0.08, 0.2); // kantong rompi kiri (ruang dada)
+  if (i === 0 || i === 7) out.set(g1[0], g1[1], g1[2]);
+  else if (i === 1 || i === 5) out.set(0.012, my, mz);
+  else if (i === 2) out.set(0.03, my - 0.15, mz);
+  else if (i === 4) out.set(0.025, my - 0.1, mz);
+  else out.set(pis ? 0.005 : 0.045, pis ? g0[1] + 0.13 : g0[1] + 0.11, pis ? g0[2] + 0.02 : g0[2] + 0.08); // tuas kokang / slide
+  return out.applyQuaternion(gun.quaternion).add(gun.position);
+}
+// obat & lempar (ruang dada; +X = kiri karakter, +Z = depan): target tangan
+const _ht = new THREE.Vector3(), _hu = new THREE.Vector3();
 export class Rig {
   constructor() {
     const b = this.b = makeBones();
@@ -162,7 +178,7 @@ export class Rig {
     this.chain = Object.values(b); // induk selalu lebih dulu dari anaknya (urutan makeBones)
     this.phase = Math.random() * PI * 2;
     this.t = Math.random() * 10;
-    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, heal: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0 };
+    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, rlu: 0, heal: 0, ht: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0, thr: 0, hold: 0 };
     this.cphase = 0;
   }
   pose(s, dt) {
@@ -259,37 +275,40 @@ export class Rig {
     }
     b.gun.position.set(lerp(-0.13, -0.11, aim), lerp(0.02, 0.27, aim), lerp(0.26, 0.22, aim) - 0.05 * m.fire);
     b.gun.rotation.set(lerp(0.55, 0, aim) * (1 - m.chute) - look * 0.5 + (1 - aim) * 0.12 * walkW * Math.sin(2 * ph), 0, 0);
-    // ----- isi ulang: tangan kiri ke magasin → cabut → ambil yang baru di rompi → pasang → kembali ke pelindung tangan
+    // ----- isi ulang: senjata dimiringkan & sedikit diangkat ke depan dada; tangan kiri mengikuti jalur IK (lihat bawah)
     const rl = s.reload == null || s.reload < 0 ? -1 : Math.min(1, s.reload);
-    m.rl += ((rl >= 0 ? 1 : 0) - m.rl) * k(rl >= 0 ? 16 : 10);
-    if (m.rl > 0.01 && rl >= 0) {
-      const w = m.rl * arm * (1 - m.dead) * (1 - m.chute) * (1 - m.fall), b0 = b.armL.rotation.x, b1 = b.armL.rotation.z, b2 = b.foreL.rotation.x;
-      let j = 0;
-      while (j < RL_T.length - 2 && rl > RL_T[j + 1]) j++;
-      const t0 = RL_T[j], t1 = RL_T[j + 1], a0 = RL_V[j], a1 = RL_V[j + 1], u = clamp((rl - t0) / Math.max(1e-3, t1 - t0), 0, 1), e = u * u * (3 - 2 * u);
-      b.armL.rotation.x = lerp(b0, lerp(a0 ? a0[0] : b0, a1 ? a1[0] : b0, e), w);
-      b.armL.rotation.z = lerp(b1, lerp(a0 ? a0[1] : b1, a1 ? a1[1] : b1, e), w);
-      b.foreL.rotation.x = lerp(b2, lerp(a0 ? a0[2] : b2, a1 ? a1[2] : b2, e), w);
-      const bell = Math.sin(Math.PI * clamp((rl - 0.06) / 0.86, 0, 1)) * w; // senjata dimiringkan & diturunkan selama isi ulang
-      b.gun.rotation.z += 0.75 * bell;
-      b.gun.rotation.x += 0.38 * bell;
-      b.gun.position.y -= 0.05 * bell;
-      b.armR.rotation.x += 0.22 * bell;
-      b.head.rotation.x += 0.3 * bell;
-      b.chest.rotation.x += 0.08 * bell;
+    m.rl += ((rl >= 0 ? 1 : 0) - m.rl) * k(rl >= 0 ? 14 : 9);
+    if (rl >= 0) m.rlu = rl;
+    if (m.rl > 0.01) {
+      const w = m.rl * arm * (1 - m.dead) * (1 - m.chute) * (1 - m.fall), u = m.rlu;
+      const bell = Math.sin(Math.PI * clamp((u - 0.02) / 0.9, 0, 1)) * w;
+      b.gun.rotation.z += 0.55 * bell;
+      b.gun.rotation.x += 0.22 * bell;
+      b.gun.position.x -= 0.03 * bell;
+      b.gun.position.y += 0.035 * bell;
+      b.head.rotation.x += 0.3 * bell; // melihat ke senjata
+      b.chest.rotation.x += 0.06 * bell;
     }
-    // ----- mengobati: berlutut/jongkok, kedua tangan membalut di depan perut, kepala menunduk
+    // ----- mengobati: senjata disandang ke punggung, kepala menunduk ke tangan; tangan lewat IK per jenis (lihat bawah)
     m.heal += ((s.heal ? 1 : 0) - m.heal) * k(8);
+    m.ht = s.heal ? m.ht + dt : 0;
     if (m.heal > 0.01) {
-      const w = m.heal * (1 - m.dead);
-      for (let ai = 0; ai < 2; ai++) {
-        const AR = arms[ai], ua = AR[0], fa = AR[1], side = AR[2];
-        ua.rotation.set(lerp(ua.rotation.x, -0.78 + Math.sin(this.t * 7 + side) * 0.13, w), lerp(ua.rotation.y, 0, w), lerp(ua.rotation.z, -0.3 * side, w));
-        fa.rotation.x = lerp(fa.rotation.x, -1.45 + Math.cos(this.t * 7 + side) * 0.16, w);
-      }
-      b.head.rotation.x += 0.45 * w;
+      const w = m.heal * (1 - m.dead), drink = s.healKind === 'drink';
+      const sip = drink ? clamp((m.ht - 1.2) / 0.4, 0, 1) * (1 - clamp((m.ht - 3.3) / 0.4, 0, 1)) : 0;
+      b.head.rotation.x += (0.45 * (1 - sip) - 0.35 * sip) * w; // minum: kepala mendongak
       b.gun.position.set(lerp(b.gun.position.x, 0.02, w), lerp(b.gun.position.y, 0.08, w), lerp(b.gun.position.z, -0.3, w));
       b.gun.rotation.set(lerp(b.gun.rotation.x, 1.25, w), lerp(b.gun.rotation.y, 0, w), lerp(b.gun.rotation.z, 0.75, w));
+    }
+    // ----- granat: digenggam (lengan kanan ditarik ke belakang) → dilempar (ayun ke depan-atas, lanjut turun), senjata di
+    // tangan kiri diturunkan; badan berputar mengikuti ayunan
+    if (s.throw) { m.thr = 1; s.throw = 0; }
+    m.thr = Math.max(0, m.thr - dt / 0.7);
+    m.hold += ((s.nadeHold && !s.dead ? 1 : 0) - m.hold) * k(10);
+    const thp = m.thr > 0 ? 1 - m.thr : 1, thw = Math.max(m.hold, m.thr > 0 ? Math.min(1, m.thr / 0.25) : 0) * (1 - m.dead) * (1 - m.swim);
+    if (thw > 0.01) {
+      b.gun.rotation.x += 0.75 * thw;
+      b.gun.position.y -= 0.08 * thw;
+      b.chest.rotation.y += lerp(0.4, -0.35, m.thr > 0 ? clamp(thp / 0.45, 0, 1) : 0) * thw;
     }
     // ----- ganti senjata: senjata turun lalu naik lagi
     if (s.swap) { m.swap = 1; s.swap = 0; }
@@ -354,19 +373,61 @@ export class Rig {
         fa.rotation.x = lerp(fa.rotation.x, lerp(-0.9, -0.25 - Math.max(0, Math.sin(ph)) * 0.6, mv), w);
       }
     }
-    // ----- tangan menempel di senjata (IK): kanan di pegangan, kiri di penyangga (saat isi ulang tangan kiri dianimasikan)
+    // ----- tangan menempel di senjata (IK): kanan di pegangan, kiri di penyangga; saat isi ulang tangan kiri mengikuti jalur
+    //       magasin (rl3Point), saat melempar tangan kanan mengikuti ayunan granat
     const ikW = arm * (1 - m.dead) * (1 - m.fall) * (1 - m.chute) * (1 - m.heal) * (1 - m.swap * 0.8) * (1 - m.swim);
     if (ikW > 0.01 && (!s.sit || s.armed)) { // duduk bersenjata (menembak dari kendaraan) juga
       const G = GRIP[s.gunKind] || GRIP.rifle;
       _qc.copy(b.hips.quaternion).multiply(b.spine.quaternion).multiply(b.chest.quaternion).invert(); // ruang karakter → ruang dada
       _t.set(G[0][0], G[0][1], G[0][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
+      if (thw > 0.01) { // ayunan granat (ruang dada): ditarik di belakang bahu → lepas di depan-atas → turun ke kiri
+        if (m.thr > 0) {
+          const a = clamp(thp / 0.3, 0, 1), c = clamp((thp - 0.3) / 0.35, 0, 1), e1 = a * a * (3 - 2 * a), e2 = c * c * (3 - 2 * c);
+          _ht.set(lerp(lerp(-0.28, -0.12, e1), 0.06, e2), lerp(lerp(0.33, 0.44, e1), -0.02, e2), lerp(lerp(-0.12, 0.45, e1), 0.33, e2));
+        } else _ht.set(-0.28, 0.33 + Math.sin(this.t * 3) * 0.01, -0.12);
+        _t.lerp(_ht, thw);
+      }
       _pole.set(-0.55, -1, -0.25).applyQuaternion(_qc);
       solveArm(b.armR, b.foreR, _t, _pole, ikW);
-      const leftW = ikW * (1 - m.rl);
-      if (leftW > 0.01) {
-        _t.set(G[1][0], G[1][1], G[1][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
-        _pole.set(0.45, -1, 0.05).applyQuaternion(_qc);
-        solveArm(b.armL, b.foreL, _t, _pole, leftW);
+      _t.set(G[1][0], G[1][1], G[1][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
+      if (m.rl > 0.01) { // jalur magasin: kunci RL3_T, antar kunci smoothstep
+        const u = m.rlu, pis = s.gunKind === 'pistol' || s.gunKind === 'revolver';
+        let j = 0;
+        while (j < RL3_T.length - 1 && u > RL3_T[j + 1]) j++;
+        if (j >= RL3_T.length - 1) rl3Point(7, G, pis, b.gun, _ra);
+        else {
+          const v = clamp((u - RL3_T[j]) / (RL3_T[j + 1] - RL3_T[j]), 0, 1), e = v * v * (3 - 2 * v);
+          rl3Point(j, G, pis, b.gun, _ra); rl3Point(j + 1, G, pis, b.gun, _rb);
+          _ra.lerp(_rb, e);
+        }
+        _t.lerp(_ra, m.rl);
+      }
+      _pole.set(0.45, -1, 0.05).applyQuaternion(_qc);
+      solveArm(b.armL, b.foreL, _t, _pole, ikW);
+    }
+    // ----- mengobati (IK, ruang dada): bawaan/perban = lengan kiri melintang di depan perut, tangan kanan memutarinya;
+    //       P3K = kotak di depan perut lalu suntik ke lengan kiri; minum = tangan kanan ke mulut, tangan kiri lepas
+    if (m.heal > 0.01 && m.dead < 0.99) {
+      const w = m.heal * (1 - m.dead), t = m.ht, kind = s.healKind;
+      _qc.copy(b.hips.quaternion).multiply(b.spine.quaternion).multiply(b.chest.quaternion).invert();
+      if (kind === 'drink') {
+        const up = clamp((t - 1.0) / 0.45, 0, 1) * (1 - clamp((t - 3.3) / 0.4, 0, 1)), e = up * up * (3 - 2 * up);
+        _ht.set(lerp(-0.12, -0.03, e), lerp(0.05, 0.36, e) + Math.sin(t * 13) * 0.006 * e, lerp(0.3, 0.13, e));
+        _pole.set(-0.6, -1, -0.1).applyQuaternion(_qc);
+        solveArm(b.armR, b.foreR, _ht, _pole, w);
+        _hu.set(0.05, -0.02 + 0.06 * (1 - e), 0.28 - 0.1 * e); // tangan kiri: membuka kaleng lalu turun
+        _pole.set(0.6, -1, 0).applyQuaternion(_qc);
+        solveArm(b.armL, b.foreL, _hu, _pole, w * (1 - 0.6 * e));
+      } else {
+        const kit = kind === 'kit', inj = kit ? clamp((t - 3.4) / 0.3, 0, 1) * (1 - clamp((t - 5.1) / 0.3, 0, 1)) : 0;
+        _hu.set(-0.04, 0.0 + Math.sin(t * 2.2) * 0.008, 0.3); // tangan kiri (lengan melintang)
+        _pole.set(0.6, -1, -0.2).applyQuaternion(_qc);
+        solveArm(b.armL, b.foreL, _hu, _pole, w);
+        if (kit && inj <= 0) _ht.set(-0.02 + Math.sin(t * 5) * 0.015, 0.06 + Math.sin(t * 7) * 0.012, 0.33); // membuka kotak, mengambil suntikan
+        else if (kit) _ht.set(0.07, 0.07 - 0.03 * inj + Math.sin(t * 3) * 0.004, 0.27); // menyuntik lengan kiri
+        else { const ph = t * PI * 2 * 1.4; _ht.set(0.08 + 0.02 * Math.sin(ph), 0.02 + 0.07 * Math.cos(ph), 0.3 + 0.07 * Math.sin(ph)); } // membalut
+        _pole.set(-0.6, -1, -0.2).applyQuaternion(_qc);
+        solveArm(b.armR, b.foreR, _ht, _pole, w);
       }
     }
     // ----- duduk di kendaraan: paha mendatar, lutut menekuk; sopir = tangan di setir/stang (motor: badan condong ke depan),

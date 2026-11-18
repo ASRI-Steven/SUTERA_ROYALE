@@ -1037,6 +1037,8 @@ export function createPlayer(ctx) {
         p.swim = st.swim && me.state === 'ground';
         { const w0 = weapon(); p.reload = st.reloadEnd && w0 ? 1 - (st.reloadEnd - ctx.now()) / w0.def.reload : null; }
         p.heal = !!st.healEnd || !!st.revive;
+        p.healKind = st.healEnd ? st.healKind : null; // pose obat per jenis (perban / P3K / minum)
+        p.nadeHold = !!st.nade; // granat digenggam: lengan kanan ditarik ke belakang
         p.gunKind = me.cur >= 0 && me.weapons[me.cur] ? me.weapons[me.cur].kind : null;
         p.air = me.state === 'ground' && !me.grounded;
         p.armed = me.cur >= 0 && !!me.weapons[me.cur] && !me.down && !st.revive;

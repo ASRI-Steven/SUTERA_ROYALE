@@ -851,7 +851,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const rM = pis ? 0.9 : 0.35, rS = 0.6, rP = pis ? 1.9 : 0.4; // roll lengan: pegang magasin / tepuk / tarik
     // waktu (fraksi durasi): sniper & lmg lebih santai, pistol lebih rapat
     const X = snip ? { tin: 0.1, out: 0.04, po: 0.2, poE: 0.27, pre: 0.4, seat: 0.48, ch0: 0.58, ch: 0.62, chE: 0.86, back: 0.94 }
-      : heavy ? { tin: 0.08, out: 0.03, po: 0.24, poE: 0.36, pre: 0.5, seat: 0.6, ch0: 0.7, ch: 0.74, chE: 0.8, back: 0.92 }
+      : heavy ? { tin: 0.08, out: 0.03, po: 0.19, poE: 0.27, pre: 0.48, seat: 0.58, ch0: 0.69, ch: 0.73, chE: 0.8, back: 0.92 }
         : pis ? { tin: 0.12, out: 0.05, po: 0.22, poE: 0.28, pre: 0.44, seat: 0.54, ch0: 0.64, ch: 0.72, chE: 0.78, back: 0.92 }
           : { tin: 0.15, out: 0.05, po: 0.22, poE: 0.3, pre: 0.46, seat: 0.56, ch0: 0.64, ch: 0.7, chE: 0.76, back: 0.9 };
     const doCh = empty && C.ch !== 'bolt'; // runduk: kokang bolt dengan tangan kanan (lihat boltPose)
@@ -886,8 +886,12 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       rot.push(kP(sT, T), kP(sT + 0.06, vAdd(T, 0.02, 0, 0.03)));
       pos.push(kP(sT, Sh), kP(sT + 0.06, Sh));
     }
+    if (snip && empty) { // runduk: tangan kiri kembali ke penyangga dulu, lalu tangan kanan mengokang bolt
+      hand.push(kP(X.seat + 0.12, vAdd(R, 0, -0.006, 0.006)), kP(X.ch0, R, 1)); fdir.push(kP(X.seat + 0.12, AXL)); roll.push(kS(X.seat + 0.12, 0));
+      rot.push(kP(X.ch0, vAdd(T, 0, -0.05, 0.12)), kP(X.chE, vAdd(T, 0, -0.05, 0.12)));
+    }
     // kembali ke pegangan: senjata berputar balik dengan sedikit lewat lalu diam
-    const last = hand[hand.length - 1][0], b0 = Math.max(last + 0.04, X.back - 0.12);
+    const last = hand[hand.length - 1][0], b0 = Math.max(last + 0.04, X.back - 0.12, rot[rot.length - 1][0] + 0.02, pos[pos.length - 1][0] + 0.02);
     hand.push(kP(X.back, vAdd(R, 0, -0.006, 0.008)), kP(1, R));
     fdir.push(kP(X.back, AXL), kP(1, AXL));
     roll.push(kS(X.back, 0), kS(1, 0));
@@ -1029,7 +1033,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (kind === 'shotgun' || kind === 'revolver' || kind === 'dbs') return;
     if (G.mag && G.mag0) { // magasin: lama jatuh / dicabut, baru dibawa tangan dari bawah layar, pas saat terpasang
       const inHand = u >= (K.empty ? ev.out : ev.grab) && u < ev.seat;
-      if (!A.dropped && K.empty && u >= ev.out && w > 0.5) { A.dropped = true; dropMag(G, -0.12, -0.45, 0.12); }
+      if (!A.dropped && K.empty && u >= ev.out && w > 0.5) { A.dropped = true; dropMag(G, -0.3, -0.25, 0.22); }
       if (w < 0.5 || !inHand) { G.mag.position.copy(G.mag0); G.mag.quaternion.identity(); G.mag.visible = !(K.empty && inHand); }
       else { attach(G.mag, G.handL, !K.empty && u < ev.swap ? A.offA : A.offB); G.mag.visible = !K.empty || u >= ev.show; }
     }
@@ -1250,7 +1254,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const n = dt > 1 / 90 ? Math.ceil(dt * 120) : 1, h = dt / n;
     for (let s = 0; s < n; s++) for (let i = 0; i < 5; i++) { spv[i] += (-SPK[i] * spx[i] - SPC[i] * spv[i]) * h; spx[i] += spv[i] * h; }
   }
-  function jolt(y, p) { spv[3] += y; spv[4] += p; } // dorongan aksi (magasin masuk, kokang, mendarat)
+  function jolt(y, p) { spv[3] += y; spv[4] += p; } // dorongan aksi: y m/dtk (puncak ±3,5 cm per 1 m/dtk), p rad/dtk
   function onFire(kind) { // sentakan per jenis senjata (membidik: setengah), pompa / slide ikut bergerak
     const r = WEAPONS[kind] ? WEAPONS[kind].recoil : 1, a = 1 - 0.45 * st.ads;
     spv[0] += Math.min(3.2, 1.0 + 0.55 * r) * a;
@@ -1410,7 +1414,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       st.swap = Math.max(0, st.swap - dt * 4);
       st.swayX += (Math.max(-1, Math.min(1, -o.mdx * 0.02)) - st.swayX) * k(10);
       st.swayY += (Math.max(-1, Math.min(1, o.mdy * 0.02)) - st.swayY) * k(10);
-      if (o.grounded && !st.wasGround) jolt(-0.55, -0.35); // mendarat: senjata turun lalu memantul pelan
+      if (o.grounded && !st.wasGround) jolt(-0.9, -0.6); // mendarat: senjata turun lalu memantul pelan
       st.wasGround = !!o.grounded;
       if (o.mag !== undefined) st.mag = o.mag;
       springs(dt);
@@ -1423,7 +1427,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
             for (const c = A.K.cues; A.cue < c.length && c[A.cue][0] <= A.u; A.cue++) {
               const ck = c[A.cue][1];
               if (cue) cue(ck);
-              if (ck === 'in' || ck === 'close') jolt(0.32, 0.28); else if (ck === 'bolt' || ck === 'pump') jolt(0.16, -0.16); else if (ck === 'shell' || ck === 'tap') jolt(0.08, 0.06);
+              if (ck === 'in' || ck === 'close') jolt(0.17, 0.5); else if (ck === 'bolt' || ck === 'pump') jolt(0.1, -0.4); else if (ck === 'shell' || ck === 'tap') jolt(0.05, 0.2);
             }
             if (o.reloading === false || A.kind !== st.kind) { if (A.t >= 0.97 && A.kind === st.kind) { endReload(A.kind); st.act = null; } else A.cut = true; }
           }
@@ -1472,10 +1476,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         const ka = 1 - a * 0.4;
         pBase.set(
           hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + spr * 0.04 + low * 0.06,
-          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3] * 0.06,
+          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3],
           hip[2] + (adsP[2] - hip[2]) * a + spx[0] * ka + low * 0.08,
         );
-        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] * 0.12 - sw * 0.7 - low * 1.1 - spr * 0.25, spr * 0.75 + st.swayX * 0.06 + sw * 0.25, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5));
+        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] - sw * 0.7 - low * 1.1 - spr * 0.25, spr * 0.75 + st.swayX * 0.06 + sw * 0.25, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5));
         mBase.compose(pBase, qBase, ONE);
         if (aPos.x || aPos.y || aPos.z || aRot.x || aRot.y || aRot.z) { mBase.multiply(mAct.compose(aPos, qAct, ONE)); mBase.decompose(G.g.position, G.g.quaternion, _v3); }
         else { G.g.position.copy(pBase); G.g.quaternion.copy(qBase); }
@@ -1487,7 +1491,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
             const pz = 0.085 * (ease(seg(st.pumpT, 0.14, 0.29)) - ease(seg(st.pumpT, 0.33, 0.47)));
             G.pump.position.z = G.pumpZ0 + pz;
             if (G.handL) G.handL.position.z = G.handL0.z + pz;
-            if (st.pumpT >= 0.29 && st.pumpT - dt < 0.29) { if (cue) cue('pump'); jolt(0.1, -0.08); }
+            if (st.pumpT >= 0.29 && st.pumpT - dt < 0.29) { if (cue) cue('pump'); jolt(0.06, -0.3); }
           }
           if (G.slide) { // slide pistol: mundur saat menembak, terkunci di belakang bila magasin kosong
             st.slideT = st.slideT === undefined ? 1 : st.slideT + dt;

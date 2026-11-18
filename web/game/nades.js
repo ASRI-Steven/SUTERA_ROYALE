@@ -62,6 +62,7 @@ export function createNades(ctx) {
     mesh.castShadow = true;
     scene.add(mesh);
     list.push({ owner, kind, def, p: pos.clone(), v: vel.clone(), t: 0, mesh, spin: new THREE.Vector3(Math.random() * 9 - 4.5, Math.random() * 6, Math.random() * 9 - 4.5), rest: false, cloud: null });
+    if (owner && owner.pose) owner.pose.throw = 1; // pose melempar karakter (map/rig.js)
     if (camDist(pos)[0] < 25) audio.click(); // bunyi pin dicabut hanya terdengar dekat
   }
 
