@@ -152,7 +152,8 @@ function splitRooms(H, target) {
         if (Math.abs(signedArea(P1)) < 9 || Math.abs(signedArea(P2)) < 9) continue;
         if ([P1, P2].some((P) => { const a = ext(P, U), b = ext(P, V); return a[1] - a[0] < 2.4 || b[1] - b[0] < 2.4; })) continue;
         const [a, b] = cut.seg, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        if (len >= 2.6) { const g = (0.3 + hash(seed, 3.3) * 0.4) * (len - HOUSE.gapW); H.parts.push({ a, b, len, g0: g, g1: g + HOUSE.gapW }); }
+        if (H.parts.some((p) => { if (!(p.g1 > p.g0)) return false; const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len, g0 = [p.a[0] + ux * p.g0, p.a[1] + uy * p.g0], g1 = [p.a[0] + ux * p.g1, p.a[1] + uy * p.g1]; return segDist(a, g0, g1) < 0.75 || segDist(b, g0, g1) < 0.75; })) continue; // ujung sekat baru di ambang sekat lama: ambang terbelah
+        if (len >= 2.8) { const GW = 1.6, g = (0.3 + hash(seed, 3.3) * 0.4) * (len - GW); H.parts.push({ a, b, len, g0: g, g1: g + GW }); } // ambang 1,6 m: sekat miring pun tetap bisa dilalui grid navigasi bot (1 m)
         rec(P1, depth + 1, seed * 1.31 + 1.7);
         rec(P2, depth + 1, seed * 1.77 + 2.9);
         return;
@@ -176,7 +177,8 @@ function planHouse(i, pts, area, h, { roadDist, occupied }) {
     const t1 = 0.42 + R * 0.16, A = lerp2(q[0], q[1], t1), Bp = lerp2(q[3], q[2], t1);
     const lenAB = Math.hypot(Bp[0] - A[0], Bp[1] - A[1]);
     if (lenAB >= 2.6) {
-      const g = (0.3 + hash(R, 7) * 0.4) * (lenAB - HOUSE.gapW);
+      let g = (0.3 + hash(R, 7) * 0.4) * (lenAB - HOUSE.gapW);
+      if (area >= 140 && g < lenAB / 2 + 0.75 && g + HOUSE.gapW > lenAB / 2 - 0.75) g = hash(R, 9) < 0.5 ? Math.max(0.3, lenAB / 2 - 0.75 - HOUSE.gapW) : Math.min(lenAB - 0.3 - HOUSE.gapW, lenAB / 2 + 0.75); // sekat kedua bertemu di tengah AB: ambang jangan terbelah
       H.parts.push({ a: A, b: Bp, len: lenAB, g0: g, g1: g + HOUSE.gapW });
       if (area >= 140) {
         const C = lerp2(A, Bp, 0.5), Dp = lerp2(q[1], q[2], 0.5), lenCD = Math.hypot(Dp[0] - C[0], Dp[1] - C[1]);
@@ -473,7 +475,7 @@ function planTower(i, pts, area, h, { roadDist, occupied }, roof) {
       const s = t * e.len, s0 = s - W / 2, s1 = s + W / 2;
       if (s0 < 1 || s1 > e.len - 1) continue;
       const px = e.a[0] + e.ux * s, py = e.a[1] + e.uy * s;
-      if (!lax && (occupied(px - e.nx * 1.5, py - e.ny * 1.5, i) || occupied(px - e.nx * 3.5, py - e.ny * 3.5, i))) continue;
+      if (!lax && [0.6, 1.5, 3.5].some((v) => occupied(px - e.nx * v, py - e.ny * v, i))) continue; // di luar pintu kosong (juga celah sempit ke dinding podium)
       if (lax && !(occupied(px - e.nx * 1.5, py - e.ny * 1.5, i) && occupied(px - e.nx * 4.5, py - e.ny * 4.5, i))) continue; // podium: menghadap ruang dalam podium (≥ 4,5 m), bukan dinding luarnya
       return { e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, h: TOWER.top, x: px, y: py, inner: lax };
     }
@@ -571,6 +573,11 @@ const LIST = { living: ['sofa', 'tv', 'coffee', 'shelf', 'plant'], bedroom: ['be
 function furnish(H, rooms, types, avoid, seed) {
   const R = (k) => hash(H.i * 1.7 + k + seed * 101.3, H.pts[0][0]);
   const placed = [];
+  // ambang sekat (termasuk pintu kamar mandi): perabot berjarak ≥ 0,9 m dari tiap titik ambang (dulu hanya titik tengahnya,
+  // sehingga ranjang/lemari di ujung ambang bisa menutup jalan masuk ruang)
+  const gapPts = [];
+  for (const p of H.parts) if (p.g1 > p.g0) { const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len; for (let t = 0; t <= 4; t++) { const s = p.g0 + (p.g1 - p.g0) * t / 4; gapPts.push(p.a[0] + ux * s, p.a[1] + uy * s); } }
+  const blocksGap = (x, y, rot, w, d) => { const c = Math.cos(rot), sn = Math.sin(rot); for (let k = 0; k < gapPts.length; k += 2) { const dx = gapPts[k] - x, dy = gapPts[k + 1] - y, a = Math.max(0, Math.abs(dx * c + dy * sn) - w / 2), b = Math.max(0, Math.abs(-dx * sn + dy * c) - d / 2); if (a * a + b * b < 0.81) return true; } return false; };
   rooms.forEach((room, ri) => {
     const edges = [];
     for (let j = 0; j < room.length; j++) {
@@ -581,12 +588,13 @@ function furnish(H, rooms, types, avoid, seed) {
     for (const kind of LIST[types[ri]]) {
       if (kind === 'coffee') { // di depan sofa
         const sofa = placed.find((p) => p.kind === 'sofa' && p.room === ri);
-        if (sofa) { const x = sofa.x + sofa.nx * 1.15, y = sofa.y + sofa.ny * 1.15; if (pip(x, y, room) && !hits(x, y, 0.6)) placed.push({ kind, x, y, rot: sofa.rot, w: ITEMS.coffee[0], d: ITEMS.coffee[1], h: ITEMS.coffee[2], room: ri, nx: sofa.nx, ny: sofa.ny }); }
+        if (sofa) { const x = sofa.x + sofa.nx * 1.15, y = sofa.y + sofa.ny * 1.15; if (pip(x, y, room) && !hits(x, y, 0.6) && !blocksGap(x, y, sofa.rot, ITEMS.coffee[0], ITEMS.coffee[1])) placed.push({ kind, x, y, rot: sofa.rot, w: ITEMS.coffee[0], d: ITEMS.coffee[1], h: ITEMS.coffee[2], room: ri, nx: sofa.nx, ny: sofa.ny }); }
         continue;
       }
-      if (kind === 'table') { // meja makan di tengah ruang
+      if (kind === 'table') { // meja makan di tengah ruang (bukan di depan ambang sekat: meja + kursi ±1,9 m)
         const cx = room.reduce((s, p) => s + p[0], 0) / room.length, cy = room.reduce((s, p) => s + p[1], 0) / room.length, e0 = edges[0];
-        if (e0 && !hits(cx, cy, 1.1)) placed.push({ kind, x: cx, y: cy, rot: Math.atan2(e0.uy, e0.ux), w: ITEMS.table[0], d: ITEMS.table[1], h: ITEMS.table[2], room: ri, nx: e0.nx, ny: e0.ny });
+        const nearGap = H.parts.some((p) => p.g1 > p.g0 && Math.hypot(p.a[0] + (p.b[0] - p.a[0]) * (p.g0 + p.g1) / 2 / p.len - cx, p.a[1] + (p.b[1] - p.a[1]) * (p.g0 + p.g1) / 2 / p.len - cy) < 2.2);
+        if (e0 && !nearGap && pip(cx, cy, room) && !hits(cx, cy, 1.1) && !blocksGap(cx, cy, Math.atan2(e0.uy, e0.ux), ITEMS.table[0], ITEMS.table[1] + 1.02)) placed.push({ kind, x: cx, y: cy, rot: Math.atan2(e0.uy, e0.ux), w: ITEMS.table[0], d: ITEMS.table[1], h: ITEMS.table[2], room: ri, nx: e0.nx, ny: e0.ny });
         continue;
       }
       const [w, d, h] = ITEMS[kind];
@@ -602,7 +610,7 @@ function furnish(H, rooms, types, avoid, seed) {
         if (!pip(x, y, room)) continue;
         // jauh dari pintu & ambang pintu
         if (H.doors.some((dr) => Math.hypot(dr.x - bx, dr.y - by) < w / 2 + 1.1)) continue;
-        if (H.parts.some((p) => { const gx = p.a[0] + (p.b[0] - p.a[0]) * ((p.g0 + p.g1) / 2 / p.len), gy = p.a[1] + (p.b[1] - p.a[1]) * ((p.g0 + p.g1) / 2 / p.len); return Math.hypot(gx - x, gy - y) < Math.max(w, d) / 2 + 1.0; })) continue;
+        if (H.parts.some((p) => { const gx = p.a[0] + (p.b[0] - p.a[0]) * ((p.g0 + p.g1) / 2 / p.len), gy = p.a[1] + (p.b[1] - p.a[1]) * ((p.g0 + p.g1) / 2 / p.len); return Math.hypot(gx - x, gy - y) < Math.max(w, d) / 2 + 1.0; }) || blocksGap(x, y, Math.atan2(e.uy, e.ux), w, d)) continue;
         // perabot tinggi tidak menutup jendela (dinding luar)
         if (h > 1.1) {
           const ext = H.edges.find((E) => Math.abs((bx - E.a[0]) * E.nx + (by - E.a[1]) * E.ny) < 0.3 && (bx - E.a[0]) * E.ux + (by - E.a[1]) * E.uy > -0.1 && (bx - E.a[0]) * E.ux + (by - E.a[1]) * E.uy < E.len + 0.1);
