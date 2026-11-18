@@ -1232,14 +1232,14 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       Rf: [kP(0, FOFF_R), kP(0.2, FR), kP(0.86, FR), kP(0.96, FOFF_R)],
       wrap: [0.21, 0.78], tuck: [0.79, 0.85],
     },
-    kit: { // P3K 6 dtk: kotak dibuka, suntikan diambil & dijentik, disuntikkan ke lengan kiri, dibuang
+    kit: { // P3K 6 dtk: kotak dibuka, suntikan diambil & dijentik, disuntikkan ke sisi dalam lengan kiri (tegak), dibuang
       gun: [0.045, 0.9],
-      L: [kP(0, OFF_L), kP(0.02, OFF_L), kP(0.12, scr(-0.3, -0.42, 0.42), 1), kP(0.42, scr(-0.28, -0.44, 0.42), 1), kP(0.5, OFF_L, 1), kP(0.53, OFF_L), kP(0.62, ARM_P, 1), kP(0.84, vAdd(ARM_P, 0, 0.004, 0)), kP(0.94, OFF_L)],
-      Lf: [kP(0, FOFF_L), kP(0.12, [-0.45, -0.8, 0.4]), kP(0.42, [-0.45, -0.8, 0.4]), kP(0.5, FOFF_L), kP(0.53, FOFF_L), kP(0.62, ARM_F), kP(0.84, ARM_F), kP(0.94, FOFF_L)],
-      Lt: [kP(0, UP), kP(0.12, UP), kP(0.42, UP), kP(0.5, DOWN), kP(0.53, UP), kP(0.62, UP), kP(0.84, UP), kP(0.94, UP)],
-      R: [kP(0, OFF_R), kP(0.09, OFF_R), kP(0.16, scr(-0.12, -0.12, 0.4)), kP(0.19, scr(-0.15, -0.02, 0.41), 1), kP(0.235, scr(-0.12, -0.0, 0.43)), kP(0.29, scr(-0.22, -0.3, 0.42), 1), kP(0.36, scr(0.12, -0.02, 0.38)), kP(0.41, scr(0.14, 0.02, 0.38), 1), kP(0.44, scr(0.15, 0.0, 0.38)), kP(0.56, scr(0.12, -0.05, 0.4)), kP(0.6, scr(0.0, -0.12, 0.41), 1), kP(0.82, scr(0.0, -0.13, 0.41), 1), kP(0.86, scr(0.12, -0.05, 0.39)), kP(0.94, OFF_R)],
-      Rf: [kP(0, FOFF_R), kP(0.16, FR), kP(0.29, FR), kP(0.36, [0.5, -0.75, 0.42]), kP(0.6, [0.4, -0.78, 0.48]), kP(0.86, FR), kP(0.94, FOFF_R)],
-      Rt: [kP(0, [-0.6, -0.6, -0.5]), kP(0.29, [-0.6, -0.6, -0.5]), kP(0.36, [-0.75, -0.2, -0.6]), kP(0.44, [-0.75, -0.25, -0.6]), kP(0.56, [-0.4, -0.85, -0.2]), kP(0.6, [-0.25, -0.95, -0.15]), kP(0.82, [-0.25, -0.95, -0.15]), kP(0.88, [0.3, -0.9, 0.2]), kP(0.94, [0.3, -0.9, 0.2])],
+      L: [kP(0, OFF_L), kP(0.02, OFF_L), kP(0.12, scr(-0.3, -0.42, 0.42), 1), kP(0.42, scr(-0.28, -0.44, 0.42), 1), kP(0.5, OFF_L, 1), kP(0.53, OFF_L), kP(0.62, scr(-0.16, -0.2, 0.4), 1), kP(0.84, scr(-0.16, -0.21, 0.4)), kP(0.94, OFF_L)],
+      Lf: [kP(0, FOFF_L), kP(0.12, [-0.45, -0.8, 0.4]), kP(0.42, [-0.45, -0.8, 0.4]), kP(0.5, FOFF_L), kP(0.53, FOFF_L), kP(0.62, [-0.25, -0.85, 0.45]), kP(0.84, [-0.25, -0.85, 0.45]), kP(0.94, FOFF_L)],
+      Lt: [kP(0, UP), kP(0.12, UP), kP(0.42, UP), kP(0.5, DOWN), kP(0.53, [1, 0, 0.2]), kP(0.94, [1, 0, 0.2])],
+      R: [kP(0, OFF_R), kP(0.09, OFF_R), kP(0.16, scr(-0.12, -0.12, 0.4)), kP(0.19, scr(-0.15, -0.02, 0.41), 1), kP(0.235, scr(-0.12, -0.0, 0.43)), kP(0.29, scr(-0.22, -0.3, 0.42), 1), kP(0.36, scr(0.12, -0.02, 0.38)), kP(0.41, scr(0.14, 0.02, 0.38), 1), kP(0.44, scr(0.15, 0.0, 0.38)), kP(0.56, scr(0.18, -0.1, 0.4)), kP(0.6, scr(0.12, -0.18, 0.41), 1), kP(0.82, scr(0.12, -0.19, 0.41), 1), kP(0.86, scr(0.22, -0.15, 0.39)), kP(0.94, OFF_R)],
+      Rf: [kP(0, FOFF_R), kP(0.16, FR), kP(0.29, FR), kP(0.36, [0.5, -0.75, 0.42]), kP(0.6, [0.2, -0.85, 0.5]), kP(0.82, [0.2, -0.85, 0.5]), kP(0.88, FR), kP(0.94, FOFF_R)],
+      Rt: [kP(0, [-0.6, -0.6, -0.5]), kP(0.29, [-0.6, -0.6, -0.5]), kP(0.36, [-0.75, -0.2, -0.6]), kP(0.44, [-0.75, -0.25, -0.6]), kP(0.56, [-0.85, -0.35, -0.3]), kP(0.6, [-0.9, -0.25, -0.3]), kP(0.82, [-0.9, -0.25, -0.3]), kP(0.88, [0.3, -0.9, 0.2]), kP(0.94, [0.3, -0.9, 0.2])],
       lid: [0.17, 0.235], syr: [0.27, 0.9], inj: [0.6, 0.625, 0.79, 0.82], flick: [0.41, 0.44],
     },
     drink: { // minuman 4 dtk: kaleng diangkat, cincin ditarik tangan kiri, diminum (makin miring), kaleng diturunkan
@@ -1309,7 +1309,8 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       aimArm2(hArmR, AX_R, hp2, fd2, NEEDLE, tg);
       if (u > i[0] - 0.04 && u < i[3] + 0.02) { // ujung jarum tepat di sisi atas lengan bawah kiri: tangan digeser dari arah jarum sebenarnya
         const k = ease(seg(u, i[0] - 0.04, i[0])) * (1 - ease(seg(u, i[3], i[3] + 0.02)));
-        endP.copy(wristL).addScaledVector(axisL, 0.07).addScaledVector(n2, 0.043 + 0.05 * (1 - inK)); // titik tusuk (masuk ±1 cm saat inK = 1)
+        tg.set(1, 0, 0).addScaledVector(axisL, -axisL.x).normalize(); // sisi dalam lengan menghadap kanan
+        endP.copy(wristL).addScaledVector(axisL, 0.07).addScaledVector(tg, 0.043 + 0.05 * (1 - inK)); // titik tusuk (masuk ±1 cm saat inK = 1)
         tmp.set(0, -0.112, 0).applyQuaternion(hArmR.quaternion); // ujung jarum relatif genggaman (suntikan ×1,45)
         hArmR.position.lerp(tmp2.copy(endP).sub(tmp), k);
       }
