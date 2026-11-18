@@ -178,7 +178,7 @@ export class Rig {
     this.chain = Object.values(b); // induk selalu lebih dulu dari anaknya (urutan makeBones)
     this.phase = Math.random() * PI * 2;
     this.t = Math.random() * 10;
-    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, punch: 0, punchSide: 1, guard: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, heal: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0 };
+    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, punch: 0, punchSide: 1, guard: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, rlu: 0, heal: 0, ht: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0, thr: 0, hold: 0 };
     this.cphase = 0;
   }
   pose(s, dt) {

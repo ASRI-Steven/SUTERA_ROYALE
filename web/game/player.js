@@ -171,6 +171,7 @@ export function createPlayer(ctx) {
       case 'KeyZ': if (!st.swim) setProne(!st.prone); break;
       case 'KeyR': reload(); break;
       case 'KeyF': case 'KeyE': interact(); break;
+      case 'KeyQ': if (me.state === 'plane' && ctx.cycleDrop) ctx.cycleDrop(); break; // pilihan terjun: regu ikut / ikut rekan / sendiri
       case 'Digit1': select(0); break;
       case 'Digit2': select(1); break;
       case 'Digit3': select(2); break;
@@ -950,15 +951,37 @@ export function createPlayer(ctx) {
     const lf = !nv && col.liftAt && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3) ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null;
     st.prompt = st.lootUI ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? (lf.up ? 'Naik lift ke atap' : 'Turun lift ke lobi') : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
   }
+  const folT = new THREE.Vector3();
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
+    // ikut rekan: melayang otomatis di belakangnya (payung ikut terbuka); W/A/S/D melepas, rekan mendarat → mendarat sendiri
+    const L = me.follow;
+    if (L) {
+      if (ix || iz || !L.alive || (L.state !== 'fall' && L.state !== 'chute')) { me.follow = null; st.folOff = null; if (ix || iz) hud.toast('Lepas dari ' + L.name + ' · kendali sendiri'); }
+      else {
+        const sn = Math.sin(L.yaw), cs = Math.cos(L.yaw), x0 = me.pos.x, z0 = me.pos.z;
+        if (!st.folOff) st.folOff = new THREE.Vector3().subVectors(me.pos, L.pos);
+        folT.set(-sn * 5 + cs * 3.5, 1.2, -cs * 5 - sn * 3.5);
+        st.folOff.lerp(folT, 1 - Math.exp(-dt * 1.5));
+        me.pos.copy(L.pos).add(st.folOff);
+        if (me.pos.y < 0.5) me.pos.y = 0.5;
+        if (dt > 0) me.vel.set((me.pos.x - x0) / dt, (me.pos.z - z0) / dt);
+        me.yaw = L.yaw;
+        if (L.state === 'chute' && me.state !== 'chute') audio.click();
+        me.state = L.state;
+        st.airVs = L.state === 'chute' ? 9 : 50; st.airLean = 0;
+        audio.windLevel(L.state === 'chute' ? 0.25 : 0.9);
+        return;
+      }
+    }
     const chuteOn = me.state === 'chute';
     if (!chuteOn && me.pos.y < 120) { me.state = 'chute'; audio.click(); }
-    // Terjun bebas + W: arah pandang menentukan gaya. Memandang datar = melayang jauh (maju 38, turun 38 m/dtk);
-    // memandang ke bawah = menukik (maju turun sampai 14, turun sampai 70 m/dtk). Tanpa W: jatuh biasa 46 m/dtk.
-    const dive = !chuteOn && iz > 0 ? clamp(-st.pitch, 0, 1) : 0;
-    const hs = chuteOn ? (iz > 0 ? 13 : 6) : (iz > 0 ? 38 - 24 * dive : 14);
-    const vsT = chuteOn ? (iz > 0 ? 11 : iz < 0 ? 6 : 9) : iz > 0 ? 38 + 32 * dive : 46; // payung + S: mengerem, turun lebih pelan
+    // Terjun bebas + W: arah pandang menentukan gaya. Memandang datar = melayang jauh (maju 62, turun 30 m/dtk → ±1 km dari
+    // ketinggian pesawat, + payung ±350 m: dari tengah peta sampai ke tepi kiri/kanan); memandang ke bawah = menukik (maju
+    // turun sampai 14, turun sampai 70 m/dtk). Tanpa W: jatuh biasa 46 m/dtk. Payung + W: maju 20, turun 7 m/dtk.
+    const dive = !chuteOn && iz > 0 ? clamp((-st.pitch - 0.3) / 0.7, 0, 1) : 0; // menunduk sampai ±17° masih dihitung melayang penuh
+    const hs = chuteOn ? (iz > 0 ? 20 : 6) : (iz > 0 ? 62 - 48 * dive : 14);
+    const vsT = chuteOn ? (iz > 0 ? 7 : iz < 0 ? 6 : 9) : iz > 0 ? 30 + 40 * dive : 46; // payung + S: mengerem, turun lebih pelan
     st.airVs = st.airVs ? st.airVs + (vsT - st.airVs) * (1 - Math.exp(-dt * 3)) : vsT; // perubahan laju turun dihaluskan
     const vs = st.airVs;
     fwd.set(Math.sin(st.yaw), 0, Math.cos(st.yaw));
@@ -1171,7 +1194,7 @@ export function createPlayer(ctx) {
       const fp = (me.state === 'ground' && !st.tpp && me.alive) || vfp;
       const w = weapon();
       const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
-      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
+      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
       st.mdx = st.mdy = 0;
       const targetFov = fp && st.ads && w ? adsFov(w.inst) : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : 75; // kamera belakang: zoom bidik
       camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 14));

@@ -558,7 +558,7 @@ function start(D, realAssets, envAssets) {
     playing: () => phase === 'play' && !paused,
     toggleMap,
     mapOpen: () => !big.el.hidden, closeMap: () => { if (!big.el.hidden) big.close(); }, // Esc menutup peta (kunci mouse diurus player.js)
-    jumpOut,
+    jumpOut, cycleDrop,
     landed(x, y) {
       if (!inArea(x, y)) { const r = bots.nearestRoad(x, y); if (r) { me.pos.set(r[0], 0, -r[1]); x = r[0]; y = r[1]; } }
       hud.message('Mendarat', 'Cari senjata di rumah & ruko terdekat');
@@ -636,14 +636,34 @@ function start(D, realAssets, envAssets) {
     f.close = last * f.dur;
     return f;
   }
-  function jumpOut(force) {
+  // ---------- Pilihan terjun (Q di pesawat) ----------
+  // 'lead' = regu ikut terjun saat pemain terjun (bawaan); 'follow' = pemain ikut rekan (terjun & melayang otomatis
+  // mengikutinya, W/A/S/D melepas); 'solo' = pemain terjun sendiri, regu terjun ke titik pilihannya sendiri.
+  const DROP = { lead: 'Regu ikut kamu', follow: 'Ikut rekan', solo: 'Terjun sendiri' };
+  const liveMates = () => mates.filter((a) => a.alive);
+  const dropLeader = () => liveMates().sort((a, b) => (a.slot || 0) - (b.slot || 0))[0] || null;
+  function cycleDrop() {
+    if (me.state !== 'plane' || !liveMates().length) return;
+    if (liveMates().some((a) => a.state !== 'plane')) { hud.toast('Regu sudah terjun'); return; }
+    me.dropMode = me.dropMode === 'follow' ? 'solo' : me.dropMode === 'solo' ? 'lead' : 'follow';
+    const L = dropLeader();
+    hud.toast(me.dropMode === 'follow' ? 'Ikut terjun bersama ' + L.name + ' · F = terjun duluan' : me.dropMode === 'solo' ? 'Terjun sendiri · regu turun di tempat lain' : 'Regu ikut terjun bersamamu');
+  }
+  function jumpOut(force, auto) {
     if (me.state !== 'plane') return;
     if (!force && flight.t < flight.open) { hud.toast('Pesawat belum di atas kawasan'); return; }
+    me.follow = null;
+    if (me.dropMode === 'follow') {
+      const L = dropLeader();
+      if (auto && L) me.follow = L;
+      else if (!liveMates().some((a) => a.state !== 'plane')) me.dropMode = 'lead'; // terjun duluan: regu ikut pemain
+    }
     me.state = 'fall';
     me.pos.copy(planePos).add(new THREE.Vector3(0, -6, 0));
     me.vel.set(flight.dir[0] * 20, -flight.dir[1] * 20);
     audio.engineLevel(0.25);
-    hud.message('Terjun!', 'W = meluncur · lihat ke bawah = menukik · F = buka payung');
+    if (me.follow) hud.message('Mengikuti ' + me.follow.name, 'W / A / S / D = lepas dan kendalikan sendiri');
+    else hud.message('Terjun!', 'W = meluncur · lihat ke bawah = menukik · F = buka payung');
   }
 
   // ---------- Peta besar (M) ----------
@@ -872,6 +892,7 @@ function start(D, realAssets, envAssets) {
       if (me.state === 'plane') {
         me.pos.copy(planePos);
         player.setPlane(planePos);
+        if (me.dropMode === 'follow' && liveMates().some((a) => a.state !== 'plane')) jumpOut(true, true); // rekan yang diikuti terjun
         if (flight.t >= flight.close) jumpOut(true);
       } else audio.engineLevel(plane.visible ? Math.max(0, 1 - camera.position.distanceTo(planePos) / 1500) * 0.6 : 0);
       const ev = zone.update(dt);
@@ -927,7 +948,7 @@ function start(D, realAssets, envAssets) {
           hidden: me.state === 'ground' && (me.prone || me.crouch) && grass.at(me.pos.x, -me.pos.z) > 0.35 ? (me.prone ? 'prone' : 'crouch') : '',
           veh: mv ? { fuel: mv.fuel, fueling: pst.fuelEnd ? Math.max(0, Math.min(1, 1 - (pst.fuelEnd - now) / 3)) : 0, cans: me.fuel | 0, name: mv.def.name, kmh: Math.round(Math.abs(mv.speed) * 3.6), max: mv.def.maxSpeed * 3.6, hp: mv.hp, hpMax: mv.def.hp, boost: pst.sprint && mv.driver === me && mv.input.throttle > 0, burning: !mv.alive, seat: me.seat, occ: mv.occ, seats: mv.tpl.seats, cz: mv.cz, L: mv.L, W: mv.W } : null,
           pins: F.state === 'ground' || F.state === 'drive' ? matePins(vehicles.pins(F.pos.x, -F.pos.z, 260, F.vehicle)) : matePins([]),
-          planeT: flight ? flight.t : 0, planeOpen: flight ? flight.open : 0, planeClose: flight ? flight.close : 0, alt: me.pos.y,
+          planeT: flight ? flight.t : 0, planeOpen: flight ? flight.open : 0, planeClose: flight ? flight.close : 0, alt: me.pos.y, drop: me.state === 'plane' && liveMates().length ? DROP[me.dropMode || 'lead'] : '',
           x: F.pos.x, y: -F.pos.z, heading: pst.yaw, mapRange: F.state === 'ground' ? 240 : F.state === 'drive' ? 380 : F.state === 'dead' ? 240 : 900, circles: zoneCircles(), marks: waypoint ? [{ ...waypoint, color: '#D29F52' }] : [],
         }, mapImg);
       }

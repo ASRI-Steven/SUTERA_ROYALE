@@ -184,17 +184,19 @@ function worldGunMaterial(fx, base) {
 // Terapkan skin senjata ke Object3D senjata mana pun: grup senjata orang pertama (vm.gunRoots()), hasil gunPreview(), atau
 // mesh model dunia (bagian 'gun_<jenis>' karakter). Aman dipanggil berulang; 'gun_default' / id tak dikenal = tampilan asli.
 // Catatan: kaca bidikan, titik bidik, tangan & lengan tidak disentuh.
-export function applyGunSkin(root, id) {
+// plan (opsional): larik penampung [mesh, materialDasar, materialBaru] — material TIDAK dipasang, hanya direncanakan
+// (dipakai applyGunSkinAsync supaya shader dikompilasi dulu di latar).
+export function applyGunSkin(root, id, plan = null) {
   if (!root) return root;
   const s = BY.get(id), fx = s && s.fx ? s.fx : 0, coat = !!(s && s.th && s.th.coat);
   const walk = (o) => {
     if (o !== root && /^fp_/.test(o.name)) return; // tangan & lengan orang pertama (fp_hand_*, fp_forearm) ikut skin karakter, bukan skin senjata
     if (o.isMesh && !o.isSkinnedMesh && o.material && !Array.isArray(o.material)) {
       const base = o.userData.sfBase || o.material;
-      if (base.userData && base.userData.vmL) { o.userData.sfBase = base; o.material = fx ? vmSkinned(base, fx, coat) : base; } // material orang pertama
+      if (base.userData && base.userData.vmL) { const m = fx ? vmSkinned(base, fx, coat) : base; if (plan) plan.push([o, base, m]); else { o.userData.sfBase = base; o.material = m; } } // material orang pertama
       else if (base.isMeshStandardMaterial && base.vertexColors && !base.map && o.geometry.attributes.color && !o.isInstancedMesh) {
-        o.userData.sfBase = base;
-        o.material = fx ? worldGunMaterial(fx, base) : base;
+        const m = fx ? worldGunMaterial(fx, base) : base;
+        if (plan) plan.push([o, base, m]); else { o.userData.sfBase = base; o.material = m; }
       }
     }
     for (const ch of o.children) walk(ch);
@@ -274,6 +276,54 @@ export function compileSkinAsync(obj, camera, scene) {
   let p;
   try { p = R.compileAsync(obj, camera, scene); } catch (e) { p = Promise.resolve(); } finally { R.setRenderTarget(prev); }
   return p.catch(() => {});
+}
+
+// Ganti skin senjata tanpa menahan frame: material baru dikompilasi di latar lewat mesh sementara (di luar adegan),
+// baru dipasang setelah siap. wanted() = false → hasil dibuang (pemain sudah memilih skin lain). → Promise
+export function applyGunSkinAsync(roots, id, camera, scene, wanted = () => true) {
+  const plan = [];
+  for (const r of roots) { try { applyGunSkin(r, id, plan); } catch (e) { /* skin belum tersedia */ } }
+  const todo = plan.filter(([o, , m]) => o.material !== m);
+  if (!todo.length) return Promise.resolve();
+  const g = new THREE.Group(), seen = new Set();
+  for (const [o, , m] of todo) { if (seen.has(m)) continue; seen.add(m); const t = new THREE.Mesh(o.geometry, m); t.castShadow = o.castShadow; t.receiveShadow = o.receiveShadow; g.add(t); }
+  const put = () => { if (!wanted()) return; for (const [o, base, m] of todo) { o.userData.sfBase = base; o.material = m; } };
+  return compileSkinAsync(g, camera, scene).then(put, put);
+}
+
+// ---------- Cache grafis di awal ----------
+// Semua skin disiapkan sekali di latar begitu lobi tampil (bukan saat diklik): program shader etalase toko, senjata di tangan
+// karakter (lobi & orang ketiga di pertandingan), adegan senjata orang pertama, dan gambar kecil toko. Satu skin per
+// langkah dengan jeda, jadi lobi tetap mulus. opt: { camera, scene, roots() → mesh senjata di tangan karakter,
+// alive() → false = hentikan (pertandingan dimulai), onProgress(selesai, total) }. → Promise<boolean> (true = tuntas)
+export const warmState = { done: 0, total: 0, running: false, finished: false };
+let WARM = null;
+export function warmSkinCache(opt = {}) {
+  if (WARM) return WARM;
+  const { camera, scene, roots = () => [], alive = () => true, onProgress = () => {} } = opt;
+  const gap = (ms = 40) => new Promise((r) => setTimeout(r, ms));
+  const W = warmState;
+  W.total = GUN_SKINS.length + CHAR_SKINS.length; W.done = 0; W.running = true; W.finished = false;
+  WARM = (async () => {
+    onProgress(0, W.total);
+    for (const s of [...GUN_SKINS, ...CHAR_SKINS]) {
+      if (!alive() || !R0) { W.running = false; WARM = null; return false; }
+      try {
+        if (s.id.startsWith('gun_')) {
+          const g = previewWeapon('ar', s.id);
+          if (g && camera && scene) await compileSkinAsync(g, camera, scene); // etalase toko
+          if (camera && scene) await applyGunSkinAsync(roots(), s.id, camera, scene, () => false); // di tangan karakter (hanya kompilasi, tidak dipasang)
+        }
+        await skinThumb(s.id, 256); // gambar kecil + program adegan orang pertama
+      } catch (e) { /* satu skin gagal: lanjut ke berikutnya */ }
+      W.done++;
+      onProgress(W.done, W.total);
+      await gap();
+    }
+    W.running = false; W.finished = true;
+    return true;
+  })();
+  return WARM;
 }
 
 // ---------- Pratinjau ----------

@@ -55,13 +55,16 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export const DIFFICULTY = {
   easy: { label: 'Mudah', note: 'Bot lambat bereaksi, sering meleset, dan jarang berlindung. Cocok untuk belajar.', react: [0.75, 1.35], err: 2.7, moveErr: 1.6, targetMoveErr: 1.2, range: 95, fov: 1.05, hear: 60,
     burst: [3, 5], pause: [0.55, 1.15], still: 0.25, crouch: 0, dmgToPlayer: 0.6,
-    cover: 0.3, peek: 0.35, flank: 0.05, push: 0.2, settle: 1.3, settleK: 1.7, head: 0, sprint: 5.2, turn: 4.2, dodge: 0.4, preaim: 0.85, strafeT: [0.8, 1.8], drive: 0.3, smartWeapon: 0.3, zoneEarly: false },
+    cover: 0.3, peek: 0.35, flank: 0.05, push: 0.2, settle: 1.3, settleK: 1.7, head: 0, sprint: 5.2, turn: 4.2, dodge: 0.4, preaim: 0.85, strafeT: [0.8, 1.8], drive: 0.3, smartWeapon: 0.3, zoneEarly: false,
+    lootT: 70, third: 0, finish: 0.35, hold: 0.15, smoke: 0, early: 0, wary: 0 },
   medium: { label: 'Sedang', note: 'Bot berlindung di balik gedung, mengintip, dan sesekali mengepung.', react: [0.45, 0.85], err: 1.8, moveErr: 1.1, targetMoveErr: 0.9, range: 130, fov: 1.3, hear: 95,
     burst: [4, 6], pause: [0.4, 0.8], still: 0.18, crouch: 0.4, dmgToPlayer: 0.85,
-    cover: 0.7, peek: 0.75, flank: 0.35, push: 0.45, settle: 0.85, settleK: 1.3, head: 0.08, sprint: 5.9, turn: 5.6, dodge: 0.75, preaim: 0.55, strafeT: [0.5, 1.2], drive: 0.6, smartWeapon: 0.75, zoneEarly: true },
+    cover: 0.7, peek: 0.75, flank: 0.35, push: 0.45, settle: 0.85, settleK: 1.3, head: 0.08, sprint: 5.9, turn: 5.6, dodge: 0.75, preaim: 0.55, strafeT: [0.5, 1.2], drive: 0.6, smartWeapon: 0.75, zoneEarly: true,
+    lootT: 55, third: 0.25, finish: 0.7, hold: 0.45, smoke: 0.4, early: 50, wary: 0.5 },
   hard: { label: 'Sulit', note: 'Bot sigap & akurat: berlindung, mengintip dengan bidikan siap, mengepung dari samping, mendesak saat kamu isi ulang, naik kendaraan ke zona.', react: [0.22, 0.45], err: 1.25, moveErr: 0.75, targetMoveErr: 0.6, range: 180, fov: 1.7, hear: 150,
     burst: [4, 7], pause: [0.35, 0.65], still: 0.1, crouch: 0.75, dmgToPlayer: 1,
-    cover: 0.92, peek: 1, flank: 0.65, push: 0.75, settle: 0.5, settleK: 1.0, head: 0.2, sprint: 6.4, turn: 7.5, dodge: 1, preaim: 0.35, strafeT: [0.28, 0.75], drive: 0.85, smartWeapon: 1, zoneEarly: true },
+    cover: 0.92, peek: 1, flank: 0.65, push: 0.75, settle: 0.5, settleK: 1.0, head: 0.2, sprint: 6.4, turn: 7.5, dodge: 1, preaim: 0.35, strafeT: [0.28, 0.75], drive: 0.85, smartWeapon: 1, zoneEarly: true,
+    lootT: 45, third: 0.5, finish: 0.95, hold: 0.7, smoke: 0.8, early: 80, wary: 0.85 },
 };
 const SKILL = { ...DIFFICULTY.easy };
 const SKIP_N = 8; // barang yang diingat untuk dilewati (cincin; kedaluwarsa)
@@ -340,12 +343,14 @@ export function createBots(ctx, n = 50) {
     };
     const plan = new Map(); // regu → { land, at }: anggota terjun bersamaan & mendarat 5–18 m dari titik regu
     bots.forEach((b, bi) => {
-      if (b.ally) { b.ai.jumpAt = Infinity; b.ai.land = null; return; } // rekan pemain: ikut terjun saat pemain terjun
       const key = b.team === undefined ? -1 - bi : b.team;
       let S = plan.get(key);
       if (!S) plan.set(key, (S = pick(bi)));
       let land = S.land;
       for (let k = 0; k < 16; k++) { const a = Math.random() * Math.PI * 2, d = rnd(5, 18), x = S.land[0] + Math.cos(a) * d, y = S.land[1] + Math.sin(a) * d; if (ctx.inArea(x, y) && !col.blocked(x, y, 0.4)) { land = [x, y]; break; } }
+      // rekan pemain: bawaan ikut terjun saat pemain terjun; rencana regu sendiri (dropAt/dropLand) dipakai kalau pemain
+      // memilih 'ikut rekan' atau 'terjun sendiri' (PLAYER.dropMode)
+      if (b.ally) { b.ai.jumpAt = Infinity; b.ai.land = null; b.ai.own = false; b.ai.dropAt = S.at; b.ai.dropLand = land; return; }
       b.ai.jumpAt = S.at + rnd(0, 0.7);
       b.ai.land = land;
     });
@@ -391,7 +396,6 @@ export function createBots(ctx, n = 50) {
       a.lootEnd = ctx.now() + SKILL.lootT;
       a.lootN = 0;
       a.next = 0;
-      a.lootN = 0;
       b.nades ||= { frag: 0, smoke: 0 }; // mendarat tangan kosong seperti pemain: senjata, pelindung & granat harus dijarah
     }
   }
@@ -948,7 +952,7 @@ export function createBots(ctx, n = 50) {
     a.seenAt = now;
     a.lastSeen.copy(e.pos);
     a.losOk = true;
-    if (!b.weapons.some(Boolean)) { // tangan kosong → tinju kalau lawan sudah menempel / sama-sama tangan kosong dan dekat; selain itu kabur
+    if (!b.weapons.some(Boolean)) { // tangan kosong → tinju kalau lawan sudah menempel / sama-sama tangan kosong dan dekat; selain itu kabur (lagi, kalau pelarian sebelumnya sudah selesai/gagal tapi musuh masih terlihat)
       const eArmed = !!(e.weapons && e.weapons.some(Boolean));
       const brawl = e.state === 'ground' && !e.swim && Math.abs(e.pos.y - b.pos.y) < 1.6 && (d < 3.5 || (a.tac === 'melee' && d < 7) || (!eArmed && d < 9 && b.trait.aggr > 0.3));
       if (brawl) {
@@ -957,7 +961,11 @@ export function createBots(ctx, n = 50) {
         return; // mengejar & memukul: lihat steer()
       }
       a.tac = null;
-      if (a.mode !== 'flee') { a.mode = 'flee'; go(b, x + (x - ex) / (d || 1) * 60, y + (y - ey) / (d || 1) * 60, SKILL.sprint); }
+      if (a.mode !== 'flee' || (!a.nav && !a.route)) {
+        a.mode = 'flee';
+        const k = 45 / (d || 1), f = col.findFree(x + (x - ex) * k + rnd(-12, 12), y + (y - ey) * k + rnd(-12, 12), 10, 0.4) || [x + (x - ex) * k, y + (y - ey) * k];
+        go(b, f[0], f[1], SKILL.sprint);
+      }
       return;
     }
     if (a.tac === 'melee') a.tac = null;
@@ -1374,9 +1382,10 @@ export function createBots(ctx, n = 50) {
     }
     const run = now < a.zoneRun;
     a.losOk = false;
+    if (now < a.escUntil && a.nav) return; // sedang melepaskan diri dari tempat macet (lihat unstick)
     if (a.mode === 'fight' && a.tac === 'melee') { // lawan tinju lepas dari pandangan: kejar sebentar ke posisi terakhirnya, lalu kembali menjarah
       if (a.target && a.target.alive && now - a.seenAt < 2) { if (!a.nav) go(b, a.lastSeen.x, -a.lastSeen.z, SKILL.sprint, a.lastSeen.y); return; }
-      endFight(b); a.mode = 'loot'; a.lootT = 0;
+      endFight(b); a.mode = 'loot'; a.lootEnd = now + SKILL.lootT; a.lootN = 0;
     }
     // regu: sasaran yang sedang dilihat rekan → pemburu yang kehilangan jejak memakai posisi itu (maju ke tempat yang benar)
     if (a.mode === 'fight' && a.target && now - a.seenAt > 1.5 && b.sq) {
@@ -1482,18 +1491,22 @@ export function createBots(ctx, n = 50) {
     const w = weapon(b);
     if (w && w.inst.mag < w.def.mag * 0.6 && b.ammo[w.def.ammo] > 0 && !b.reloadEnd) b.reloadEnd = now + w.def.reload;
     if (w && !usable(b, w.inst)) equipBest(b);
-    // jarah barang di sekitar
-    // belum bersenjata: terus mencari (radius lebih luas, juga sambil berjalan) sampai dapat senjata
-    const seek = unarmed && a.mode === 'roam' && !!a.nav && now > (a.seekAt || 0);
-    if (seek) a.seekAt = now + 1.5;
-    if (!guard && (a.mode === 'loot' || a.mode === 'flee' || (a.mode === 'roam' && !a.nav) || seek)) {
-      if (a.mode === 'loot' && !L && !unarmed && (a.lootT > 32 || a.lootN >= 5)) { a.mode = 'roam'; a.nav = null; a.goal = null; } // pemimpin: sesi jarah dibatasi lalu jalan lagi; anggota menjarah selama pemimpin di dekatnya
-      else {
+    // jarah barang di sekitar. Pemimpin: satu sesi jarah dibatasi waktu (SKILL.lootT) — sesi berikutnya dimulai sendiri
+    // saat menemukan barang lagi di tempat lain; yang perlengkapannya sudah lengkap hanya mampir untuk barang bernilai tinggi.
+    // Barang yang tidak berguna (aturan applyItem) atau gagal dicapai tidak dipilih lagi (daftar lewati, lihat abandon).
+    // Sambil berjalan (roam) bot melirik tiap 1,5 dtk: barang yang jauh lebih baik (senjata saat tangan kosong, pelindung
+    // tinggi) di dekat jalur tetap diambil.
+    const peek = a.mode === 'roam' && !!a.nav && now > a.lootPeek && !L;
+    if (!guard && (a.mode === 'loot' || a.mode === 'flee' || (a.mode === 'roam' && !a.nav) || peek)) {
+      if (peek) a.lootPeek = now + 1.5;
+      if (a.mode === 'loot' && !L && !unarmed && (now > a.lootEnd || a.lootN >= 8)) { if (a.item && a.item.claim === b) a.item.claim = null; a.item = null; a.mode = 'roam'; a.nav = null; a.goal = null; a.lootEnd = 0; } // sesi habis: hanya barang yang berharga
+      {
         let best = null, bs = -1;
-        const armed = b.weapons[0] || b.weapons[1];
-        loot.near(x, y, L ? 30 : unarmed ? 110 : a.mode === 'loot' ? 70 : 30, (it) => {
-          const d = it.def, dist = Math.hypot(it.x - x, it.y - y) + Math.abs(it.z - b.pos.y) * 1.5; // lantai lain: lewat tangga (sedikit lebih jauh)
-          if (it === a.skip0 || it === a.skip1) return; // peti yang baru diperiksa (isinya tidak dibutuhkan)
+        const armed = b.weapons[0] || b.weapons[1], gear = geared(b), minV = peek ? 7.5 : a.mode === 'loot' ? 0 : gear ? 4.5 : now > a.lootEnd ? 2 : 0;
+        loot.near(x, y, L ? 30 : unarmed ? 110 : a.mode === 'loot' ? 70 : 30, (it) => { // belum bersenjata: cari lebih jauh, sesi jarah tidak berakhir sampai dapat senjata
+          if (it.claim && it.claim !== b && !(it.claim.roof && LIFTS.size)) return; // barang atap (loot.js menandainya 'atap'): bot kini bisa naik lift
+          const v = itemValue(b, it);
+          if (v <= minV || skipped(b, it, now)) return;
           if (L) { // dekat pemimpin saja; barang di kaki pemain — dan senjata di sekitarnya selama pemain belum bersenjata — untuk pemain
             const dl = Math.hypot(it.x - L.pos.x, it.y + L.pos.z);
             if (dl > 32 || (L.isPlayer && (dl < 3.5 || (it.def.kind === 'weapon' && dl < 14 && !L.weapons[0] && !L.weapons[1])))) return;
@@ -1815,11 +1828,14 @@ export function createBots(ctx, n = 50) {
           continue;
         }
         if (b.state === 'plane') {
-          if (b.ally) { if (flight && PLAYER && PLAYER.state !== 'plane') { b.state = 'fall'; b.pos.copy(PLAYER.pos); b.pos.y += 3 + (b.slot || 1) * 1.5; } } // rekan: terjun bersama pemain
+          if (b.ally && PLAYER && PLAYER.dropMode && PLAYER.dropMode !== 'lead') { // regu terjun menurut rencananya sendiri (pemain ikut, atau pemain turun sendiri)
+            if (flight && flight.t >= b.ai.dropAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4 + (b.slot || 1) * 1.5; b.ai.land = b.ai.dropLand; b.ai.own = true; }
+          }
+          else if (b.ally) { if (flight && PLAYER && PLAYER.state !== 'plane') { b.state = 'fall'; b.pos.copy(PLAYER.pos); b.pos.y += 3 + (b.slot || 1) * 1.5; } } // rekan: terjun bersama pemain
           else if (flight && flight.t >= b.ai.jumpAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4; }
           continue;
         }
-        if (b.state === 'fall' || b.state === 'chute') { if (!(b.ally && allyAir(b, dt))) airStep(b, dt); continue; }
+        if (b.state === 'fall' || b.state === 'chute') { if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; }
         if (b.down) { downStep(b, dt, now); continue; }
         b.ai.next -= dt;
         if (b.ai.next <= 0) { b.ai.next = 0.25 + Math.random() * 0.1; think(b, now); }

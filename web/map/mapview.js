@@ -164,6 +164,24 @@ export function drawMinimap(g, img, o) {
     g.fillStyle = m.color || '#D29F52';
     g.strokeStyle = '#fff';
     g.lineWidth = 2;
+    // tanda di luar jangkauan peta kecil: ditempel di tepi (panah menunjuk arahnya) + jaraknya
+    const dx = px - R, dy = py - R, pad = 13, lim = R - pad;
+    const out = o.square ? Math.max(Math.abs(dx), Math.abs(dy)) > lim : Math.hypot(dx, dy) > lim;
+    if (out) {
+      const f = o.square ? lim / Math.max(Math.abs(dx), Math.abs(dy)) : lim / Math.hypot(dx, dy), ex = R + dx * f, ey = R + dy * f, a = Math.atan2(dy, dx);
+      g.save();
+      g.translate(ex, ey); g.rotate(a);
+      g.beginPath();
+      g.moveTo(11, 0); g.lineTo(-5, -7.5); g.lineTo(-1.5, 0); g.lineTo(-5, 7.5); g.closePath();
+      g.fill(); g.stroke();
+      g.restore();
+      const dist = Math.hypot(m.x - o.x, m.y - o.y), txt = dist >= 1000 ? (dist / 1000).toFixed(1).replace('.', ',') + ' km' : Math.round(dist / 5) * 5 + ' m';
+      g.font = '700 10px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      const tw = g.measureText(txt).width / 2 + 3, tx = Math.min(S - tw, Math.max(tw, ex - Math.cos(a) * 24)), ty = Math.min(S - 8, Math.max(8, ey - Math.sin(a) * 18));
+      g.lineWidth = 3; g.strokeStyle = 'rgba(20,18,36,.85)'; g.strokeText(txt, tx, ty);
+      g.fillStyle = '#fff'; g.fillText(txt, tx, ty);
+      continue;
+    }
     g.beginPath();
     g.moveTo(px, py); g.lineTo(px - 6, py - 13); g.lineTo(px + 6, py - 13); g.closePath();
     g.fill();

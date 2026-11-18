@@ -634,7 +634,7 @@ export function createHud() {
       if (inPlane) {
         const go = s.planeT >= s.planeOpen, total = Math.max(1, s.planeClose);
         set('planeW', s.planeOpen + '|' + s.planeClose, () => { el.planeWin.style.left = (s.planeOpen / total * 100).toFixed(1) + '%'; el.planeWin.style.width = ((s.planeClose - s.planeOpen) / total * 100).toFixed(1) + '%'; });
-        set('planeGo', go, (v) => { el.plane.className = 'h-plane ' + (v ? 'go' : 'wait'); el.planeL.textContent = v ? 'Terjun sekarang · keluar kawasan' : 'Terjun · menuju kawasan'; });
+        set('planeGo', go + '|' + (s.drop || ''), () => { el.plane.className = 'h-plane ' + (go ? 'go' : 'wait'); el.planeL.textContent = (go ? 'Terjun sekarang · keluar kawasan' : 'Terjun · menuju kawasan') + (s.drop ? ' · Q: ' + s.drop : ''); });
         set('planeT', mmss(Math.max(0, (go ? s.planeClose : s.planeOpen) - s.planeT)), (v) => { el.planeT.textContent = v; });
         set('planeK', Math.round(clamp01(s.planeT / total) * 200), (v) => { el.planePos.style.setProperty('--k', v / 200); });
       }

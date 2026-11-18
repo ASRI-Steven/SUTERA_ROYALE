@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { buildCharacter, characterVariants } from '../map/rig.js';
 import { profile, saveProfile, owns, buy, equip, setName, ensureSquad, setMate, partySlots, setParty } from './profile.js';
-import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, setCharAura, gunTheme, compileSkinAsync } from './skins.js';
+import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, setCharAura, gunTheme, compileSkinAsync, applyGunSkinAsync, warmSkinCache, warmState } from './skins.js';
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
 import { tickSkins } from './skinfx.js';
@@ -120,6 +120,7 @@ function createStage({ scene, camera, col, sunDir }) {
     setCharAura(ch, skn && skn.aura); // legendaris: serbuk cahaya mengitari badan
     members[i] = { ch, yaw: yaw0 + sl2[2], pose: { speed: 0, armed: !!sl2[3], aim: false, pitch: 0, moveYaw: 0 }, gun: sl2[3], spin: 0 };
   }
+  let gunTok = 0;
   function gunSkin(ch, kind, id) { for (const o of ch.parts['gun_' + kind] || []) { try { applyGunSkin(o, id); } catch (e) { /* skin belum tersedia */ } } }
   for (let i = 0; i < 4; i++) build(i);
 
@@ -213,7 +214,12 @@ function createStage({ scene, camera, col, sunDir }) {
     refit() { if (aimMode === 'squad') aim('squad'); }, // anggota bertambah/berkurang: bingkai ulang kamera
     setOffset(v) { tgt.off = v; },
     preview(skinId) { build(0, skinId); if (members[0]) members[0].spin = 1; }, // pratinjau skin karakter: berputar pelan
-    gunPreview(id) { for (const m of members) if (m && m.gun) gunSkin(m.ch, m.gun, id); },
+    gunPreview(id) { // senjata di tangan regu: shader skin dikompilasi di latar dulu, baru dipasang (klik skin tidak menahan frame)
+      const tok = ++gunTok, roots = [];
+      for (const m of members) if (m && m.gun) roots.push(...(m.ch.parts['gun_' + m.gun] || []));
+      applyGunSkinAsync(roots, id, camera, scene, () => tok === gunTok);
+    },
+    gunRoots() { const r = []; for (const m of members) if (m && m.gun) r.push(...(m.ch.parts['gun_' + m.gun] || [])); return r; },
     gunShow, gunHide, killPreview,
     stopSpin() { for (const m of members) if (m) m.spin = 0; },
     frame(dt, t) {
@@ -424,6 +430,7 @@ export function createLobby(o) {
     setelan() {
       return `<div class="lb-set"><label for="lbSens">${ic('mouse')}<span><b>Sensitivitas mouse</b><small>Seberapa cepat bidikan mengikuti gerakan mouse.</small></span></label><div class="lb-range"><input id="lbSens" type="range" min="0.3" max="2.5" step="0.1" value="${sens}" data-sens><output data-sensval>${sens.toFixed(1)}</output></div></div>
         <div class="lb-set"><div class="lb-set-l">${ic('eye')}<span><b>Grafik</b><small>Kualitas menyesuaikan sendiri supaya gerakan tetap mulus. <kbd>F3</kbd> menampilkan FPS, <kbd>F4</kbd> memilih kualitas secara manual.</small></span></div></div>
+        <div class="lb-set"><div class="lb-set-l">${ic('eye')}<span><b>Cache grafis di awal</b><small>Semua skin senjata &amp; karakter disiapkan di latar begitu lobi terbuka, supaya toko dan pertandingan tidak tersendat saat skin pertama kali tampil. <span data-warmst>${warmText()}</span></small></span></div><button type="button" class="lb-btn ${warmOn() ? 'gold' : 'ghost'}" data-act="warm" aria-pressed="${warmOn()}">${warmOn() ? 'Aktif' : 'Nonaktif'}</button></div>
         <div class="lb-sec"><h3>Kontrol</h3></div>
         <ul class="lb-keys">
           <li><span>Gerak</span><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> jalan · <kbd>Shift</kbd> lari · <kbd>Spasi</kbd> lompat · <kbd>C</kbd> jongkok · <kbd>Z</kbd> tiarap</p></li>
@@ -485,6 +492,24 @@ export function createLobby(o) {
     requestAnimationFrame(step);
   }
   function refresh() { drawMini(); drawSquad(); drawPanel(); setCoins(); }
+  // ---------- cache grafis di awal (pengaturan; bawaan aktif) ----------
+  const warmOn = () => profile.warm !== false;
+  const warmText = () => (warmState.finished ? 'Status: siap.' : warmState.running ? `Status: menyiapkan ${warmState.done}/${warmState.total}…` : warmOn() ? 'Status: menunggu.' : 'Status: mati (skin disiapkan saat diklik).');
+  let warmEl = null, lobbyAlive = true;
+  function startWarm() {
+    if (warmState.running || warmState.finished) return;
+    if (!warmEl) {
+      warmEl = document.createElement('div');
+      warmEl.style.cssText = 'position:absolute;left:50%;bottom:1.1em;transform:translateX(-50%);z-index:5;pointer-events:none;padding:.4em .9em;border-radius:99px;background:rgba(18,16,34,.72);color:#e9e6f5;font-size:.82em;white-space:nowrap;transition:opacity .4s';
+      menu.appendChild(warmEl);
+    }
+    warmEl.style.opacity = '1';
+    warmSkinCache({
+      camera, scene: o.scene, roots: () => stage.gunRoots(), alive: () => lobbyAlive && warmOn(),
+      onProgress: (n, total) => { warmEl.textContent = `Menyiapkan cache grafis ${n}/${total}`; const st = $('[data-warmst]'); if (st) st.textContent = warmText(); },
+    }).then((ok) => { if (warmEl) { warmEl.textContent = ok ? 'Cache grafis siap' : 'Cache grafis dihentikan'; setTimeout(() => { if (warmEl) warmEl.style.opacity = '0'; }, 1200); } const st = $('[data-warmst]'); if (st) st.textContent = warmText(); });
+  }
+  if (warmOn()) setTimeout(() => { if (lobbyAlive) startWarm(); }, 1500); // setelah lobi tampil & tenang
   function toast(msg, kind = '') {
     const el = document.createElement('div');
     el.className = 'lb-t ' + kind;
@@ -597,6 +622,7 @@ export function createLobby(o) {
     }
     if (d.kick !== undefined) { const i = +d.kick; setParty(i - 1, false); lookI = -1; stage.build(i); stage.aim('squad'); refresh(); return; }
     if (d.look !== undefined) { const i = +d.look; lookI = lookI === i ? -1 : i; stage.aim(lookI < 0 ? 'squad' : 'member', i); return; } // klik lagi = kembali melihat seluruh regu
+    if (d.act === 'warm') { profile.warm = !warmOn(); saveProfile(); if (warmOn()) startWarm(); drawPanel(); return; }
     switch (d.act) {
       case 'claimall': { const got = claimAll(); if (got) toast(`${coin}<b>+${fmt(got)}</b> Koin Sutera`, 'gold'); refresh(); break; }
       case 'reroll': modal(`<h3>Acak ulang misi harian?</h3><p>Misi harian yang belum diklaim diganti dan kemajuannya hilang. Hanya bisa sekali sehari.</p><div class="lb-dlg-a"><button type="button" class="lb-btn ghost" data-act="cancel">Batal</button><button type="button" class="lb-btn gold" data-act="doreroll" autofocus>Acak ulang</button></div>`); break;
@@ -699,6 +725,7 @@ export function createLobby(o) {
       }
     },
     hide() {
+      lobbyAlive = false; // pemanasan cache berhenti di skin berikutnya
       clearInterval(tick);
       removeEventListener('keydown', onKey);
       if (modalClose) modalClose();

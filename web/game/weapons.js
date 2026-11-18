@@ -833,15 +833,32 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     m.position.set(0, 0, 0); m.visible = false; m.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     nArm.add(m); nadeMesh[nk] = m;
   }
-  // pose dasar lengan kiri disodorkan (ruang kamera): pergelangan W, siku E
-  const W0 = new THREE.Vector3(0.04, -0.165, -0.45), E0 = new THREE.Vector3(-0.4, -0.32, -0.25), ER = new THREE.Vector3(0.38, -0.47, -0.1);
-  const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tD = new THREE.Vector3(), q0 = new THREE.Quaternion();
-  function placeLimb(m, a, b) { m.position.copy(a).add(b).multiplyScalar(0.5); m.scale.set(1, a.distanceTo(b), 1); m.quaternion.setFromUnitVectors(UPV, tD.copy(b).sub(a).normalize()); }
-  function placeHand(h, wrist, elbow, roll0) { // telapak di pergelangan, jari menunjuk menjauh dari siku
-    h.position.copy(wrist);
-    h.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), tD.copy(wrist).sub(elbow).normalize());
-    h.rotateZ(roll0);
+  // tangan kosong: dua lengan dalam posisi jaga di bawah layar; tinju = satu lengan menyodok ke tengah lalu kembali
+  // kepalan (asal di pergelangan, buku jari ke −Z): punggung tangan, empat jari menekuk rapat, jempol melintang di depan jari
+  function fistHandMesh(sd) {
+    const g = new THREE.Group(), add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(vwxOf(geo), mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m; };
+    add(new THREE.BoxGeometry(0.08, 0.036, 0.07), glove, 0, 0.012, -0.05); // punggung tangan
+    for (let i = 0; i < 4; i++) {
+      const x = -0.0285 + i * 0.019, dz = i === 0 || i === 3 ? 0.004 : 0;
+      add(new THREE.SphereGeometry(0.0125, 10, 8), glove, x, 0.018, -0.086 + dz); // buku jari
+      add(new THREE.CapsuleGeometry(0.0098, 0.03, 3, 8), glove, x, -0.004, -0.094 + dz); // ruas pertama (turun dari buku jari)
+      add(new THREE.CapsuleGeometry(0.0092, 0.034, 3, 8), glove, x, -0.026, -0.07 + dz, Math.PI / 2); // ruas kedua (melipat ke telapak)
+    }
+    add(new THREE.BoxGeometry(0.074, 0.03, 0.05), glove, 0, -0.016, -0.045); // telapak di balik jari
+    add(new THREE.CapsuleGeometry(0.0105, 0.04, 3, 8), glove, -sd * 0.012, -0.034, -0.096, 0, 0, Math.PI / 2 - sd * 0.25); // jempol melintang
+    add(new THREE.CapsuleGeometry(0.012, 0.03, 3, 8), glove, -sd * 0.04, -0.018, -0.06, Math.PI / 2 - 0.5, 0, 0); // pangkal jempol
+    add(new THREE.CylinderGeometry(0.036, 0.038, 0.03, 12), cuff, 0, 0, 0.0, Math.PI / 2);
+    return g;
   }
+  const fistRig = new THREE.Group(), fistFore = [0, 1].map(() => new THREE.Mesh(vwxOf(new THREE.CylinderGeometry(0.034, 0.045, 1, 14)), sleeve)), fistHand = [fistHandMesh(-1), fistHandMesh(1)];
+  fistRig.add(...fistFore, ...fistHand);
+  fistRig.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  fistRig.visible = false; // ditempel ke root hanya selama dipakai
+  const fA = new THREE.Vector3(), fB = new THREE.Vector3(), fD = new THREE.Vector3(), fZ = new THREE.Vector3(0, 0, -1);
+  function fistLimb(m, a, b) { m.position.copy(a).add(b).multiplyScalar(0.5); m.scale.set(1, a.distanceTo(b), 1); m.quaternion.setFromUnitVectors(UPV, fD.copy(b).sub(a).normalize()); }
+  function fistPlace(h, wrist, elbow, roll0) { h.position.copy(wrist); h.quaternion.setFromUnitVectors(fZ, fD.copy(wrist).sub(elbow).normalize()); h.rotateZ(roll0); } // buku jari menjauh dari siku
+  const pinRing = new THREE.Mesh(new THREE.TorusGeometry(0.009, 0.0016, 6, 16), brassM); // cincin pin yang dicabut tangan kiri
+  pinRing.frustumCulled = false; nArmL.add(pinRing);
 
   // ---------- scope terpasang (aksesori): tabung berongga di atas pisir; dibuat sekali per senjata & perbesaran ----------
   const SCOPE_DY = 0.043; // tinggi sumbu tabung di atas garis pisir (m)
@@ -1529,9 +1546,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     },
     heal(kind, sec) { fadeAct(); st.act = { type: 'heal', kind, t: 0, u: 0, dur: sec, cancel: 0 }; st.inspect = 0; },
     // granat: genggam (tahan G) → lempar (lepas G) → senjata kembali
-    nadeHold(kind) { st.nade = { kind, t: 0, phase: 'hold' }; st.inspect = 0; },
-    nadeThrow() { if (st.nade) { st.nade.phase = 'throw'; st.nade.t = 0; } },
-    nadeCancel() { if (st.nade) { st.nade = null; nadeRig.visible = false; st.swap = Math.max(st.swap, 0.6); } },
+    punch() { st.punchSide = -st.punchSide; st.punch = { t: 0, side: st.punchSide }; st.guardT = 3; st.inspect = 0; },
+    nadeHold(kind) { st.nade = { kind, t: 0, phase: 'hold', quick: false }; st.inspect = 0; },
+    nadeThrow() { if (st.nade) { if (st.nade.t < 0.42) st.nade.quick = true; st.nade.phase = 'throw'; st.nade.t = 0; } },
+    nadeCancel() { if (st.nade) { st.nade = null; nadeRig.visible = false; st.swap = 1; } }, // senjata naik lagi dari bawah
     inspect() { if (!st.act && st.kind && !st.prev) st.inspect = 1; },
     resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); },
     // o: { dt, ads 0/1, moving 0..1, sprint, mdx, mdy (gerak mouse frame ini), grounded, scoped, reloading, healing, mag }
@@ -1578,21 +1596,31 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       const hA = act && act.type === 'heal' ? act : F && F.type === 'heal' ? F : null;
       if (hA) lower = animHeal(hA.u, hA.kind, hA.cancel);
       else heal.visible = false;
-      if (st.nade) { // granat: senjata turun, lengan kanan menggenggam granat di kanan layar; lempar = ayun ke depan-atas
-        const N = st.nade;
-        N.t += dt;
-        const ka = N.phase === 'hold' ? ease(Math.min(1, N.t / 0.18)) : 1, sw = N.phase === 'throw' ? Math.min(1, N.t / 0.32) : 0;
-        lower = Math.max(lower, ka * (1 - ease((sw - 0.75) / 0.25)));
-        nadeRig.visible = true;
-        for (const nk in nadeMesh) nadeMesh[nk].visible = nk === N.kind && N.phase !== 'throw'; // dilepas: granat sudah di dunia
-        const wob = Math.sin(st.t * 3) * 0.004;
-        const hand = tA.set(0.2 - 0.1 * sw, -0.12 + 0.17 * Math.sin(sw * Math.PI) - 0.3 * (1 - ka) - (sw > 0.6 ? (sw - 0.6) * 0.9 : 0), -0.34 - 0.32 * Math.sin(Math.min(1, sw * 1.4) * Math.PI / 2) + wob);
-        const elbow = tB.set(0.36, -0.42 - 0.3 * (1 - ka), -0.05);
-        if (!nadeGlbHand) { placeLimb(nadeFore, elbow, hand); placeHand(nadeHand, hand, elbow, 1.4); }
-        nadeGrip.position.copy(hand).add(tmp.set(-0.02, 0.035, -0.03));
-        nadeGrip.rotation.set(-0.3 - sw * 2, 0.2, 0.15);
-        if (N.phase === 'throw' && N.t > 0.42) { st.nade = null; nadeRig.visible = false; st.swap = Math.max(st.swap, 0.7); }
-      } else nadeRig.visible = false;
+      if (st.nade) lower = Math.max(lower, animNade(st.nade, dt));
+      else nadeRig.visible = false;
+      // tangan kosong: lengan naik saat tidak ada senjata / obat / granat di tangan
+      {
+        const want = o.fists && !st.kind && !st.prev && !st.nade && !(act && act.type === 'heal') ? 1 : 0;
+        st.fistK += (want - st.fistK) * k(want ? 9 : 16);
+        if (!want) { st.punch = null; st.guardT = 0; }
+        st.guardT = Math.max(0, st.guardT - dt);
+        st.guard += ((st.guardT > 0 ? 1 : 0) - st.guard) * k(st.guardT > 0 ? 14 : 5); // habis memukul: kuda-kuda tinju ±3 dtk, lalu turun
+        fistRig.visible = st.fistK > 0.02;
+        if (fistRig.visible) {
+          const P = st.punch;
+          let pu = 0;
+          if (P) { P.t += dt / 0.34; if (P.t >= 1) st.punch = null; else pu = P.t < 0.35 ? ease(P.t / 0.35) : 1 - ease((P.t - 0.35) / 0.65); }
+          const bob = Math.sin(st.t * 5.2) * 0.012 * o.moving, low = (1 - st.fistK) * 0.4 + st.land * 0.03 + st.sprint * 0.08;
+          for (let i = 0; i < 2; i++) {
+            const sd = i ? 1 : -1, hitK = P && P.side === sd ? pu : 0, guard = P && P.side !== sd ? pu : 0;
+            const gd = st.guard, lead = sd < 0 ? 1 : 0; // kuda-kuda: kepalan naik ke depan dagu, tangan kiri sedikit di depan
+            const hand = fA.set(sd * (0.2 - 0.08 * gd) * (1 - 0.85 * hitK) + st.swayX * 0.015, -0.3 + 0.19 * gd + 0.08 * hitK + 0.02 * guard - low + bob * sd + Math.sin(st.t * 1.4 + i) * 0.003, -0.4 - 0.05 * gd * lead - 0.36 * hitK + 0.05 * guard);
+            const elbow = fB.set(sd * (0.36 - 0.1 * gd - 0.1 * hitK), -0.52 + 0.08 * gd - low + 0.2 * hitK, -0.08 - 0.22 * hitK);
+            fistLimb(fistFore[i], elbow, hand);
+            fistPlace(fistHand[i], hand, elbow, sd * (1.25 - 0.9 * hitK)); // jaga: kepalan tegak (jempol di atas); memukul: berputar mendatar
+          }
+        }
+      }
       // ganti senjata: yang lama turun dulu
       if (st.prev) {
         st.prevT += dt / 0.2;
