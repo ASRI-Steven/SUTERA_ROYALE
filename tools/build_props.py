@@ -681,42 +681,18 @@ class Builder:
                 self.stat['halte_skip'] += 1
         self.stat['halte'] = n
 
-    # ---------------------------------------------------------------- gerbang cluster
+    # ---------------------------------------------------------------- gerbang cluster (gapura)
     def gates(self):
-        nb = ng = nps = nn = 0
-        entrances = []
-        for p, (x, y) in self.osm_points(lambda p: p.get('barrier') in ('lift_gate', 'gate', 'swing_gate', 'sliding_gate')):
-            if not self.inside(x, y):
-                continue
+        """Pintu masuk cluster perumahan = titik gerbang/palang OSM ≤ 40 m dari batas cluster (berdekatan ≤ 45 m digabung):
+        gapura melintang jalan masuk (pilar di kedua tepi + balok bernama), tembok sayap 8–18 m mengikuti batas cluster,
+        pos satpam & palang (lengan terangkat) di sisi dalam. Palang OSM lain (parkir dll.) tetap palang lepas; gerbang
+        & pilar lepas tidak dipasang (tampak janggal tanpa tembok)."""
+        pts = [(x, y, p.get('barrier')) for p, (x, y) in self.osm_points(lambda p: p.get('barrier') in ('lift_gate', 'gate', 'swing_gate', 'sliding_gate')) if self.inside(x, y)]
+        ents = []
+        for (x, y, kind) in pts:
             nr = self.roads.nearest(x, y, 6)
             if not nr:
                 continue
-            s, t, px, py, d = nr
-            (ax, ay), (bx, by) = s['a'], s['b']
-            L = math.hypot(bx - ax, by - ay) or 1
-            ux, uy = (bx - ax) / L, (by - ay) / L
-            w = s['w']
-            kind = p.get('barrier')
-            if kind == 'lift_gate':
-                done = False
-                for side in ((1, -1) if h01('bg', round(x), round(y)) < 0.5 else (-1, 1)):
-                    nx, ny = -uy * side, ux * side
-                    hx, hy = px + nx * (w / 2 + 0.45), py + ny * (w / 2 + 0.45)
-                    if self.ok(hx, hy, 0.25, road=0.05, bld=0.2, tree=0.35, prop=0.3):
-                        # lengan terangkat: depan (+Z) = melintang jalan ke arah seberang
-                        self.put('boom', hx, hy, ang(-nx, -ny), 0, s=1.0, r=0.4)
-                        nb += 1
-                        done = True
-                        break
-            else:
-                ok = 0
-                for side in (1, -1):
-                    nx, ny = -uy * side, ux * side
-                    hx, hy = px + nx * (w / 2 + 0.45), py + ny * (w / 2 + 0.45)
-                    if self.ok(hx, hy, 0.3, road=0.1, bld=0.15, tree=0.4, prop=0.3):
-                        self.put('pillar', hx, hy, ang(ux, uy), 0, r=0.45)
-                        ok += 1
-                ng += ok
             cl = None
             for c in self.clusters:
                 if c['kind'] != 'residential':
@@ -728,50 +704,187 @@ class Builder:
                 if dd < 40 and (cl is None or dd < cl[0]):
                     cl = (dd, c)
             if cl:
-                entrances.append((x, y, px, py, ux, uy, w, cl[1], s['ri']))
-        # pos satpam + papan nama cluster: satu per pintu masuk (gerbang berdekatan ≤ 45 m digabung)
-        used = []
-        named = set()
-        for (x, y, px, py, ux, uy, w, c, ri) in entrances:
-            if any(math.hypot(x - qx, y - qy) < 45 for qx, qy in used):
+                ents.append((x, y, nr[0], cl[1]))
+        self.gate_list = []
+        tried = []
+        for (x, y, s, c) in ents:
+            if any(math.hypot(x - qx, y - qy) < 45 for qx, qy in tried):
                 continue
-            used.append((x, y))
-            # arah keluar cluster sepanjang jalan
-            out = 1 if not bm.pip(px + ux * 15, py + uy * 15, c['r']) else -1
-            placed = False
+            tried.append((x, y))
+            self.gapura(x, y, s, c)
+        nb = 0
+        for (x, y, kind) in pts:  # palang lepas (bukan pintu masuk cluster)
+            if kind != 'lift_gate' or any(math.hypot(x - g['x'], y - g['y']) < 35 for g in self.gate_list):
+                continue
+            nr = self.roads.nearest(x, y, 6)
+            if not nr:
+                continue
+            s, t, px, py, d = nr
+            (ax, ay), (bx, by) = s['a'], s['b']
+            L = math.hypot(bx - ax, by - ay) or 1
+            ux, uy, w = (bx - ax) / L, (by - ay) / L, s['w']
+            for side in ((1, -1) if h01('bg', round(x), round(y)) < 0.5 else (-1, 1)):
+                nx, ny = -uy * side, ux * side
+                hx, hy = px + nx * (w / 2 + 0.45), py + ny * (w / 2 + 0.45)
+                if self.ok(hx, hy, 0.25, road=0.05, bld=0.2, tree=0.35, prop=0.3):
+                    self.put('boom', hx, hy, ang(-nx, -ny), 0, s=1.0, r=0.4)  # lengan terangkat melintang jalan
+                    nb += 1
+                    break
+        self.stat['gates'] = {'entrances': len(tried), 'gapura': len(self.gate_list), 'walls': sum(1 for g in self.gate_list for k in ('wl', 'wr') if g[k]),
+                              'boom_lepas': nb, 'names': len(self.names)}
+
+    def gapura(self, x, y, s, c):
+        ring = c['r']
+        nr0 = self.roads.nearest(x, y, 6, lambda q: q['ri'] == s['ri'])
+        if not nr0:
+            return None
+        s0, x0, y0 = nr0[0], nr0[2], nr0[3]
+        (ax, ay), (bx, by) = s0['a'], s0['b']
+        L = math.hypot(bx - ax, by - ay) or 1
+        ix, iy = (bx - ax) / L, (by - ay) / L
+        cx, cy = bm.centroid(ring)
+        fin, bin_ = bm.pip(x0 + ix * 14, y0 + iy * 14, ring), bm.pip(x0 - ix * 14, y0 - iy * 14, ring)
+        if (bin_ and not fin) or (fin == bin_ and (cx - x0) * ix + (cy - y0) * iy < 0):
+            ix, iy = -ix, -iy  # arah masuk cluster
+        best = None
+        # gapura biasanya mundur dari simpang jalan besar: geser sepanjang jalan masuk (bisa ruas OSM lanjutannya) ≤ 26 m
+        for sh in (0, 1.5, 3, 4.5, 6, 7.5, 9, 10.5, 12, 14, 16, 18, 20, 23, 26, -1.5, -3):
+            px0, py0 = x0 + ix * sh, y0 + iy * sh
+            def along(q, px0=px0, py0=py0):
+                (qa, qb) = q['a'], q['b']
+                ql = math.hypot(qb[0] - qa[0], qb[1] - qa[1]) or 1
+                return abs((qb[0] - qa[0]) / ql * ix + (qb[1] - qa[1]) / ql * iy) > 0.8
+            nr = self.roads.nearest(px0, py0, 4, along)
+            if not nr:
+                continue
+            s2, t2, qx, qy, d2 = nr
+            (ax, ay), (bx, by) = s2['a'], s2['b']
+            L = math.hypot(bx - ax, by - ay) or 1
+            ux, uy = (bx - ax) / L, (by - ay) / L
+            if ux * ix + uy * iy < 0:
+                ux, uy = -ux, -uy
+            nx, ny = -uy, ux
+            w = s2['w']
+            half = w / 2 + 1.25
+            ok = True
             for side in (1, -1):
-                for sd in (-4, -7, -1, -10, 2):
-                    nx, ny = -uy * side, ux * side
-                    gx = px + ux * sd * out + nx * (w / 2 + 2.0)
-                    gy = py + uy * sd * out + ny * (w / 2 + 2.0)
-                    a = ang(-nx, -ny)  # jendela depan menghadap jalan
-                    if self.ok_box(gx, gy, a, 2.6, 2.4, road=0.5, bld=0.4, tree=0.4, prop=0.4):
-                        self.put('guard', gx, gy, a, 0, r=1.9)
-                        nps += 1
-                        placed = True
+                px, py = qx + nx * side * half, qy + ny * side * half
+                if not self.ok(px, py, 0.8, road=0.15, bld=0.5, water=0.5, tree=0.3, prop=0.6):
+                    ok = False
+            if ok:  # balok melintang: tidak di simpang (jalan lain memotong garis gapura)
+                for k in frange(-half, half, 1.0):
+                    if self.roads.clearance(qx + nx * k, qy + ny * k, 12, skip=s2['ri']) < 1.5:
+                        ok = False
                         break
-                if placed:
+            if ok:
+                best = (qx, qy, ux, uy, nx, ny, w, half)
+                break
+        if not best:
+            return None
+        qx, qy, ux, uy, nx, ny, w, half = best
+        walls = {}
+        for side, key in ((1, 'wl'), (-1, 'wr')):
+            sx, sy = qx + nx * side * (half + 0.6), qy + ny * side * (half + 0.6)
+            walls[key] = self.wing(sx, sy, nx * side, ny * side, ring)
+        for side, key in ((1, 'wl'), (-1, 'wr')):  # pilar & tembok jadi rintangan untuk penempatan berikutnya
+            self.props.add(qx + nx * side * half, qy + ny * side * half, 0.9, 'gapura')
+            for (wx, wy) in self.sample_path(walls[key], 1.0):
+                self.props.add(wx, wy, 0.35, 'tembok')
+        # pos satpam & palang di dalam gerbang (sisi pertama yang lapang)
+        guard_side = 0
+        for side in (1, -1):
+            for back in (5.0, 7.0, 9.0, 11.5):
+                gx, gy = qx + ux * back + nx * side * (w / 2 + 2.1), qy + uy * back + ny * side * (w / 2 + 2.1)
+                a = ang(-nx * side, -ny * side)  # jendela depan menghadap jalan
+                if self.ok_box(gx, gy, a, 2.6, 2.4, road=0.45, bld=0.5, tree=0.3, prop=0.4):
+                    self.put('guard', gx, gy, a, 0, r=1.9)
+                    guard_side = side
                     break
-            if c['name'] in named or len(self.names) >= 40:  # = sel nama di atlas (web/map/envprops.js NM.n)
+            if guard_side:
+                break
+        for side in ((guard_side,) if guard_side else (1, -1)):
+            hx, hy = qx + ux * 2.4 + nx * side * (w / 2 + 0.45), qy + uy * 2.4 + ny * side * (w / 2 + 0.45)
+            if self.ok(hx, hy, 0.25, road=0.05, bld=0.2, tree=0.3, prop=0.3):
+                self.put('boom', hx, hy, ang(-nx * side, -ny * side), 0, s=1.0, r=0.4)
+                break
+        if c['name'] not in self.names and len(self.names) < 40:  # = sel nama di atlas (web/map/envprops.js NM.n)
+            self.names.append(c['name'])
+        self.gate_list.append({'x': qx, 'y': qy, 'a': ang(ux, uy), 'w': w, 'half': half,
+                               'n': self.names.index(c['name']) if c['name'] in self.names else -1,
+                               'wl': walls['wl'], 'wr': walls['wr']})
+        return True
+
+    @staticmethod
+    def sample_path(path, step):
+        if not path:
+            return []
+        out = [path[0]]
+        for (ax, ay), (bx, by) in zip(path, path[1:]):
+            L = math.hypot(bx - ax, by - ay)
+            k = max(1, int(L / step))
+            for i in range(1, k + 1):
+                out.append((ax + (bx - ax) * i / k, ay + (by - ay) * i / k))
+        return out
+
+    def wing(self, sx, sy, ox, oy, ring, maxlen=17.0):
+        """Tembok sayap dari muka luar pilar (sx, sy), menjauhi jalan (arah awal ox, oy), mengikuti batas cluster bila
+        batasnya ≤ 9 m dari pilar; berhenti di halangan pertama (jalan, gedung, air, pohon, benda) → [(x, y), …] atau None."""
+        n = len(ring)
+        best = None
+        for k in range(n):
+            d, t, px, py = seg_dist(sx, sy, *ring[k - 1], *ring[k])
+            if best is None or d < best[0]:
+                best = (d, k, px, py)
+        path = [(sx, sy)]
+        if best and best[0] < 9:
+            d, k, px, py = best
+            fa = (ring[k][0] - px) * ox + (ring[k][1] - py) * oy
+            fb = (ring[k - 1][0] - px) * ox + (ring[k - 1][1] - py) * oy
+            step, idx = (1, k) if fa >= fb else (-1, (k - 1) % n)
+            if d > 0.6:
+                path.append((px, py))
+            cur, total = (px, py), math.hypot(px - sx, py - sy)
+            for _ in range(24):
+                nxt = ring[idx % n]
+                seg = math.hypot(nxt[0] - cur[0], nxt[1] - cur[1])
+                if total + seg >= maxlen:
+                    f = (maxlen - total) / seg if seg > 1e-6 else 0
+                    path.append((cur[0] + (nxt[0] - cur[0]) * f, cur[1] + (nxt[1] - cur[1]) * f))
+                    break
+                path.append(nxt)
+                total += seg
+                cur = nxt
+                idx += step
+            # batas cluster harus menjauhi jalan sejak potongan pertama (bukan menyusuri jalan); kalau tidak, tembok lurus
+            dx, dy = path[-1][0] - sx, path[-1][1] - sy
+            fx, fy = path[1][0] - sx, path[1][1] - sy
+            if len(path) > 2 and math.hypot(fx, fy) < 1.0:
+                fx, fy = path[2][0] - sx, path[2][1] - sy
+            if dx * ox + dy * oy < 0.35 * math.hypot(dx, dy) or fx * ox + fy * oy < 0.6 * math.hypot(fx, fy):
+                path = [(sx, sy), (sx + ox * maxlen, sy + oy * maxlen)]
+        else:
+            path.append((sx + ox * maxlen, sy + oy * maxlen))
+        # potong di halangan pertama
+        out, total = [path[0]], 0.0
+        for (ax, ay), (bx, by) in zip(path, path[1:]):
+            L = math.hypot(bx - ax, by - ay)
+            if L < 1e-6:
                 continue
-            done = False
-            for side in (-1, 1):
-                for sd, back in ((6, 3.3), (9, 3.3), (4, 4.0), (12, 3.5), (6, 5.0), (15, 4.0)):
-                    nx, ny = -uy * side, ux * side
-                    sx = px + ux * sd * out + nx * (w / 2 + back)
-                    sy = py + uy * sd * out + ny * (w / 2 + back)
-                    a = ang(ux * out, uy * out)  # papan menghadap pengunjung yang datang dari luar
-                    if self.ok_box(sx, sy, a, 4.2, 0.9, road=0.4, bld=0.4, tree=0.3, prop=0.4):
-                        if c['name'] not in self.names:
-                            self.names.append(c['name'])
-                        self.put('namesign', sx, sy, a, self.names.index(c['name']), r=2.1)
-                        named.add(c['name'])
-                        nn += 1
-                        done = True
-                        break
-                if done:
+            k = max(1, int(L / 0.5))
+            stop = None
+            for i in range(1, k + 1):
+                x, y = ax + (bx - ax) * i / k, ay + (by - ay) * i / k
+                if not self.ok(x, y, 0.2, road=0.35, bld=0.45, water=0.5, tree=0.35, prop=0.25):
+                    stop = i - 1
                     break
-        self.stat['gates'] = {'boom': nb, 'pillar': ng, 'guard': nps, 'namesign': nn, 'entrances': len(used)}
+            if stop is not None:
+                if stop > 0:
+                    out.append((ax + (bx - ax) * stop / k, ay + (by - ay) * stop / k))
+                    total += L * stop / k
+                break
+            out.append((bx, by))
+            total += L
+        return [(round(x, 2), round(y, 2)) for x, y in out] if total >= 3.0 and len(out) >= 2 else None
 
     # ---------------------------------------------------------------- lampu lalu lintas & videotron (OSM)
     def signals(self):
@@ -1176,6 +1289,10 @@ def main():
         'drops': [[d[0], dmr(d[1]), dmr(d[2]), dmr(d[3])] for d in getattr(b, 'drops', [])],
         'fences': [{'p': [dmr(v) for v in f['p']], 'h': dmr(f['h']), 'gate': f.get('gate'), 'wire': 1 if f.get('wire') else 0} for f in b.fences],
         'hoards': [{'p': [dmr(v) for v in h['p']]} for h in b.hoards],
+        # gapura pintu masuk cluster: titik tengah di as jalan (dm), a = arah masuk cluster (0,1°), w = lebar jalan (dm),
+        # h = jarak pilar dari as (dm), n = indeks nama (−1 = tanpa nama), wl/wr = tembok sayap kiri/kanan [x, y, …] (dm)
+        'gates': [{'x': dmr(g['x']), 'y': dmr(g['y']), 'a': int(round(math.degrees(g['a']) * 10)) % 3600, 'w': dmr(g['w']), 'h': dmr(g['half']), 'n': g['n'],
+                   'wl': [dmr(v) for p in (g['wl'] or []) for v in p], 'wr': [dmr(v) for p in (g['wr'] or []) for v in p]} for g in getattr(b, 'gate_list', [])],
     }
     with open(a.out, 'w', encoding='utf-8') as fo:
         json.dump(out, fo, ensure_ascii=False, separators=(',', ':'))
