@@ -15,7 +15,7 @@ export const HOUSE = { bay: 3.6, wx0: 0.3, fh: 3.3, wy0: 0.36, wy1: 0.78, doorW:
 // bukaan berkala toko/aula (= shader world.js): di rentang sisi depan, berlubang bila mod(u, P) ∈ [p, P − p] dan v < top
 const SHOP = { P: 5.2, p: 0.35, top: 3.0, ceil: 3.4 };
 const HALL_BIG = { P: 24, p: 9, top: 3.6, ceil: 4.6, G: 10 }, HALL_SMALL = { P: 8, p: 2.2, top: 3.0, ceil: 3.4, G: 6.5 };
-const R_OPEN = 85, R_CLOSE = 110, BUILD_PER_FRAME = 3;
+const R_OPEN = 85, R_CLOSE = 110, BUILD_MS = 2.0; // interior dibangun bertahap: ≤ ±2 ms per frame (mal besar dicicil beberapa frame)
 const M = 0.1;
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
 const fract = (v) => v - Math.floor(v);
@@ -36,9 +36,19 @@ function edgesOf(pts) {
     const a = pts[j], b = pts[(j + 1) % pts.length], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
     if (len < 0.05) continue; // sama dengan walls() di world.js
     const ux = dx / len, uy = dy / len;
-    edges.push({ j, a, b, len, u0: per, ux, uy, nx: -uy, ny: ux }); // normal ke dalam (kiri arah CCW)
+    edges.push({ j, a, b, len, u0: per, ux, uy, nx: -uy, ny: ux, x0: 0, x1: 0 }); // normal ke dalam (kiri arah CCW)
     per += len;
   }
+  // sudut cekung: sisi dalam dinding (tebal HOUSE.wall) diperpanjang sampai titik temunya (x0 sebelum awal, x1 setelah
+  // ujung sisi, m) — dulu berhenti di ujung sisi sehingga ada celah tegak tembus pandang di tiap pojok cekung
+  const T = HOUSE.wall;
+  edges.forEach((B, k) => {
+    const A = edges[(k + edges.length - 1) % edges.length], cr = A.ux * B.uy - A.uy * B.ux;
+    if (cr > -1e-3) return; // cembung / lurus
+    const Dx = (B.nx - A.nx) * T, Dy = (B.ny - A.ny) * T;
+    B.x0 = Math.min(4 * T, Math.max(0, -(Dx * A.uy - Dy * A.ux) / cr));
+    A.x1 = Math.min(4 * T, Math.max(0, (Dx * B.uy - Dy * B.ux) / cr));
+  });
   return edges;
 }
 const isRect = (E, tol) => E.length === 4 && E.every((e, j) => Math.abs(e.ux * E[(j + 1) % 4].ux + e.uy * E[(j + 1) % 4].uy) < tol);
@@ -88,25 +98,71 @@ export function planHomes(D) {
   const site = { roadDist, occupied };
   for (let i = 0; i < B.r.length; i++) {
     const kind = B.k[i];
-    if (kind !== 0 && kind !== 1) continue;
+    if (kind > 3) continue; // 5 = kanopi terbuka (world.js canopyRoof): bisa dilewati, tanpa interior
     const flat = B.r[i], n = flat.length >> 1;
-    if (n < 4 || (kind === 0 && n > 12)) continue;
+    if (n < 3 || n > 160) continue;
     const pts = [];
     for (let j = 0; j < n; j++) pts.push([flat[2 * j] * M, flat[2 * j + 1] * M]);
     if (signedArea(pts) < 0) pts.reverse(); // sama dengan world.js (CCW)
     const area = Math.abs(signedArea(pts)), h = B.h[i] * M;
-    const H = kind === 0 ? planHouse(i, pts, area, h, site) : planShop(i, pts, area, h, roadDist);
+    // rumah tapak; gedung jenis 0 > 700 m² (gudang, sekolah, kantor bertanda "yes") = aula; menara & gedung publik = lobi + lift
+    const H = kind === 2 || kind === 3 ? planTower(i, pts, area, h, site, D.roofs && D.roofs.get(i))
+      : kind === 0 ? (area > 700 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site)
+        : planShop(i, pts, area, h, site);
     if (H) { H.blind = (D.blind && D.blind.get(i)) || null; homes.set(i, H); } // sisi tanpa jendela (menempel gedung lain, world.js)
   }
   return homes;
 }
+// ---------- Pembagian ruang umum ----------
+// Potong poligon p dengan garis {q · dir = c}: hanya bila garis memotong tepi tepat dua kali (kedua belahan tetap poligon
+// sederhana, juga untuk denah cekung) → { halves: [kiri, kanan], seg: [titik potong 1, titik potong 2] }, selain itu null.
+function cutPoly(p, dir, c) {
+  const f = p.map((q) => q[0] * dir[0] + q[1] * dir[1] - c), n = p.length;
+  if (f.some((v) => Math.abs(v) < 1e-4)) return null; // titik sudut tepat di garis: coba posisi lain
+  const A = [], B = [], X = [];
+  for (let j = 0; j < n; j++) {
+    const k = (j + 1) % n, q = p[j];
+    (f[j] < 0 ? A : B).push(q);
+    if ((f[j] < 0) !== (f[k] < 0)) { const t = f[j] / (f[j] - f[k]), x = lerp2(q, p[k], t); A.push(x); B.push(x); X.push(x); }
+  }
+  return X.length === 2 ? { halves: [A, B], seg: X } : null;
+}
+// Bagi denah rumah jadi ruang ±target m² (lebar ≥ 2,4 m): potong berulang sejajar/tegak lurus sisi terpanjang; tiap potongan
+// = sekat dengan ambang pintu 1,4 m (potongan < 2,6 m dibiarkan terbuka). Dipakai rumah tidak segi empat & rumah besar.
+function splitRooms(H, target) {
+  const e0 = H.edges.reduce((a, b) => (b.len > a.len ? b : a)), U = [e0.ux, e0.uy], V = [-e0.uy, e0.ux];
+  const ext = (poly, d) => { let lo = Infinity, hi = -Infinity; for (const q of poly) { const v = q[0] * d[0] + q[1] * d[1]; lo = Math.min(lo, v); hi = Math.max(hi, v); } return [lo, hi]; };
+  const rec = (poly, depth, seed) => {
+    if (Math.abs(signedArea(poly)) <= target * 1.35 || depth > 7) { H.rooms.push(poly); return; }
+    const eu = ext(poly, U), ev = ext(poly, V);
+    for (const d of eu[1] - eu[0] >= ev[1] - ev[0] ? [U, V] : [V, U]) { // potong melintang sisi yang lebih panjang dulu
+      const [lo, hi] = d === U ? eu : ev;
+      if (hi - lo < 5) continue;
+      for (const fr of [0.5, 0.42, 0.58, 0.34, 0.66, 0.27, 0.73]) {
+        const cut = cutPoly(poly, d, lo + (hi - lo) * (fr + (hash(seed, fr * 7) - 0.5) * 0.08));
+        if (!cut) continue;
+        const [P1, P2] = cut.halves;
+        if (Math.abs(signedArea(P1)) < 9 || Math.abs(signedArea(P2)) < 9) continue;
+        if ([P1, P2].some((P) => { const a = ext(P, U), b = ext(P, V); return a[1] - a[0] < 2.4 || b[1] - b[0] < 2.4; })) continue;
+        const [a, b] = cut.seg, len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (len >= 2.6) { const g = (0.3 + hash(seed, 3.3) * 0.4) * (len - HOUSE.gapW); H.parts.push({ a, b, len, g0: g, g1: g + HOUSE.gapW }); }
+        rec(P1, depth + 1, seed * 1.31 + 1.7);
+        rec(P2, depth + 1, seed * 1.77 + 2.9);
+        return;
+      }
+    }
+    H.rooms.push(poly);
+  };
+  rec(H.pts, 0, H.i * 0.37 + 1);
+}
 
 function planHouse(i, pts, area, h, { roadDist, occupied }) {
-  if (area < 35 || area > 700 || h < 3.2) return null;
+  if (area < 8 || h < 2.9) return null;
   const H = { i, pts, h, area, ceil: Math.min(3.0, h - 0.35), edges: edgesOf(pts), doors: [], parts: [], rooms: [], furn: [] };
-  // sekat (rumah segi empat): potong sumbu panjang, rumah besar dibagi lagi
+  // sekat (rumah segi empat): potong sumbu panjang, rumah besar dibagi lagi; denah lain & rumah besar: pembagian umum
   const R = hash(pts[0][0], pts[0][1]);
-  if (pts.length === 4 && area >= 60) {
+  if (!(pts.length === 4 && area < 250) && area >= 45) splitRooms(H, Math.min(60, Math.max(28, 18 + area * 0.12)));
+  else if (pts.length === 4 && area >= 60) {
     let q = pts;
     const l01 = Math.hypot(q[1][0] - q[0][0], q[1][1] - q[0][1]), l12 = Math.hypot(q[2][0] - q[1][0], q[2][1] - q[1][1]);
     if (l12 > l01) q = [q[1], q[2], q[3], q[0]];
@@ -124,21 +180,26 @@ function planHouse(i, pts, area, h, { roadDist, occupied }) {
   } else H.rooms.push(pts);
   // pintu depan: sisi terdekat jalan utama (bukan gang servis di belakang), di luarnya tidak ada gedung lain;
   // pintu belakang: sisi yang paling berlawanan (atau samping) yang di luarnya juga kosong
-  const cand = H.edges.filter((e) => e.len >= 2.6).map((e) => { const mx = (e.a[0] + e.b[0]) / 2, my = (e.a[1] + e.b[1]) / 2, dm = roadDist(mx, my, true); return { e, d: dm < 1e8 ? dm : roadDist(mx, my) + 500 }; }).sort((p, q2) => p.d - q2.d);
-  const placeDoor = (e) => {
-    for (let k = 0; k < 7; k++) {
-      const t = 0.3 + hash(i + k * 3.1, e.u0) * 0.4, s = t * e.len, s0 = s - HOUSE.doorW / 2, s1 = s + HOUSE.doorW / 2;
-      if (s0 < 0.45 || s1 > e.len - 0.45) continue;
+  const roadOf = (e) => { const mx = (e.a[0] + e.b[0]) / 2, my = (e.a[1] + e.b[1]) / 2, dm = roadDist(mx, my, true); return dm < 1e8 ? dm : roadDist(mx, my) + 500; };
+  const cand = H.edges.filter((e) => e.len >= 2.6).map((e) => ({ e, d: roadOf(e) })).sort((p, q2) => p.d - q2.d);
+  // lv = kelonggaran (dipakai bila aturan biasa tidak menemukan tempat): 1 = semua posisi di sisi, cukup 1 m kosong di
+  // luar; 2 = tepi & ujung sekat lebih mepet; 3 = pintu sempit 1 m (rumah mungil / sisi pendek)
+  const placeDoor = (e, lv = 0) => {
+    const W = lv >= 3 ? Math.min(1.0, e.len - 0.36) : HOUSE.doorW, mg = lv >= 3 ? 0.18 : lv >= 2 ? 0.25 : 0.45, n = lv ? 17 : 7;
+    for (let k = 0; k < n; k++) {
+      const t = lv ? (k + 0.5) / n : 0.3 + hash(i + k * 3.1, e.u0) * 0.4, s = t * e.len, s0 = s - W / 2, s1 = s + W / 2;
+      if (s0 < mg || s1 > e.len - mg) continue;
       const px = e.a[0] + e.ux * s, py = e.a[1] + e.uy * s;
-      if (H.parts.some((p) => Math.hypot(p.a[0] - px, p.a[1] - py) < 1.2 || Math.hypot(p.b[0] - px, p.b[1] - py) < 1.2)) continue;
-      if (occupied(px - e.nx * 1.0, py - e.ny * 1.0, i) || occupied(px - e.nx * 2.0, py - e.ny * 2.0, i)) continue; // di luar pintu harus kosong
+      if (H.parts.some((p) => Math.hypot(p.a[0] - px, p.a[1] - py) < (lv >= 2 ? 0.8 : 1.2) || Math.hypot(p.b[0] - px, p.b[1] - py) < (lv >= 2 ? 0.8 : 1.2))) continue;
+      if (occupied(px - e.nx * 1.0, py - e.ny * 1.0, i) || (!lv && occupied(px - e.nx * 2.0, py - e.ny * 2.0, i))) continue; // di luar pintu harus kosong
       return { e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, x: px, y: py };
     }
     return null;
   };
   let d1 = null;
   for (const c of cand) { d1 = placeDoor(c.e); if (d1) break; }
-  if (!d1) return null; // tidak ada sisi yang bisa diberi pintu → tetap padat
+  for (let lv = 1; lv <= 3 && !d1; lv++) for (const c of H.edges.filter((e) => e.len >= (lv >= 3 ? 1.25 : 2.2)).map((e) => ({ e, d: roadOf(e) })).sort((p, q2) => p.d - q2.d)) { d1 = placeDoor(c.e, lv); if (d1) break; }
+  if (!d1) return null; // semua sisi tertutup gedung lain → tetap padat
   H.doors.push(d1);
   if (area >= 45) {
     const dot = (e) => e.ux * d1.e.ux + e.uy * d1.e.uy;
@@ -268,10 +329,10 @@ function planUpper(H, li) {
 }
 
 // ruko & aula: bukaan berkala di sisi depan (dekat jalan), lalu unit / isi aula
-function planShop(i, pts, area, h, roadDist) {
+function planShop(i, pts, area, h, { roadDist, occupied }, hallOnly = false) { // hallOnly: gedung jenis 0 yang besar (bukan deret ruko)
   if (area < 60 || pts.length > 160) return null;
   const edges = edgesOf(pts), longest = Math.max(...edges.map((e) => e.len));
-  const ruko = isRect(edges, 0.06) && area <= 3000 && Math.min(edges[0].len, edges[1].len) >= 6;
+  const ruko = !hallOnly && isRect(edges, 0.06) && area <= 3000 && Math.min(edges[0].len, edges[1].len) >= 6;
   const L = ruko ? SHOP : area > 3000 ? HALL_BIG : HALL_SMALL;
   if (h < L.ceil + 0.6) return null;
   const H = { i, kind: ruko ? 'shop' : 'hall', pts, h, area, ceil: L.ceil, edges, doors: [], parts: [], rooms: [], furn: [], open: null };
@@ -284,10 +345,11 @@ function planShop(i, pts, area, h, roadDist) {
     if (ops.length) ranges.push({ k0: k, k1: k, ops });
   } else for (let t = 0; t < 2; t++) { // aula: sisi-sisi berurutan yang menghadap jalan (tanpa melewati titik awal cincin)
     let k0 = -1;
-    edges.forEach((e, k) => { if (!used.has(k) && e.len >= 2 && ed[k] < 45 && (k0 < 0 || ed[k] < ed[k0])) k0 = k; });
+    const far = !t && !edges.some((e, k) => e.len >= 2 && ed[k] < 45) ? Infinity : 45; // tak ada jalan ≤ 45 m: sisi terdekat jalan
+    edges.forEach((e, k) => { if (!used.has(k) && e.len >= 2 && ed[k] < far && (k0 < 0 || ed[k] < ed[k0])) k0 = k; });
     if (k0 < 0) break;
     let a = k0, b = k0, len = edges[k0].len;
-    const ok = (k) => k >= 0 && k < edges.length && !used.has(k) && ed[k] < 45;
+    const ok = (k) => k >= 0 && k < edges.length && !used.has(k) && ed[k] < far;
     while (len < per * 0.45) {
       if (ok(a - 1) && (!ok(b + 1) || ed[a - 1] <= ed[b + 1])) len += edges[--a].len;
       else if (ok(b + 1)) len += edges[++b].len;
@@ -311,7 +373,7 @@ function planShop(i, pts, area, h, roadDist) {
   H.canopies = [];
   if (ruko) { const r = ranges[0], e = edges[r.k0]; H.canopies.push({ e, s0: Math.max(0.1, r.A - e.u0 - 0.4), s1: Math.min(e.len - 0.1, r.B - e.u0 + 0.4), d: 1.5, z: L.top + 0.12, cols: false }); }
   else for (const d of H.doors) if (d.s1 - d.s0 > 3) H.canopies.push({ e: d.e, s0: Math.max(0.1, d.s0 - 1.2), s1: Math.min(d.e.len - 0.1, d.s1 + 1.2), d: 3.0, z: L.top + 0.35, cols: true });
-  if (ruko) planUnits(H, ranges[0]); else planHall(H, L);
+  if (ruko) planUnits(H, ranges[0]); else planHall(H, L, (p) => occupied(p[0], p[1], i));
   return H;
 }
 function planUnits(H, r) {
@@ -357,7 +419,7 @@ function furnishUnit(H, e, sA, sB, Lv, j) {
   }
 }
 // aula: kolom di grid (aula besar), isi per sel: rak supermarket, kios, meja kafe, taman kecil + bangku, atau kosong
-function planHall(H, L) {
+function planHall(H, L, other) { // other(p): titik di dalam gedung lain (menara di atas podium) → kosong
   H.rooms.push(H.pts);
   H.pts.type = 'hall';
   const e0 = H.edges.reduce((a, b) => (b.len > a.len ? b : a));
@@ -368,7 +430,7 @@ function planHall(H, L) {
   const rot = Math.atan2(uy, ux), G = L.G, big = L === HALL_BIG;
   const ents = H.doors.map((d) => [d.x + d.e.nx * 3, d.y + d.e.ny * 3]);
   const edgeD = (p) => { let m = Infinity; for (const e of H.edges) m = Math.min(m, segDist(p, e.a, e.b)); return m; };
-  const inside = (p, m) => pip(p[0], p[1], H.pts) && edgeD(p) > m;
+  const inside = (p, m) => pip(p[0], p[1], H.pts) && edgeD(p) > m && !other(p) && !other([p[0] + m, p[1]]) && !other([p[0] - m, p[1]]) && !other([p[0], p[1] + m]) && !other([p[0], p[1] - m]);
   const nearEnt = (p, r) => ents.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < r);
   const add = (kind, p, w, d, h) => H.furn.push({ kind, x: p[0], y: p[1], rot, w, d, h });
   for (let s = Math.floor(s0 / G) * G; s <= s1; s += G) for (let v = Math.floor(v0 / G) * G; v <= v1; v += G) {
@@ -384,6 +446,109 @@ function planHall(H, L) {
     else if (r < 0.66 && inside(m, 2.8)) { add('table', W(sc - G * 0.22, vc), 1.2, 0.8, 0.75); add('table', W(sc + G * 0.22, vc), 1.2, 0.8, 0.75); }
     else if (r < 0.76 && inside(m, 2.8)) { add('planter', m, 1.6, 1.6, 0.8); add('bench', W(sc, vc + 1.6), 1.8, 0.5, 0.45); add('bench', W(sc, vc - 1.6), 1.8, 0.5, 0.45); }
   }
+}
+
+// ---------- Menara & gedung publik: lobi + lift ke atap ----------
+// Lobi lantai dasar: pintu kaca 4 m di sisi yang menghadap jalan (≤ 2) dengan kanopi bertiang, meja resepsionis, kolom,
+// sofa tunggu, tanaman, inti lift di bawah penthouse atap (map/world.js roofTop → D.roofs). Fasad: bukaan pintu dilubangi
+// lewat tabel uOpen seperti aula (rentang A/B, periode P sangat besar = tepat satu bukaan per rentang).
+export const TOWER = { top: 3.0, doorW: 4.0, P: 100000 };
+function planTower(i, pts, area, h, { roadDist, occupied }, roof) {
+  const ceil = h >= 20 ? 4.6 : Math.min(4.2, h - 1.6);
+  if (ceil < 3.2 || area < 60) return null;
+  const edges = edgesOf(pts), T = HOUSE.wall;
+  const H = { i, kind: 'tower', pts, h, area, ceil, edges, doors: [], parts: [], rooms: [pts], furn: [], open: null, canopies: [], roof: roof || null, lights: [] };
+  pts.type = 'lobby';
+  const roadOf = (e) => { const mx = (e.a[0] + e.b[0]) / 2, my = (e.a[1] + e.b[1]) / 2, dm = roadDist(mx, my, true); return dm < 1e8 ? dm : roadDist(mx, my) + 500; };
+  const cand = edges.filter((e) => e.len >= TOWER.doorW + 2).map((e) => ({ e, d: roadOf(e) })).sort((p, q) => p.d - q.d);
+  const place = (e, W, lax = false) => { // lax: menara berdiri di atas podium (gedung lain) → pintu membuka ke dalam podium
+    for (const t of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8]) {
+      const s = t * e.len, s0 = s - W / 2, s1 = s + W / 2;
+      if (s0 < 1 || s1 > e.len - 1) continue;
+      const px = e.a[0] + e.ux * s, py = e.a[1] + e.uy * s;
+      if (!lax && (occupied(px - e.nx * 1.5, py - e.ny * 1.5, i) || occupied(px - e.nx * 3.5, py - e.ny * 3.5, i))) continue;
+      return { e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, h: TOWER.top, x: px, y: py, inner: lax };
+    }
+    return null;
+  };
+  let d1 = null;
+  for (const c of cand) { d1 = place(c.e, TOWER.doorW); if (d1) break; }
+  if (!d1) for (const e of edges) { if (e.len >= 3.4) { d1 = place(e, 2.4); if (d1) break; } }
+  if (!d1) for (const c of cand) { d1 = place(c.e, TOWER.doorW, true); if (d1) break; }
+  if (!d1) return null;
+  if (d1.inner) { H.ceil = Math.min(H.ceil, 4.45); H.floorZ = 0.045; } // di dalam podium: lantai & plafon lobi tidak berimpit dengan milik podium
+  H.doors.push(d1);
+  if (area >= 500) for (const c of cand) { // pintu kedua: sisi lain yang juga menghadap jalan
+    if (c.e === d1.e || c.d > 40 || c.e.ux * d1.e.ux + c.e.uy * d1.e.uy > 0.3) continue;
+    const d2 = place(c.e, TOWER.doorW);
+    if (d2) { H.doors.push(d2); break; }
+  }
+  H.open = { A: [H.doors[0].u0, H.doors[0].u1], B: H.doors[1] ? [H.doors[1].u0, H.doors[1].u1] : [-9, -9], P: TOWER.P, p: 0, top: TOWER.top };
+  const edgeD = (p) => { let m = Infinity; for (const e of edges) m = Math.min(m, segDist(p, e.a, e.b)); return m; };
+  const inside = (p, m) => pip(p[0], p[1], pts) && edgeD(p) > m;
+  const add = (kind, x, y, rot, w, d, hh) => { const f = { kind, x, y, rot, w, d, h: hh, room: 0 }; H.furn.push(f); return f; };
+  for (const d of H.doors) { // kanopi bertiang di luar pintu; daun pintu kaca geser terbuka di kiri-kanan bukaan
+    const e = d.e, rot = Math.atan2(e.uy, e.ux), W = d.s1 - d.s0;
+    if (!d.inner) H.canopies.push({ e, s0: Math.max(0.1, d.s0 - 1.2), s1: Math.min(e.len - 0.1, d.s1 + 1.2), d: 3.0, z: TOWER.top + 0.35, cols: true });
+    if (W >= 3) for (const s of [d.s0 + 0.5, d.s1 - 0.5]) add('glassdoor', e.a[0] + e.ux * s + e.nx * T / 2, e.a[1] + e.uy * s + e.ny * T / 2, rot, 0.95, 0.06, TOWER.top - 0.05);
+  }
+  // inti lift: di bawah penthouse atap (sumbu penthouse), pintu lift menghadap pintu masuk utama
+  const ent = [d1.x + d1.e.nx * 2, d1.y + d1.e.ny * 2];
+  let cx, cy, ux, uy;
+  if (roof && roof.pent) ({ x: cx, y: cy, ux, uy } = roof.pent);
+  else {
+    const e0 = edges.reduce((a, b) => (b.len > a.len ? b : a)); ux = e0.ux; uy = e0.uy;
+    let best = -1;
+    for (const p of pts) for (const q of pts) { const m = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2], dd = inside(m, 0) ? edgeD(m) : -1; if (dd > best) { best = dd; cx = m[0]; cy = m[1]; } }
+  }
+  const CW = 5.6, CD = 3.0;
+  let lift = null;
+  for (const [bx, by] of [[-uy, ux], [uy, -ux], [ux, uy], [-ux, -uy]].sort((p, q) => ((q[0] * (ent[0] - cx) + q[1] * (ent[1] - cy)) - (p[0] * (ent[0] - cx) + p[1] * (ent[1] - cy))))) {
+    const ax = by, ay = -bx; // sepanjang muka pintu lift (b = arah hadap)
+    const corner = (a, b) => [cx + ax * a + bx * b, cy + ay * a + by * b];
+    if (![corner(-CW / 2, -CD / 2), corner(CW / 2, -CD / 2), corner(CW / 2, CD / 2 + 3), corner(-CW / 2, CD / 2 + 3)].every((p) => inside(p, 1.0))) continue;
+    const rot = Math.atan2(-bx, by); // lokal +b (= (−sin, cos) rot) menghadap keluar muka pintu lift
+    add('liftcore', cx, cy, rot, CW, CD, H.ceil);
+    lift = { x: cx + bx * CD / 2, y: cy + by * CD / 2, nx: bx, ny: by, w: CW };
+    break;
+  }
+  if (!lift) return H; // denah terlalu sempit untuk inti lift: lobi saja
+  H.lift = lift;
+  const busy = [[lift.x + lift.nx * 2, lift.y + lift.ny * 2, 3.2], [cx, cy, 3.6], ...H.doors.map((d) => [d.x + d.e.nx * 2.5, d.y + d.e.ny * 2.5, 3.6])];
+  const free = (p, r) => busy.every(([x, y, rr]) => Math.hypot(p[0] - x, p[1] - y) > r + rr);
+  { // meja resepsionis: 5–6 m dari pintu utama, bergeser ke samping, menghadap pintu
+    const e = d1.e, rot = Math.atan2(e.nx, -e.ny);
+    for (const side of [1, -1]) {
+      const p = [d1.x + e.nx * 5.5 + e.ux * side * 3.4, d1.y + e.ny * 5.5 + e.uy * side * 3.4];
+      if (!inside(p, 1.6) || !free(p, 1.6)) continue;
+      add('reception', p[0], p[1], rot, 3.0, 0.8, 1.1);
+      busy.push([p[0], p[1], 2.2]);
+      break;
+    }
+  }
+  // grid 8 m sejajar inti lift: kolom (lobi besar), sofa tunggu + meja, tanaman, lampu plafon
+  const G = 8, rotG = Math.atan2(uy, ux);
+  let s0 = Infinity, s1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (const p of pts) { const s = (p[0] - cx) * ux + (p[1] - cy) * uy, v = -(p[0] - cx) * uy + (p[1] - cy) * ux; s0 = Math.min(s0, s); s1 = Math.max(s1, s); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+  const W2 = (s, v) => [cx + ux * s - uy * v, cy + uy * s + ux * v];
+  let seats = 0;
+  for (let s = Math.floor(s0 / G) * G; s <= s1; s += G) for (let v = Math.floor(v0 / G) * G; v <= v1; v += G) {
+    const c = W2(s + G / 2, v + G / 2), k = W2(s, v), r = hash(c[0] * 0.37 + i, c[1] * 0.71);
+    if (area > 700 && inside(k, 1.8) && free(k, 0.8)) { add('column', k[0], k[1], rotG, 0.7, 0.7, H.ceil); busy.push([k[0], k[1], 0.6]); }
+    if (!inside(c, 2.0)) continue;
+    H.lights.push(c);
+    if (!inside(c, 3.4) || !free(c, 2.4)) continue;
+    if (seats < 3 && r < 0.6) { // dua sofa berhadapan + meja + tanaman
+      const a = W2(s + G / 2, v + G / 2 - 1.25), b = W2(s + G / 2, v + G / 2 + 1.25), pl = W2(s + G / 2 + 1.7, v + G / 2);
+      add('sofa', a[0], a[1], rotG, 2.0, 0.85, 0.82); add('sofa', b[0], b[1], rotG + Math.PI, 2.0, 0.85, 0.82);
+      add('coffee', c[0], c[1], rotG, 1.0, 0.55, 0.42); add('plant', pl[0], pl[1], rotG, 0.45, 0.45, 1.1);
+      busy.push([c[0], c[1], 2.4]);
+      seats++;
+    } else if (r > 0.8) { add('planter', c[0], c[1], rotG, 1.6, 1.6, 0.8); busy.push([c[0], c[1], 1.2]); }
+  }
+  for (const sd of [-1, 1]) { const p = [lift.x + lift.nx * 1.2 + lift.ny * sd * (CW / 2 + 0.6), lift.y + lift.ny * 1.2 - lift.nx * sd * (CW / 2 + 0.6)]; if (inside(p, 0.6)) add('plant', p[0], p[1], 0, 0.45, 0.45, 1.1); } // tanaman di kiri-kanan pintu lift
+  if (!H.lights.length) H.lights.push([cx, cy]);
+  return H;
 }
 
 // ---------- Perabot rumah ----------
@@ -463,6 +628,7 @@ const COL = {
   tile: '#e2dfd8', tile2: '#cbbfab', shopWall: ['#f4f2ee', '#eef2f4', '#f6efe6'], hallWall: '#efece6',
   goods: ['#d8453a', '#f0b429', '#3f7fd6', '#3aa36b', '#f08a3c', '#8e5bd6', '#ececec', '#2d9cdb'],
   shelf: '#d9dce2', column: '#e4dccd', kiosk: '#3D3782', gold: '#D29F52', fridge: '#e9eef2', glass: '#9fc7e6', bench: '#6b5a48', planter: '#6d5a48', counter: '#3a3d46',
+  lobbyWall: '#dcd5c8', core: '#cfc8bb', steel: '#a3aab3', alu: '#3b3f46', tint: '#6f8ea6',
 };
 export function createInteriors(scene, W, homes) {
   // lampu ruangan: cahaya sendiri sebanding warna permukaan (interior tidak gelap walau matahari terhalang atap)
@@ -567,8 +733,27 @@ export function createInteriors(scene, W, homes) {
   let lastX = Infinity, lastY = Infinity, queue = [];
 
   const outMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-  function build(H) {
-    const pos = [], nor = [], col = [], sfc = [], c = new THREE.Color();
+  // generator: yield di sela pekerjaan (per sisi dinding, per beberapa perabot) → update() mencicil dengan anggaran waktu;
+  // nilai akhir = grup mesh interior
+  function* buildGen(H) {
+    let pos = [], nor = [], col = [], sfc = [];
+    const c = new THREE.Color();
+    const mk = (P, N, Cc, S, material) => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+      g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
+      if (S) g.setAttribute('sfc', new THREE.Float32BufferAttribute(S, 1));
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, material);
+      m.receiveShadow = true;
+      m.matrixAutoUpdate = false;
+      return m;
+    };
+    const grp = new THREE.Group();
+    grp.matrixAutoUpdate = false;
+    // gedung besar (mal): geometri dipecah per ±30 ribu verteks supaya pembuatan buffer juga tercicil antarframe
+    const cut = () => { if (pos.length > 90000) { grp.add(mk(pos, nor, col, sfc, mat)); pos = []; nor = []; col = []; sfc = []; } };
     let ST = 0; // jenis permukaan untuk tekstur (lihat material): 0 polos, 1 dinding, 2 ubin, 3 kayu
     const xp = [], xn = [], xc = []; // geometri luar rumah: kusen, ambang & kepala jendela/pintu (material luar, kena matahari)
     const boxX = (x, y, rot, w, d, z0, z1, cc) => {
@@ -617,15 +802,15 @@ export function createInteriors(scene, W, homes) {
       }
       if (top) quad([P[0][0], P[0][1], z1], [P[1][0], P[1][1], z1], [P[2][0], P[2][1], z1], [P[3][0], P[3][1], z1], [0, 0, 1], c.copy(cc).multiplyScalar(1.06));
     };
-    const T = HOUSE.wall, house = !H.kind, up = H.up, ceil = H.ceil, topZ = up ? up.ceil : ceil;
-    const wallC = new THREE.Color(house ? COL.wall[H.i % COL.wall.length] : H.kind === 'hall' ? COL.hallWall : COL.shopWall[H.i % 3]);
+    const T = HOUSE.wall, house = !H.kind, tower = H.kind === 'tower', up = H.up, ceil = H.ceil, topZ = up ? up.ceil : ceil;
+    const wallC = new THREE.Color(house ? COL.wall[H.i % COL.wall.length] : H.kind === 'hall' ? COL.hallWall : tower ? COL.lobbyWall : COL.shopWall[H.i % 3]);
     const jambC = new THREE.Color(COL.jamb), ceilC = new THREE.Color(COL.ceil);
     // lantai per ruang (+ kamar mandi berubin biru di tiap lantai)
     // mode realistis: kamar tidur berlantai kayu, ruang lain ubin keramik (warna dari tekstur; warna verteks hanya tinta)
-    const RF = !!W.real, plainF = new THREE.Color('#f4f1ea'), bathF = new THREE.Color('#cfe2ea'), shopF = new THREE.Color('#e6e6e6');
+    const RF = !!W.real, plainF = new THREE.Color('#f4f1ea'), bathF = new THREE.Color('#cfe2ea'), shopF = new THREE.Color('#e6e6e6'), lobbyF = new THREE.Color(RF ? '#a8a196' : '#b9b2a6');
     for (const r of H.rooms) {
       ST = RF ? (house && r.type === 'bedroom' ? 3 : 2) : 0;
-      flat(r, 0.025, true, RF ? (house ? plainF : shopF) : new THREE.Color(house ? COL.floor[r.type] || COL.floor.living : H.kind === 'hall' ? COL.tile2 : COL.tile));
+      flat(r, H.floorZ || 0.025, true, tower ? lobbyF : RF ? (house ? plainF : shopF) : new THREE.Color(house ? COL.floor[r.type] || COL.floor.living : H.kind === 'hall' ? COL.tile2 : COL.tile));
     }
     ST = RF ? 2 : 0;
     if (H.bath) { const bc = RF ? bathF : new THREE.Color(COL.bathFloor); flat(H.bath.poly, 0.032, true, bc); if (up) flat(H.bath.poly, up.floor + 0.032, true, bc); }
@@ -657,8 +842,10 @@ export function createInteriors(scene, W, homes) {
       wallRect(P(S.hi, T), e.nx, e.ny, 0, SW, ceil, up.floor, -e.ux, -e.uy, slabC);
       flat(H.pts, up.ceil, false, ceilC);
     } else flat(H.pts, ceil, false, ceilC);
+    cut(); yield;
     // sisi dalam dinding luar: lubang pintu/bukaan & jendela per lantai (sama dengan shader), kusen di tiap lubang
     for (const e of H.edges) {
+      cut(); yield;
       const ins = [e.a[0] + e.nx * T, e.a[1] + e.ny * T];
       const holes = [];
       for (const d of H.doors) if (d.e === e) holes.push([d.s0, d.s1, 0, d.h || HOUSE.doorH, true]);
@@ -675,8 +862,9 @@ export function createInteriors(scene, W, homes) {
           }
         });
       }
-      // potong permukaan dinding di sekitar lubang: kolom-kolom s, tiap kolom bisa punya beberapa lubang (per lantai)
-      const cuts = new Set([0, e.len]);
+      // potong permukaan dinding di sekitar lubang: kolom-kolom s, tiap kolom bisa punya beberapa lubang (per lantai);
+      // pojok cekung: sisi dalam diperpanjang sampai titik temunya (e.x0/e.x1, sama dengan collider) supaya tidak bercelah
+      const cuts = new Set([holes.some((h0) => h0[0] < 0.05) ? 0 : -e.x0, holes.some((h0) => h0[1] > e.len - 0.05) ? e.len : e.len + e.x1]);
       for (const h0 of holes) { cuts.add(Math.max(0, h0[0])); cuts.add(Math.min(e.len, h0[1])); }
       const S = [...cuts].sort((p, q) => p - q);
       const bo = [e.a[0] + e.nx * (T + 0.012), e.a[1] + e.ny * (T + 0.012)];
@@ -696,6 +884,13 @@ export function createInteriors(scene, W, homes) {
           const pm = O((s0 + s1) / 2, 0.035);
           boxX(pm[0], pm[1], rot, s1 - s0 + 0.18, 0.07, v1, v1 + 0.09, frameC);
           if (!isDoor) { const ps = O((s0 + s1) / 2, 0.08); boxX(ps[0], ps[1], rot, s1 - s0 + 0.3, 0.16, v0 - 0.08, v0 - 0.01, sillC); }
+        }
+      } else if (tower) { // pintu kaca lobi: kusen aluminium tebal + balok atas
+        const aluC = new THREE.Color(COL.alu), rot = Math.atan2(e.uy, e.ux), O = (s, d) => [e.a[0] + e.ux * s - e.nx * d, e.a[1] + e.uy * s - e.ny * d];
+        for (const [s0, s1, , v1] of holes) {
+          for (const s of [s0 - 0.07, s1 + 0.07]) { const p = O(s, 0.06); boxX(p[0], p[1], rot, 0.14, 0.12, 0, v1 + 0.16, aluC); }
+          const pm = O((s0 + s1) / 2, 0.06);
+          boxX(pm[0], pm[1], rot, s1 - s0 + 0.28, 0.12, v1, v1 + 0.16, aluC);
         }
       }
       for (const h0 of holes) { // kusen: tebal dinding di tepi lubang
@@ -719,6 +914,7 @@ export function createInteriors(scene, W, homes) {
     if (H.kind === 'hall') { // mal: dinding dalam berupa deret etalase toko (kaca gelap + papan nama), lampu plafon
       const glassC = new THREE.Color('#3d4b5e'), frameC = new THREE.Color('#cfd3da'), SIGN = ['#c0392b', '#2471a3', '#1e8449', '#d4ac0d', '#7d3c98', '#D29F52', '#3D3782', '#e67e22'];
       for (const e of H.edges) {
+        cut(); yield;
         const o = [e.a[0] + e.nx * (T + 0.03), e.a[1] + e.ny * (T + 0.03)], hs = H.doors.filter((d) => d.e === e);
         for (let k = Math.floor(e.u0 / 6); k * 6 < e.u0 + e.len; k++) {
           const s0 = Math.max(0, k * 6 + 0.35 - e.u0), s1 = Math.min(e.len, (k + 1) * 6 - 0.35 - e.u0);
@@ -729,11 +925,15 @@ export function createInteriors(scene, W, homes) {
           wallRect(o, e.ux, e.uy, s0, s1, 2.85, 3.35, e.nx, e.ny, new THREE.Color(SIGN[Math.floor(hash(H.i + k, 3.3) * SIGN.length)]));
         }
       }
+    }
+    if (H.kind === 'hall' || tower) { // lampu panel di plafon
       const lightC = new THREE.Color('#fffdf2'), z = ceil - 0.03;
       for (const m of H.lights || []) { const r = 0.7; quad([m[0] - r, m[1] - r, z], [m[0] - r, m[1] + r, z], [m[0] + r, m[1] + r, z], [m[0] + r, m[1] - r, z], [0, 0, -1], lightC); }
     }
     // sekat: dua sisi, ambang pintu di tengah (sekat toko: penuh)
+    let np = 0;
     for (const [z0, z1] of up ? [[0, ceil], [up.floor, up.ceil]] : [[0, ceil]]) for (const p of H.parts) {
+      if (++np % 6 === 0) cut(); yield;
       const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len, nx = -uy, ny = ux, t = 0.06;
       const lv = z0 > 0.5 ? 1 : 0, mx = (p.a[0] + p.b[0]) / 2, my = (p.a[1] + p.b[1]) / 2;
       const sideC = (sd) => (house ? roomC(mx + nx * sd * 0.4, my + ny * sd * 0.4, lv) : wallC);
@@ -841,35 +1041,42 @@ export function createInteriors(scene, W, homes) {
         case 'kiosk': { box(x, y, rot, w, d, 0, h - 0.06, C(COL.kiosk)); box(x, y, rot, w + 0.06, d + 0.06, h - 0.06, h, C(COL.gold)); for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = at(a * (w / 2 - 0.05), b * (d / 2 - 0.05)); box(p[0], p[1], rot, 0.06, 0.06, h, 2.3, C(COL.gold)); } box(x, y, rot, w, d, 2.3, 2.42, C(COL.kiosk)); break; }
         case 'planter': box(x, y, rot, w, d, 0, h - 0.1, C(COL.planter)); box(x, y, rot + 0.5, w * 0.8, d * 0.8, h - 0.1, h + 0.5, C(COL.plant)); break;
         case 'bench': box(x, y, rot, w, d, 0.38, h, C(COL.bench)); for (const s of [-1, 1]) { const lg = at(s * (w / 2 - 0.12), 0); box(lg[0], lg[1], rot, 0.08, d * 0.9, 0, 0.38, C(COL.dark), false); } break;
+        // lobi menara
+        case 'liftcore': { // inti lift berlapis batu: dua pintu lift baja (muka +b), kusen, tombol panggil, penunjuk lantai
+          box(x, y, rot, w, d, 0, h, C(COL.core));
+          const steel = C(COL.steel), fr = C(COL.alu);
+          for (const a of [-w / 4, w / 4]) {
+            const p = at(a, d / 2 + 0.03), q = at(a, d / 2 + 0.05), sg = at(a, d / 2 + 0.035);
+            box(p[0], p[1], rot, 1.42, 0.06, 0, 2.48, fr);
+            box(q[0], q[1], rot, 1.16, 0.04, 0, 2.3, steel);
+            box(sg[0], sg[1], rot, 0.02, 0.1, 0.02, 2.28, C('#5d636c'), false); // celah tengah pintu
+            box(p[0], p[1], rot, 0.9, 0.08, 2.6, 2.78, C('#1d1f24')); // penunjuk lantai
+            box(q[0], q[1], rot, 0.22, 0.06, 2.64, 2.74, C('#f0a830'));
+          }
+          const bt = at(0, d / 2 + 0.03);
+          box(bt[0], bt[1], rot, 0.16, 0.06, 1.0, 1.36, C('#2a2d33')); box(bt[0], bt[1], rot, 0.07, 0.09, 1.12, 1.24, C('#f0d080'));
+          break;
+        }
+        case 'reception': { const fr = fwd(d / 2 + 0.02); box(x, y, rot, w, d, 0, h - 0.06, C('#4a4038')); box(x, y, rot, w + 0.08, d + 0.08, h - 0.06, h, C('#efe9df')); box(fr[0], fr[1], rot, w * 0.94, 0.02, 0.35, 0.5, C(COL.gold)); const mn = at(w * 0.22, -0.1); box(mn[0], mn[1], rot, 0.5, 0.05, h, h + 0.36, C(COL.dark)); break; }
+        case 'glassdoor': box(x, y, rot, w, d, 0, h, C(COL.tint)); box(x, y, rot, w + 0.04, d + 0.04, h - 0.08, h, C(COL.alu)); box(x, y, rot, w + 0.04, d + 0.04, 0, 0.1, C(COL.alu)); break;
         default: box(x, y, rot, w, d, 0, h, C(COL.wood));
       }
     }
-    for (const f of H.furn) drawFurn(f);
-    if (up) { Z = up.floor; for (const f of up.furn) drawFurn(f); Z = 0; }
-    const mk = (P, N, Cc, material) => {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-      g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
-      if (material === mat) g.setAttribute('sfc', new THREE.Float32BufferAttribute(sfc, 1));
-      g.computeBoundingSphere();
-      const m = new THREE.Mesh(g, material);
-      m.receiveShadow = true;
-      m.matrixAutoUpdate = false;
-      return m;
-    };
-    const grp = new THREE.Group();
-    grp.matrixAutoUpdate = false;
-    grp.add(mk(pos, nor, col, mat));
-    if (xp.length) { const ex = mk(xp, xn, xc, outMat); ex.castShadow = true; grp.add(ex); }
+    let nf = 0;
+    for (const f of H.furn) { drawFurn(f); if (++nf % 8 === 0) cut(); yield; }
+    if (up) { Z = up.floor; for (const f of up.furn) { drawFurn(f); if (++nf % 8 === 0) cut(); yield; } Z = 0; }
+    cut(); yield;
+    if (pos.length) grp.add(mk(pos, nor, col, sfc, mat));
+    if (xp.length) { const ex = mk(xp, xn, xc, null, outMat); ex.castShadow = true; grp.add(ex); }
     return grp;
   }
   function setOpen(H, on) { if (W.setHouseOpen) W.setHouseOpen(H, on); }
   for (const H of homes.values()) setOpen(H, false); // data pintu tiap rumah untuk shader fasad (pintu tertutup digambar dari jauh)
+  let job = null; // interior yang sedang dicicil { H, it }
   return {
     homes,
     get openCount() { return open.size; },
-    // tiap frame: buka gedung dekat (bertahap), tutup yang jauh
+    // tiap frame: buka gedung dekat (dicicil ≤ BUILD_MS per frame), tutup yang jauh
     update(cam) {
       const x = cam.x, y = -cam.z;
       if ((x - lastX) ** 2 + (y - lastY) ** 2 > 36) {
@@ -883,13 +1090,20 @@ export function createInteriors(scene, W, homes) {
         queue = want.map((w) => w[1]);
         for (const [i, m] of open) { const H = homes.get(i); if (distTo(H.k, x, y) > R_CLOSE) { scene.remove(m); m.traverse((o) => o.geometry && o.geometry.dispose()); open.delete(i); setOpen(H, false); } }
       }
-      for (let n = 0; n < BUILD_PER_FRAME && queue.length; n++) {
-        const H = list[queue.shift()];
-        if (open.has(H.i)) continue;
-        const m = build(H);
-        scene.add(m);
-        open.set(H.i, m);
-        setOpen(H, true);
+      const t0 = performance.now();
+      while (performance.now() - t0 < BUILD_MS) {
+        if (!job) {
+          if (!queue.length) break;
+          const H = list[queue.shift()];
+          if (open.has(H.i)) continue;
+          job = { H, it: buildGen(H) };
+        }
+        const r = job.it.next();
+        if (!r.done) continue;
+        scene.add(r.value);
+        open.set(job.H.i, r.value);
+        setOpen(job.H, true);
+        job = null;
       }
     },
   };

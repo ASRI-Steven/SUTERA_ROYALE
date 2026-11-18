@@ -155,8 +155,12 @@ export function createLoot(scene, { D, col }) {
     rings.instanceColor.needsUpdate = true;
   }
   const touch = (x, y) => { if (Math.hypot(x - visX, y - visY) < VIS + 2) dirty = true; };
+  // barang di atap menara (z > 6 m; hanya terjangkau lewat lift, yang tidak dipakai bot): ditandai milik "atap" supaya
+  // bot tidak mengincarnya (bots.js mengabaikan barang ber-claim milik pihak lain)
+  const ROOF = { roof: true };
   function add(type, x, y, extra = {}) {
     const it = { id: items.length, type, def: ITEMS[type], x, y, z: 0, rot: Math.random() * Math.PI * 2, alive: true, ...extra }; // z = tinggi lantai
+    if (it.z > 6) it.claim = ROOF;
     items.push(it);
     if (type === 'jerry') cans.push(it);
     const k = key(x, y);
@@ -203,12 +207,44 @@ export function createLoot(scene, { D, col }) {
     }
     return null;
   }
+  function roofSpot(R) { // titik acak di lantai atap menara (bebas parapet, penthouse, AC) → [x, y, z]
+    const P = R.inset;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const p of P) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+    for (let t = 0; t < 20; t++) {
+      const x = x0 + Math.random() * (x1 - x0), y = y0 + Math.random() * (y1 - y0);
+      let ins = false;
+      for (let a = 0, b = P.length - 1; a < P.length; b = a++) { const xi = P[a][0], yi = P[a][1], xj = P[b][0], yj = P[b][1]; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins; }
+      if (ins && !col.blocked(x, y, 0.5, R.z) && Math.abs(col.floorAt(x, y, R.z) - R.z) < 0.1) return [x, y, R.z];
+    }
+    return null;
+  }
+  function drop(type, sp, near) { // barang + peluru untuk senjata di dekatnya (titik dari near())
+    add(type, sp[0], sp[1], { z: sp[2] || 0 });
+    if (ITEMS[type].kind === 'weapon' && Math.random() < 0.85) { const s2 = near(); if (s2) add(AMMO_FOR[ITEMS[type].w], s2[0], s2[1], { z: s2[2] || 0 }); }
+  }
   function scatter(mult = 1, homes = null) {
     const B = D.buildings;
     for (let i = 0; i < B.r.length; i++) {
       const k = B.k[i], r = B.r[i], n = r.length >> 1;
-      if (n < 3 || k === 5) continue;
+      if (n < 3) continue;
       const H = homes && homes.get(i);
+      if (k === 5) { // kanopi terbuka: 1–2 barang di bawah atapnya
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (let j = 0; j < r.length; j += 2) { x0 = Math.min(x0, r[j] * M); y0 = Math.min(y0, r[j + 1] * M); x1 = Math.max(x1, r[j] * M); y1 = Math.max(y1, r[j + 1] * M); }
+        const under = () => { for (let t = 0; t < 12; t++) { const x = x0 + Math.random() * (x1 - x0), y = y0 + Math.random() * (y1 - y0); if (col.inBuilding(x, y) < 0 && !col.blocked(x, y, 0.4) && col.roofAt(x, y, 99) > 0) return [x, y, 0]; } return null; };
+        for (let j = 0, c = 1 + (Math.random() < 0.6 * mult ? 1 : 0); j < c; j++) { const sp = under(); if (sp) drop(pick(TABLE), sp, under); }
+        continue;
+      }
+      if (H && H.kind === 'tower') { // lobi menara: 2–4 barang; atap: 2–4 barang (lebih banyak di menara tinggi)
+        const nl = Math.round((1.5 + Math.min(2.5, H.area / 600)) * mult * (0.7 + Math.random() * 0.6));
+        for (let j = 0; j < nl; j++) { const sp = insideSpot(H); if (sp) drop(pick(TABLE), sp, () => insideSpot(H)); }
+        if (H.roof) {
+          const nr = Math.round((1.4 + Math.min(1.6, H.h / 60)) * mult * (0.7 + Math.random() * 0.6));
+          for (let j = 0; j < nr; j++) { const sp = roofSpot(H.roof); if (sp) drop(pick(TABLE), sp, () => roofSpot(H.roof)); }
+        }
+        continue;
+      }
       const base = H ? (H.kind === 'hall' ? Math.min(130, H.area / 190) : H.kind === 'shop' ? 1.2 + H.rooms.length * 0.9 : 0.75 + Math.min(1.5, H.area / 160) + (H.up ? 0.8 : 0)) * mult : k === 0 ? 0.32 * mult : (k === 2 ? 2 + (Math.random() * 3 | 0) : k === 4 ? 1 + (Math.random() * 2 | 0) : 1 + (Math.random() * 3 | 0)) * mult;
       const cnt = Math.floor(base) + (Math.random() < base % 1 ? 1 : 0);
       for (let j = 0; j < cnt; j++) {

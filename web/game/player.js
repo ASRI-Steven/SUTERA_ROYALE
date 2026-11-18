@@ -196,7 +196,7 @@ export function createPlayer(ctx) {
   // ---------- Granat (G tahan → lintasan, lepas → lempar; makin lama ditahan makin jauh; T ganti jenis) ----------
   st.nadeSel = 'frag';
   function nadeStart() {
-    if (me.state !== 'ground' || !me.alive || st.swim || st.healEnd || st.nade || st.vault) return;
+    if (me.state !== 'ground' || !me.alive || st.swim || st.healEnd || st.nade || st.vault || st.lift) return;
     if (!(me.nades[st.nadeSel] > 0)) { const o = Object.keys(NADES).find((k) => me.nades[k] > 0); if (!o) { hud.toast('Tidak punya granat'); return; } st.nadeSel = o; }
     st.nade = { kind: st.nadeSel, t0: ctx.now() };
     st.reloadEnd = 0; st.ads = false; st.firing = false;
@@ -390,6 +390,7 @@ export function createPlayer(ctx) {
     const it = nearestItem(), v = nearVehicle();
     if (st.lootUI) { closeLoot(true); return; }
     if (v && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { ctx.enterVehicle(v); return; }
+    { const lf = !v && col.liftAt ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null; if (lf && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { startLift(lf); return; } }
     if (!v && !it && ctx.vehicles && ctx.vehicles.fullNear(me)) { hud.toast('Kendaraan penuh'); return; }
     if (!it) { startVault(); return; } // F juga untuk melompati jendela
     if (it.def.kind === 'crate') { openLoot(it); return; } // buka peti: panel inventaris (kiri) + isi peti (kanan)
@@ -638,7 +639,7 @@ export function createPlayer(ctx) {
     audio.step(0.12);
   }
   function jump() {
-    if (me.state !== 'ground') return;
+    if (me.state !== 'ground' || st.lift) return;
     if (st.swim) { keys.up = 1; return; } // berenang: tahan Spasi = naik ke permukaan
     if (st.prone) { setProne(false, true); return; }
     if (st.crouch) { st.crouch = false; return; }
@@ -653,7 +654,43 @@ export function createPlayer(ctx) {
     const low = col.ray(x, y, h + 0.45, fx, fy, 0, 1.3, vaultOut);
     if (low >= 1.3 || col.ray(x, y, h + 1.55, fx, fy, 0, low + 1.6, vaultOut) < low + 1.2) return null;
     const d = low + 0.8, lx = x + fx * d, ly = y + fy * d;
+    if (h > 6 && h - col.floorAt(lx, ly, h) > 6) return null; // parapet atap menara: tidak bisa melompat ke bawah
     return col.blocked(lx, ly, RAD, h) ? null : [lx, ly];
+  }
+  // ---------- Lift lobi menara ↔ atap (map/collide.js liftAt): layar meredup, lift berjalan, muncul di depan pintu lift ----------
+  let fadeEl = null;
+  function fade(k, text) {
+    if (!fadeEl) {
+      fadeEl = document.createElement('div');
+      fadeEl.style.cssText = 'position:fixed;inset:0;background:#07080b;opacity:0;pointer-events:none;z-index:30;display:flex;align-items:center;justify-content:center;color:#e9e4da;font:600 1.1rem/1.4 system-ui,sans-serif;letter-spacing:.08em';
+      document.body.appendChild(fadeEl);
+    }
+    fadeEl.style.opacity = String(k);
+    fadeEl.style.display = k > 0.001 ? 'flex' : 'none';
+    if (text !== undefined && fadeEl.textContent !== text) fadeEl.textContent = text;
+  }
+  function startLift(lf) {
+    if (st.lift || me.down) return;
+    const L = lf.L, ride = Math.min(2.6, 0.9 + L.z / 70); // lama perjalanan (dtk), naik/turun sama
+    st.lift = { L, up: lf.up, t: 0, ride, moved: false };
+    Object.assign(st, { ads: false, firing: false, sprint: false, crouch: false, prone: false });
+    nadeAbort();
+    audio.door();
+  }
+  function liftStep(dt) { // 0,35 dtk meredup → berjalan (layar gelap) → pindah → 0,4 dtk terang kembali
+    const R = st.lift, FO = 0.35, FI = 0.4;
+    R.t += dt;
+    me.vel.set(0, 0); me.moveSpeed = 0; st.prompt = null; me.vy = 0; me.grounded = true;
+    if (R.t >= FO && !R.moved) {
+      const to = R.up ? R.L.hi : R.L.lo;
+      me.pos.set(to.x, to.z, -to.y);
+      st.yaw = to.yaw; st.pitch = -0.05; st.floorY = to.z; st.camD = 0;
+      R.moved = true;
+    }
+    const k = R.t < FO ? R.t / FO : R.t < FO + R.ride ? 1 : 1 - (R.t - FO - R.ride) / FI;
+    fade(Math.max(0, Math.min(1, k)), R.up ? '▲  ATAP' : '▼  LOBI');
+    if (!R.ding && R.t >= FO + R.ride) { R.ding = true; audio.pickup(); }
+    if (R.t >= FO + R.ride + FI) { st.lift = null; fade(0); }
   }
   function startVault() {
     const v = vaultSpot();
@@ -754,6 +791,7 @@ export function createPlayer(ctx) {
 
   // ---------- Gerak ----------
   function ground(dt, now) {
+    if (st.lift) { liftStep(dt); return; }
     if (st.vault) { // sedang melompati jendela: lintasan melengkung 0,5 dtk, lalu jatuh/mendarat seperti biasa
       const V = st.vault, k = Math.min(1, (V.t += dt / 0.5)), e = k * k * (3 - 2 * k);
       me.pos.set(V.x0 + (V.x1 - V.x0) * e, V.h0 + Math.sin(Math.PI * k) * 0.95, -(V.y0 + (V.y1 - V.y0) * e));
@@ -862,7 +900,8 @@ export function createPlayer(ctx) {
     const cr = st.crate; // peti terbuka: tutup bila menjauh / habis
     if (cr && (!cr.alive || Math.hypot(cr.x - me.pos.x, cr.y + me.pos.z) > 2.8 || Math.abs(cr.z - me.pos.y) > 1.3)) { st.crate = null; if (st.lootUI) closeLoot(false); }
     if (st.lootUI) hud.lootPanel(lootModel(), lootH);
-    st.prompt = st.lootUI ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
+    const lf = !nv && col.liftAt && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3) ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null;
+    st.prompt = st.lootUI ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? (lf.up ? 'Naik lift ke atap' : 'Turun lift ke lobi') : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
   }
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
@@ -893,11 +932,21 @@ export function createPlayer(ctx) {
     }
     const nx = me.pos.x + me.vel.x * dt, nz = me.pos.z + me.vel.y * dt;
     if (ctx.inArea(nx, -nz) || !ctx.inArea(me.pos.x, -me.pos.z)) { me.pos.x = nx; me.pos.z = nz; }
+    const y0 = me.pos.y;
     me.pos.y -= vs * dt;
     if (Math.hypot(me.vel.x, me.vel.y) > 2) me.yaw = Math.atan2(me.vel.x, me.vel.y) || st.yaw;
     else { const d = Math.atan2(Math.sin(st.yaw - me.yaw), Math.cos(st.yaw - me.yaw)); me.yaw += d * (1 - Math.exp(-dt * 4)); } // nyaris diam (direm): badan menghadap arah kamera
     audio.windLevel(chuteOn ? 0.25 : 0.9);
-    if (me.pos.y <= 0 || (me.pos.y < 40 && col.solidAt(me.pos.x, -me.pos.z, me.pos.y))) {
+    const rf = y0 < 260 && col.roofAt ? col.roofAt(me.pos.x, -me.pos.z, y0) : 0; // atap terbuka (menara, kanopi): mendarat di atasnya
+    if (rf > 0.5 && me.pos.y <= rf) {
+      me.pos.y = rf; me.vel.set(0, 0); me.vy = 0;
+      me.state = 'ground'; me.grounded = true; st.floorY = rf;
+      st.airLean = 0; st.airVs = 0;
+      audio.windLevel(0); audio.step(0.2);
+      ctx.landed(me.pos.x, -me.pos.z);
+      return;
+    }
+    if (me.pos.y <= 0 || (me.pos.y < 40 && !(rf > 0.5 && me.pos.y < rf + 1.5) && col.solidAt(me.pos.x, -me.pos.z, me.pos.y))) { // tepat di atas atap: jangan dianggap menabrak gedung
       const f = col.arrival(me.pos.x, -me.pos.z) || [me.pos.x, -me.pos.z];
       me.pos.set(f[0], 0, -f[1]);
       me.vel.set(0, 0);
@@ -948,7 +997,8 @@ export function createPlayer(ctx) {
   return {
     st, vm,
     reset() {
-      Object.assign(st, { yaw: 0, pitch: -0.25, tpp: false, ads: false, firing: false, crouch: false, prone: false, sprint: false, nextShot: 0, reloadEnd: 0, switchEnd: 0, healEnd: 0, recoilP: 0, recoilY: 0, camD: 0, prompt: null, spec: null, revive: null, revOn: false });
+      Object.assign(st, { yaw: 0, pitch: -0.25, tpp: false, ads: false, firing: false, crouch: false, prone: false, sprint: false, nextShot: 0, reloadEnd: 0, switchEnd: 0, healEnd: 0, recoilP: 0, recoilY: 0, camD: 0, prompt: null, spec: null, revive: null, revOn: false, lift: null });
+      if (fadeEl) fade(0);
       vm.show(null);
       chute.visible = false;
       applyEquipped(char, vm, OUTFIT); // skin karakter & senjata yang sedang dipakai (game/skins.js, profile.equipped)
@@ -995,7 +1045,7 @@ export function createPlayer(ctx) {
       vm.show(w ? w.inst.kind : null);
       st.switchEnd = ctx.now() + 0.6;
     },
-    onDead() { Object.assign(st, { ads: false, firing: false, revive: null, camD: 0 }); vm.show(null); },
+    onDead() { Object.assign(st, { ads: false, firing: false, revive: null, camD: 0 }); if (st.lift) { st.lift = null; fade(0); } vm.show(null); },
     spectate(a) { st.spec = a || null; st.camD = 0; if (a) { st.yaw = a.yaw || st.yaw; st.pitch = -0.22; } },
     update(dt, now) {
       if (me.state === 'ground' && me.alive) ground(dt, now);
