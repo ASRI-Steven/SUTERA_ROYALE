@@ -319,7 +319,7 @@ function makeUni(R, atlas, U) {
 
 // bahan jaring & bahan kedalaman (bayangan) untuk mesh kelompok: bagian model lain diciutkan; bagian berputar (crane)
 // tidak membayang (peta bayangan matahari statis)
-function partPatch(m, key, noSlew) {
+function partPatch(m, key, noSlew, opaque) {
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = (sh, r) => {
     if (prev) prev(sh, r);
@@ -327,6 +327,8 @@ function partPatch(m, key, noSlew) {
   #ifdef USE_INSTANCING
     if (abs(part - aPart) > 0.5${noSlew ? ' || aVar < -0.5' : ''}) transformed = vec3(0.0);
   #endif`);
+    // jaring lolos uji alfa = padat (alfa keluaran utuh: tanpa post, alfa < 1 membuat kanvas tembus ke latar halaman)
+    if (opaque) sh.fragmentShader = sh.fragmentShader.replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n  diffuseColor.a = 1.0;');
   };
   const pk = m.customProgramCacheKey.bind(m);
   m.customProgramCacheKey = () => key + pk();
@@ -368,7 +370,7 @@ export function createEnvProps(W, A, col) {
   const netTex = netTexture();
   const netMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: netTex, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.55, metalness: 0.4, envMap: R ? R.env : null });
   if (R) R.patch(netMat, { dyn: true });
-  partPatch(netMat, 'envnet');
+  partPatch(netMat, 'envnet', false, true);
   const depthMat = partPatch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), 'envdepth', true);
   const cableMat = makeCableMat(U);
   const models = parseModels(A.gltf);
