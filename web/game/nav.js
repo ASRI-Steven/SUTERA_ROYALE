@@ -354,7 +354,10 @@ export function createNav(col, homes = null) {
         if (seen.has(pi)) continue;
         seen.add(pi);
         const P = col.polys[pi];
-        if (P.b < 0 || P.h < 1.7 || P.z0 > 1.9) continue;
+        // gedung (≥ 1,7 m) atau benda jalan (col.addObstacles, b = −3: pos jaga, halte, kaki papan reklame…) yang cukup tinggi
+        // & lebar untuk bersembunyi; tiang ramping dilewati (uji pandang di bawah yang menentukan)
+        if (P.b === -3 ? P.h < 1.2 || (P.x1 - P.x0 < 0.5 && P.y1 - P.y0 < 0.5) : P.b < 0 || P.h < 1.7) continue;
+        if (P.z0 > 1.9) continue;
         if (P.x1 < bx - R || P.x0 > bx + R || P.y1 < by - R || P.y0 > by + R) continue;
         const a = P.pts, n = a.length >> 1;
         let area = 0;
