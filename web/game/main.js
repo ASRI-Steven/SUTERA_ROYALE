@@ -738,7 +738,10 @@ function start(D, realAssets) {
   const STEPS = (post ? [[0, 1.5], [0, 1.25], [1, 1.1], [1, 1.0], [2, 0.9], [3, 0.8], [4, 0.8], [4, 0.65]] : [1.5, 1.25, 1.0, 0.85, 0.7].map((v) => [null, v]))
     .map(([tr, v]) => [tr, Math.min(PR0, v)]).filter((st, i, a) => !i || st[0] !== a[i - 1][0] || st[1] !== a[i - 1][1]);
   let manual = -1, gfx0 = STEPS.length > 1 && PR0 > 1.3 ? 1 : 0, half0 = false; // layar Retina: mulai dari skala 1,25 (naik sendiri kalau mulus)
-  try { const s = (localStorage.getItem('royale.gfx2') || '').split(','); if (s.length === 2 && +s[0] >= 0 && +s[0] < STEPS.length) { gfx0 = +s[0]; half0 = s[1] === '1'; } } catch (e) { /* abaikan */ }
+  // setelan tersimpan hanya titik awal: tiap sesi mulai paling rendah "Tinggi" (FLOOR0) dan laju layar penuh — kalau
+  // sesi lalu sempat turun karena mesin sedang sibuk, kualitas tidak tertahan rendah; pengatur turun lagi dalam ±1,5 dtk bila perlu
+  const FLOOR0 = post ? STEPS.reduce((a, st, i) => (st[0] <= 1 ? i : a), 0) : Math.min(STEPS.length - 1, 2);
+  try { const s = (localStorage.getItem('royale.gfx2') || '').split(','); if (s.length === 2 && +s[0] >= 0 && +s[0] < STEPS.length) { gfx0 = Math.min(+s[0], FLOOR0); half0 = false; } } catch (e) { /* abaikan */ }
   const applyStep = (i) => { if (post) post.setTier(STEPS[i][0]); if (renderer.getPixelRatio() !== STEPS[i][1]) renderer.setPixelRatio(STEPS[i][1]); };
   const gov = createGovernor({
     n: STEPS.length, start: gfx0, half: half0, ri: refreshProbe.stop(), apply: applyStep,
