@@ -15,7 +15,7 @@ export const HOUSE = { bay: 3.6, wx0: 0.3, fh: 3.3, wy0: 0.36, wy1: 0.78, doorW:
 // bukaan berkala toko/aula (= shader world.js): di rentang sisi depan, berlubang bila mod(u, P) ∈ [p, P − p] dan v < top
 const SHOP = { P: 5.2, p: 0.35, top: 3.0, ceil: 3.4 };
 const HALL_BIG = { P: 24, p: 9, top: 3.6, ceil: 4.6, G: 10 }, HALL_SMALL = { P: 8, p: 2.2, top: 3.0, ceil: 3.4, G: 6.5 };
-const R_OPEN = 85, R_CLOSE = 110, BUILD_MS = 2.0; // interior dibangun bertahap: ≤ ±2 ms per frame (mal besar dicicil beberapa frame)
+const R_OPEN = 85, R_CLOSE = 110, BUILD_MS = 1.5; // interior dibangun bertahap: ±1,5 ms per frame (mal besar dicicil puluhan frame)
 const M = 0.1;
 const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
 const fract = (v) => v - Math.floor(v);
@@ -459,7 +459,7 @@ function planHall(H, L, other) { // other(p): titik di dalam gedung lain (menara
 // Lobi lantai dasar: pintu kaca 4 m di sisi yang menghadap jalan (≤ 2) dengan kanopi bertiang, meja resepsionis, kolom,
 // sofa tunggu, tanaman, inti lift di bawah penthouse atap (map/world.js roofTop → D.roofs). Fasad: bukaan pintu dilubangi
 // lewat tabel uOpen seperti aula (rentang A/B, periode P sangat besar = tepat satu bukaan per rentang).
-export const TOWER = { top: 3.0, doorW: 4.0, P: 100000 };
+const TOWER = { top: 3.0, doorW: 4.0, P: 100000 };
 function planTower(i, pts, area, h, { roadDist, occupied }, roof) {
   const ceil = h >= 20 ? 4.6 : Math.min(4.2, h - 1.6);
   if (ceil < 3.2 || area < 60) return null;
@@ -639,6 +639,8 @@ const COL = {
   shelf: '#d9dce2', column: '#e4dccd', kiosk: '#3D3782', gold: '#D29F52', fridge: '#e9eef2', glass: '#9fc7e6', bench: '#6b5a48', planter: '#6d5a48', counter: '#3a3d46',
   lobbyWall: '#dcd5c8', core: '#cfc8bb', steel: '#a3aab3', alu: '#3b3f46', tint: '#6f8ea6',
 };
+const COLORS = new Map(); // warna perabot per kode hex (dipakai bersama, jangan diubah isinya)
+const colorOf = (hex) => { let c = COLORS.get(hex); if (!c) COLORS.set(hex, (c = new THREE.Color(hex))); return c; };
 export function createInteriors(scene, W, homes) {
   // lampu ruangan: cahaya sendiri sebanding warna permukaan (interior tidak gelap walau matahari terhalang atap)
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.FrontSide });
@@ -744,15 +746,19 @@ export function createInteriors(scene, W, homes) {
   const outMat = new THREE.MeshLambertMaterial({ vertexColors: true });
   // generator: yield di sela pekerjaan (per sisi dinding, per beberapa perabot) → update() mencicil dengan anggaran waktu;
   // nilai akhir = grup mesh interior
+  // penampung verteks bersama (satu interior dibangun pada satu waktu): Float32Array yang membesar sendiri — jauh lebih
+  // sedikit sampah memori daripada larik JS (jeda GC saat banyak rumah dibuka)
+  let VP = new Float32Array(3 << 15), VN = new Float32Array(3 << 15), VC = new Float32Array(3 << 15), VS = new Float32Array(1 << 15), vn = 0;
+  const grow = () => { const g = (a) => { const b = new Float32Array(a.length * 2); b.set(a); return b; }; VP = g(VP); VN = g(VN); VC = g(VC); VS = g(VS); };
   function* buildGen(H) {
-    let pos = [], nor = [], col = [], sfc = [];
+    vn = 0;
     const c = new THREE.Color();
     const mk = (P, N, Cc, S, material) => {
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
-      g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
-      g.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
-      if (S) g.setAttribute('sfc', new THREE.Float32BufferAttribute(S, 1));
+      g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(Cc, 3));
+      if (S) g.setAttribute('sfc', new THREE.BufferAttribute(S, 1));
       g.computeBoundingSphere();
       const m = new THREE.Mesh(g, material);
       m.receiveShadow = true;
@@ -761,8 +767,9 @@ export function createInteriors(scene, W, homes) {
     };
     const grp = new THREE.Group();
     grp.matrixAutoUpdate = false;
-    // gedung besar (mal): geometri dipecah per ±30 ribu verteks supaya pembuatan buffer juga tercicil antarframe
-    const cut = () => { if (pos.length > 90000) { grp.add(mk(pos, nor, col, sfc, mat)); pos = []; nor = []; col = []; sfc = []; } };
+    const flush = () => { grp.add(mk(VP.slice(0, vn * 3), VN.slice(0, vn * 3), VC.slice(0, vn * 3), VS.slice(0, vn), mat)); vn = 0; };
+    // gedung besar (mal): geometri dipecah per ±20 ribu verteks supaya pembuatan buffer juga tercicil antarframe
+    const cut = () => { if (vn > 20000) flush(); };
     let ST = 0; // jenis permukaan untuk tekstur (lihat material): 0 polos, 1 dinding, 2 ubin, 3 kayu
     const xp = [], xn = [], xc = []; // geometri luar rumah: kusen, ambang & kepala jendela/pintu (material luar, kena matahari)
     const boxX = (x, y, rot, w, d, z0, z1, cc) => {
@@ -773,7 +780,12 @@ export function createInteriors(scene, W, homes) {
       q([P[3][0], P[3][1], z0], [P[2][0], P[2][1], z0], [P[1][0], P[1][1], z0], [P[0][0], P[0][1], z0], [0, 0, -1], 0.75);
     };
     let Z = 0; // tinggi lantai perabot (lantai atas)
-    const tri = (a, b, d, n, cc) => { for (const p of [a, b, d]) { pos.push(p[0], p[2], -p[1]); nor.push(n[0], n[2], -n[1]); col.push(cc.r, cc.g, cc.b); sfc.push(ST); } };
+    const vtx = (x, y, z, nx, ny, nz, r, g, bb) => { // data (x, y, z) → three (x, z, −y)
+      if (vn * 3 + 3 > VP.length) grow();
+      const k = vn * 3;
+      VP[k] = x; VP[k + 1] = z; VP[k + 2] = -y; VN[k] = nx; VN[k + 1] = nz; VN[k + 2] = -ny; VC[k] = r; VC[k + 1] = g; VC[k + 2] = bb; VS[vn++] = ST;
+    };
+    const tri = (a, b, d, n, cc) => { vtx(a[0], a[1], a[2], n[0], n[1], n[2], cc.r, cc.g, cc.b); vtx(b[0], b[1], b[2], n[0], n[1], n[2], cc.r, cc.g, cc.b); vtx(d[0], d[1], d[2], n[0], n[1], n[2], cc.r, cc.g, cc.b); };
     const quad = (a, b, d, e, n, cc) => { tri(a, b, d, n, cc); tri(a, d, e, n, cc); };
     const quadAuto = (a, b, d, e, cc) => { // normal dari urutan titik (data x, y, z)
       const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = d[0] - a[0], vy = d[1] - a[1], vz = d[2] - a[2];
@@ -800,16 +812,23 @@ export function createInteriors(scene, W, homes) {
         tri([a[0], a[1], z], [b[0], b[1], z], [d[0], d[1], z], [0, 0, up ? 1 : -1], cc);
       }
     };
+    const BX = new Float64Array(8); // sudut kotak (dipakai ulang: perabot mal ribuan kotak)
     const box = (x, y, rot, w, d, z0, z1, cc, top = true) => {
       z0 += Z; z1 += Z;
       const cs = Math.cos(rot), sn = Math.sin(rot), hw = w / 2, hd = d / 2;
-      const P = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => [x + a * cs - b * sn, y + a * sn + b * cs]);
+      BX[0] = x - hw * cs + hd * sn; BX[1] = y - hw * sn - hd * cs; BX[2] = x + hw * cs + hd * sn; BX[3] = y + hw * sn - hd * cs;
+      BX[4] = x + hw * cs - hd * sn; BX[5] = y + hw * sn + hd * cs; BX[6] = x - hw * cs - hd * sn; BX[7] = y - hw * sn + hd * cs;
       for (let j = 0; j < 4; j++) {
-        const a = P[j], b = P[(j + 1) % 4], ex = b[0] - a[0], ey = b[1] - a[1], L = Math.hypot(ex, ey) || 1;
-        const nx = ey / L, ny = -ex / L; // keluar (kotak CCW)
-        quad([a[0], a[1], z0], [b[0], b[1], z0], [b[0], b[1], z1], [a[0], a[1], z1], [nx, ny, 0], c.copy(cc).multiplyScalar(j % 2 ? 0.88 : 1));
+        const ax = BX[2 * j], ay = BX[2 * j + 1], bx = BX[(2 * j + 2) & 7], by = BX[(2 * j + 3) & 7], ex = bx - ax, ey = by - ay, L = Math.hypot(ex, ey) || 1;
+        const nx = ey / L, ny = -ex / L, k = j % 2 ? 0.88 : 1, r = cc.r * k, g = cc.g * k, bb = cc.b * k; // normal keluar (kotak CCW)
+        vtx(ax, ay, z0, nx, ny, 0, r, g, bb); vtx(bx, by, z0, nx, ny, 0, r, g, bb); vtx(bx, by, z1, nx, ny, 0, r, g, bb);
+        vtx(ax, ay, z0, nx, ny, 0, r, g, bb); vtx(bx, by, z1, nx, ny, 0, r, g, bb); vtx(ax, ay, z1, nx, ny, 0, r, g, bb);
       }
-      if (top) quad([P[0][0], P[0][1], z1], [P[1][0], P[1][1], z1], [P[2][0], P[2][1], z1], [P[3][0], P[3][1], z1], [0, 0, 1], c.copy(cc).multiplyScalar(1.06));
+      if (top) {
+        const r = cc.r * 1.06, g = cc.g * 1.06, bb = cc.b * 1.06;
+        vtx(BX[0], BX[1], z1, 0, 0, 1, r, g, bb); vtx(BX[2], BX[3], z1, 0, 0, 1, r, g, bb); vtx(BX[4], BX[5], z1, 0, 0, 1, r, g, bb);
+        vtx(BX[0], BX[1], z1, 0, 0, 1, r, g, bb); vtx(BX[4], BX[5], z1, 0, 0, 1, r, g, bb); vtx(BX[6], BX[7], z1, 0, 0, 1, r, g, bb);
+      }
     };
     const T = HOUSE.wall, house = !H.kind, tower = H.kind === 'tower', up = H.up, ceil = H.ceil, topZ = up ? up.ceil : ceil;
     const wallC = new THREE.Color(house ? COL.wall[H.i % COL.wall.length] : H.kind === 'hall' ? COL.hallWall : tower ? COL.lobbyWall : COL.shopWall[H.i % 3]);
@@ -942,7 +961,7 @@ export function createInteriors(scene, W, homes) {
     // sekat: dua sisi, ambang pintu di tengah (sekat toko: penuh)
     let np = 0;
     for (const [z0, z1] of up ? [[0, ceil], [up.floor, up.ceil]] : [[0, ceil]]) for (const p of H.parts) {
-      if (++np % 6 === 0) cut(); yield;
+      if (++np % 6 === 0) { cut(); yield; }
       const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len, nx = -uy, ny = ux, t = 0.06;
       const lv = z0 > 0.5 ? 1 : 0, mx = (p.a[0] + p.b[0]) / 2, my = (p.a[1] + p.b[1]) / 2;
       const sideC = (sd) => (house ? roomC(mx + nx * sd * 0.4, my + ny * sd * 0.4, lv) : wallC);
@@ -1003,7 +1022,7 @@ export function createInteriors(scene, W, homes) {
       box(be[0], be[1], rotE + Math.PI / 2, SW + 0.1, 0.1, F, F + 0.95, railC);
     }
     // perabot
-    const C = (hex) => new THREE.Color(hex), R = (k) => hash(H.i + k, 7.7);
+    const C = colorOf, R = (k) => hash(H.i + k, 7.7);
     const goods = (x, y, rot, w, d, z, at, seed) => { // deret barang warna-warni di satu tingkat rak
       const n = Math.max(1, Math.round(w / 1.3));
       for (let j = 0; j < n; j++) { const p = at(-w / 2 + (j + 0.5) * w / n, 0); box(p[0], p[1], rot, w / n - 0.08, d - 0.12, z, z + 0.2 + R(j * 3 + seed) * 0.1, C(COL.goods[Math.floor(R(j * 7 + seed * 13) * COL.goods.length)])); }
@@ -1072,11 +1091,12 @@ export function createInteriors(scene, W, homes) {
       }
     }
     let nf = 0;
-    for (const f of H.furn) { drawFurn(f); if (++nf % 8 === 0) cut(); yield; }
-    if (up) { Z = up.floor; for (const f of up.furn) { drawFurn(f); if (++nf % 8 === 0) cut(); yield; } Z = 0; }
+    const NF = H.kind === 'hall' ? 1 : 8; // rak mal berat (±0,6 ms per rak berisi barang): satu per langkah
+    for (const f of H.furn) { drawFurn(f); if (++nf % NF === 0) { cut(); yield; } }
+    if (up) { Z = up.floor; for (const f of up.furn) { drawFurn(f); if (++nf % NF === 0) { cut(); yield; } } Z = 0; }
     cut(); yield;
-    if (pos.length) grp.add(mk(pos, nor, col, sfc, mat));
-    if (xp.length) { const ex = mk(xp, xn, xc, null, outMat); ex.castShadow = true; grp.add(ex); }
+    if (vn) flush();
+    if (xp.length) { const ex = mk(new Float32Array(xp), new Float32Array(xn), new Float32Array(xc), null, outMat); ex.castShadow = true; grp.add(ex); }
     return grp;
   }
   function setOpen(H, on) { if (W.setHouseOpen) W.setHouseOpen(H, on); }
