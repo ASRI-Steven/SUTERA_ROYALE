@@ -47,18 +47,29 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 //   (×(1+settleK)) lalu mengunci dalam ±settle dtk; head = peluang membidik kepala per rentetan (langkah kaki terdengar
 //   menurut cara bergerak untuk semua tingkat, lihat stepNoise; reaksinya memakai react); sprint = kecepatan pindah posisi; turn = kecepatan memutar badan (rad/dtk); dodge = peluang menghindar
 //   kendaraan; preaim = pengali reaksi saat mengintip ke arah yang sudah dibidik; drive = peluang naik kendaraan ke zona.
+// Kecerdasan (18 Nov): lootT = lama satu sesi jarah pemimpin (dtk); third = peluang ikut campur pertempuran yang terdengar
+//   jauh; finish = peluang mendesak lawan yang tumbang; hold = peluang bertahan di dalam rumah (dekat pintu/jendela) selama
+//   menunggu zona; smoke = peluang memakai granat asap (memulihkan rekan / mundur); early = berangkat ke zona berikutnya
+//   sekian dtk lebih awal setelah perlengkapan lengkap; wary = peluang bergerak hati-hati (jongkok, berlindung) saat musuh
+//   baru terdengar di dekat sini.
 export const DIFFICULTY = {
   easy: { label: 'Mudah', note: 'Bot lambat bereaksi, sering meleset, dan jarang berlindung. Cocok untuk belajar.', react: [0.75, 1.35], err: 2.7, moveErr: 1.6, targetMoveErr: 1.2, range: 95, fov: 1.05, hear: 60,
     burst: [3, 5], pause: [0.55, 1.15], still: 0.25, crouch: 0, armed: 0.7, weapons: ['pistol', 'pistol', 'smg', 'shotgun', 'ar', 'revolver', 'pdw'], vest: 0, helmet: 0, lvl2: 0, dmgToPlayer: 0.6,
-    cover: 0.3, peek: 0.35, flank: 0.05, push: 0.2, settle: 1.3, settleK: 1.7, head: 0, sprint: 5.2, turn: 4.2, dodge: 0.4, preaim: 0.85, strafeT: [0.8, 1.8], drive: 0.3, smartWeapon: 0.3, zoneEarly: false },
+    cover: 0.3, peek: 0.35, flank: 0.05, push: 0.2, settle: 1.3, settleK: 1.7, head: 0, sprint: 5.2, turn: 4.2, dodge: 0.4, preaim: 0.85, strafeT: [0.8, 1.8], drive: 0.3, smartWeapon: 0.3, zoneEarly: false,
+    lootT: 70, third: 0, finish: 0.35, hold: 0.15, smoke: 0, early: 0, wary: 0 },
   medium: { label: 'Sedang', note: 'Bot berlindung di balik gedung, mengintip, sesekali mengepung, dan sebagian berpelindung.', react: [0.45, 0.85], err: 1.8, moveErr: 1.1, targetMoveErr: 0.9, range: 130, fov: 1.3, hear: 95,
     burst: [4, 6], pause: [0.4, 0.8], still: 0.18, crouch: 0.4, armed: 0.85, weapons: ['pistol', 'smg', 'smg', 'shotgun', 'ar', 'ar', 'burst', 'pdw', 'dbs', 'revolver', 'lmg'], vest: 0.35, helmet: 0.25, lvl2: 0.2, dmgToPlayer: 0.85,
-    cover: 0.7, peek: 0.75, flank: 0.35, push: 0.45, settle: 0.85, settleK: 1.3, head: 0.08, sprint: 5.9, turn: 5.6, dodge: 0.75, preaim: 0.55, strafeT: [0.5, 1.2], drive: 0.6, smartWeapon: 0.75, zoneEarly: true },
+    cover: 0.7, peek: 0.75, flank: 0.35, push: 0.45, settle: 0.85, settleK: 1.3, head: 0.08, sprint: 5.9, turn: 5.6, dodge: 0.75, preaim: 0.55, strafeT: [0.5, 1.2], drive: 0.6, smartWeapon: 0.75, zoneEarly: true,
+    lootT: 55, third: 0.25, finish: 0.7, hold: 0.45, smoke: 0.4, early: 50, wary: 0.5 },
   hard: { label: 'Sulit', note: 'Bot sigap & akurat: berlindung, mengintip dengan bidikan siap, mengepung dari samping, mendesak saat kamu isi ulang, naik kendaraan ke zona.', react: [0.22, 0.45], err: 1.25, moveErr: 0.75, targetMoveErr: 0.6, range: 180, fov: 1.7, hear: 150,
     burst: [4, 7], pause: [0.35, 0.65], still: 0.1, crouch: 0.75, armed: 1, weapons: ['smg', 'ar', 'ar', 'shotgun', 'dmr', 'burst', 'lmg', 'pdw', 'dbs', 'sniper'], vest: 0.65, helmet: 0.5, lvl2: 0.4, dmgToPlayer: 1,
-    cover: 0.92, peek: 1, flank: 0.65, push: 0.75, settle: 0.5, settleK: 1.0, head: 0.2, sprint: 6.4, turn: 7.5, dodge: 1, preaim: 0.35, strafeT: [0.28, 0.75], drive: 0.85, smartWeapon: 1, zoneEarly: true },
+    cover: 0.92, peek: 1, flank: 0.65, push: 0.75, settle: 0.5, settleK: 1.0, head: 0.2, sprint: 6.4, turn: 7.5, dodge: 1, preaim: 0.35, strafeT: [0.28, 0.75], drive: 0.85, smartWeapon: 1, zoneEarly: true,
+    lootT: 45, third: 0.5, finish: 0.95, hold: 0.7, smoke: 0.8, early: 80, wary: 0.85 },
 };
 const SKILL = { ...DIFFICULTY.easy };
+const SKIP_N = 8; // barang yang diingat untuk dilewati (cincin; kedaluwarsa)
+const WD_T = 4; // pengawas: berniat jalan selama ini tanpa berpindah ≥ 2,5 m → tujuan dianggap tak terjangkau
+const HOP_ANG = [0, 0.4, -0.4, 0.8, -0.8, 1.3, -1.3]; // arah titik antara jalan bertahap (rad, relatif ke arah tujuan)
 // jarak nyaman per senjata [min, max] (m) dan kecocokan senjata untuk jarak tertentu
 const PREF = { shotgun: [3, 11], smg: [6, 24], pistol: [7, 22], ar: [16, 70], dmr: [40, 140], sniper: [60, 220], lmg: [14, 80], revolver: [5, 25], burst: [16, 75], pdw: [4, 22], dbs: [2, 9] };
 function suit(kind, d) {
@@ -92,6 +103,8 @@ function buildGraph(D, col) {
     const w = D.roads.w[ri] * M;
     let prev = -1;
     for (let j = 0; j + 1 < r.length; j += 2) {
+      // simpul di luar kawasan tidak dipakai: dinding batas menahan bot & kendaraan, jadi rute lewat situ pasti macet
+      if (!col.inArea(r[j] * M, r[j + 1] * M)) { prev = -1; continue; }
       const n = node(r[j] * M, r[j + 1] * M, w);
       if (prev >= 0 && prev !== n) { const d = Math.hypot(X[n] - X[prev], Y[n] - Y[prev]); adj[prev].push(n, d); adj[n].push(prev, d); }
       prev = n;
@@ -181,28 +194,61 @@ function buildGraph(D, col) {
   }
   const N = X.length, gs = new Float64Array(N), from = new Int32Array(N), seen = new Int32Array(N);
   let gen = 0;
-  function astar(s, t) {
-    if (s < 0 || t < 0) return null;
+  // ruas yang baru saja gagal dilalui (bot macet di antara dua simpulnya, mis. gang yang tertutup dinding rumah):
+  // dihindari semua bot & kendaraan sampai kedaluwarsa
+  const bad = new Map(), ekey = (i, j) => (i < j ? i * N + j : j * N + i);
+  let badNow = 0;
+  function markBad(i, j, until) { if (i >= 0 && j >= 0 && i !== j) bad.set(ekey(i, j), until); }
+  // srcs: [simpul, biaya awal, …] (banyak titik awal: bot memilih simpul masuk yang searah tujuan, bukan sekadar yang terdekat)
+  function search(srcs, t, useBad = true) {
+    if (t < 0 || !srcs.length) return null;
     gen++;
     const heap = [], push = (i, f) => { heap.push([f, i]); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
     const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let c = 0; for (;;) { const l = c * 2 + 1, r = l + 1; let m = c; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } } return top; };
-    seen[s] = gen; gs[s] = 0; from[s] = -1;
-    push(s, Math.hypot(X[t] - X[s], Y[t] - Y[s]));
+    for (let k = 0; k < srcs.length; k += 2) { const s = srcs[k]; if (seen[s] === gen && gs[s] <= srcs[k + 1]) continue; seen[s] = gen; gs[s] = srcs[k + 1]; from[s] = -1; push(s, srcs[k + 1] + Math.hypot(X[t] - X[s], Y[t] - Y[s])); }
     let n = 0;
     while (heap.length && n++ < 40000) {
-      const [, u] = pop();
+      const [f, u] = pop();
+      if (f > gs[u] + Math.hypot(X[t] - X[u], Y[t] - Y[u]) + 1e-6) continue; // entri usang
       if (u === t) { const path = []; for (let v = t; v >= 0; v = from[v]) path.push(v); return path.reverse(); }
       const a = adj[u];
       for (let j = 0; j < a.length; j += 2) {
         const v = a[j], g = gs[u] + a[j + 1];
         if (seen[v] === gen && g >= gs[v]) continue;
+        if (useBad && bad.size) { const e = bad.get(ekey(u, v)); if (e !== undefined) { if (e > badNow) continue; bad.delete(ekey(u, v)); } }
         seen[v] = gen; gs[v] = g; from[v] = u;
         push(v, g + Math.hypot(X[t] - X[v], Y[t] - Y[v]));
       }
     }
     return null;
   }
-  return { X, Y, W, N: X.length, nearest, astar, comp: COMP, main: MAIN };
+  const one = [0, 0];
+  function astar(s, t) { if (s < 0) return null; one[0] = s; one[1] = 0; return search(one, t); }
+  // rute dari titik bebas (px, py) ke (x, y): simpul masuk = simpul-simpul ≤ 45 m (biaya awal = jarak lurus + 30 % kalau
+  // tidak terlihat lurus menurut vis), simpul tujuan = terdekat; kalau gagal, ulangi hanya dengan komponen utama
+  const srcBuf = [];
+  function route(px, py, x, y, now, vis) {
+    badNow = now;
+    const t = nearest(x, y);
+    srcBuf.length = 0;
+    let nv = 0;
+    const cx0 = Math.floor((px - 45) / C), cx1 = Math.floor((px + 45) / C), cy0 = Math.floor((py - 45) / C), cy1 = Math.floor((py + 45) / C);
+    for (let cx = cx0; cx <= cx1; cx++) for (let cy = cy0; cy <= cy1; cy++) {
+      const arr = grid.get(gk(cx, cy));
+      if (arr) for (const i of arr) {
+        const d = Math.hypot(X[i] - px, Y[i] - py);
+        if (d >= 45 || srcBuf.length >= 24) continue;
+        const ok = vis && d < 30 && (nv++ < 5) && vis(X[i], Y[i]); // terlihat lurus: tanpa denda (uji dibatasi 5 simpul)
+        srcBuf.push(i, ok ? d : d * 1.3 + 8);
+      }
+    }
+    if (!srcBuf.length) { const s = nearest(px, py); if (s >= 0) srcBuf.push(s, Math.hypot(X[s] - px, Y[s] - py)); }
+    let p = search(srcBuf, t);
+    if (!p) { const s = nearest(px, py, 300, true), t2 = nearest(x, y, 300, true); if (s >= 0) { one[0] = s; one[1] = 0; p = search(one, t2); } }
+    if (!p && bad.size) p = search(srcBuf, t, false); // ruas buruk memutus semua jalan keluar: lebih baik rute lama daripada tanpa rute
+    return p;
+  }
+  return { X, Y, W, N: X.length, nearest, astar, route, markBad, comp: COMP, main: MAIN, setNow: (t) => { badNow = t; } };
 }
 
 export function createBots(ctx, n = 50) {
@@ -210,10 +256,10 @@ export function createBots(ctx, n = 50) {
   const V = ctx.vehicles || null, GR = ctx.grass || null;
   const PLAYER = agents.find((o) => o.isPlayer) || null;
   const G = buildGraph(ctx.D, col);
-  const nav = createNav(col);
+  const nav = createNav(col, ctx.homes || null); // pintu & celah sekat rumah = titik wakil sel grid
   const homes = ctx.homes || null; // tata letak gedung (tangga rumah 2 lantai)
-  let budget = 0; // jatah pencarian jalur/perlindungan per frame (biar tidak tersendat)
-  const spend = () => (budget > 0 ? (budget--, true) : false);
+  let budget = 0, frameT0 = 0; // jatah pencarian jalur/perlindungan per frame (biar tidak tersendat): jumlah & waktu (≤ 3 ms)
+  const spend = () => (budget > 0 && performance.now() - frameT0 < 3 ? (budget--, true) : false);
   const crowd = createCrowd(scene, n);
   // payung & bayangan bulat (instans)
   const chuteGLB = propGeometry('parachute'), chuteY = chuteGLB ? 1.45 : 4.4; // parasut Blender (asal di titik gantung)
@@ -257,9 +303,14 @@ export function createBots(ctx, n = 50) {
       mode: 'plane', jumpAt: 0, land: null, nav: null, goal: null, spd: 5, lane: rnd(-1.6, 1.6), next: Math.random() * 0.3, item: null,
       target: null, reactAt: 0, seenAt: -99, lastSeen: new THREE.Vector3(), losOk: false, burst: 0, nextShot: 0, aimK: 1, head: false, switchAt: 0,
       tac: null, tacUntil: 0, cover: null, coverCD: 0, nextPeek: 0, peekUntil: 0, peeks: 0, preaimFor: null, preaimAt: -99, scanUntil: 0,
-      strafe: 1, strafeT: 0, stuckT: 0, stuckN: 0, lootT: 0, lootN: 0, idleT: 0, hurtAt: -99, hurtBy: null, poseT: 0, healKind: null,
+      strafe: 1, strafeT: 0, stuckT: 0, stuckN: 0, lootN: 0, idleT: 0, hurtAt: -99, hurtBy: null, poseT: 0, healKind: null,
       scanT: 0, scanYaw: 0, dodgeT: 0, dodgeUntil: 0, dodgeX: 0, dodgeY: 0,
       veh: null, dpath: null, dpi: 0, dest: null, braking: false, revUntil: 0, revSteer: 0, dStuck: 0, dStuckN: 0, drive: { throttle: 0, steer: 0, handbrake: false, boost: false },
+      // pengawas kemajuan (lihat unstick): jangkar posisi, lama berniat jalan tanpa berpindah, hitungan macet beruntun
+      anX: 0, anY: 0, anH: 0, anW: 0, wdN: 0, wdAt: -99, escUntil: 0, soloUntil: 0, hopUntil: 0, bcX: 0, bcY: 0, bcH: 0, dAnX: 0, dAnY: 0, dAnT: 0, wp: [0, 0], wpN: null, wpI: 0, wpD: 0, wpT: 0, // bc = jejak titik bebas terakhir
+      skI: new Array(SKIP_N).fill(null), skT: new Float64Array(SKIP_N), skK: 0, // barang yang dilewati sementara (tidak berguna / tak terjangkau)
+      lootEnd: 0, lootPeek: 0, zoneRun: 0, third: -99, gunAt: -99, gunPos: null, gunO: null, thirdAt: 0, holdEnd: 0, holdCD: 0, holdYaw: 0, holdH: null, holdX: 0, holdY: 0, lift: null, revSkip: null, revSkipUntil: 0, smokeAt: 0,
+      warnCD: 0, coverWait: 0, heardAt: -99,
     };
     bots.push(b);
     agents.push(b);
@@ -340,7 +391,8 @@ export function createBots(ctx, n = 50) {
       b.pos.set(f[0], 0, -f[1]);
       b.state = 'ground';
       a.mode = 'loot';
-      a.lootT = 0;
+      a.lootEnd = ctx.now() + SKILL.lootT;
+      a.lootN = 0;
       a.next = 0;
       if (Math.random() < SKILL.vest) b.vest = Math.random() < SKILL.lvl2 ? 2 : 1;
       if (Math.random() < SKILL.helmet) b.helmet = Math.random() < SKILL.lvl2 ? 2 : 1;
@@ -352,6 +404,7 @@ export function createBots(ctx, n = 50) {
       }
       b.nades ||= { frag: 0, smoke: 0 };
       if (Math.random() < SKILL.push * 0.4) b.nades.frag = 1; // sebagian bot membawa granat sejak awal
+      if (Math.random() < SKILL.smoke * 0.35) b.nades.smoke = 1;
     }
   }
 
@@ -400,7 +453,7 @@ export function createBots(ctx, n = 50) {
   // ---------- Persepsi ----------
   const eye = new THREE.Vector3();
   function perceive(b, now) {
-    let best = null, bd = SKILL.range, heard = null, hd = Infinity;
+    let best = null, bd = SKILL.range, heard = null, hd = Infinity, gun = null, gd = Infinity;
     const bx = b.pos.x, bz = b.pos.z, fx = Math.sin(b.yaw), fz = Math.cos(b.yaw);
     const cands = [];
     for (const o of agents) {
@@ -412,6 +465,7 @@ export function createBots(ctx, n = 50) {
       const sn = stepNoise(o), step = sn > 0 && d < sn && d < sn * (GR && GR.at(o.pos.x, -o.pos.z) > 0.35 ? 0.8 : 1); // langkah (rumput meredam)
       const loud = shot || (o.state === 'drive' && d < 110) || step; // tembakan / mesin / langkah
       if ((step || (shot && d < 70)) && d < hd) { heard = o; hd = d; } // terdengar dekat: diperiksa bila tidak terlihat
+      else if (shot && d < gd) { gun = o; gd = d; } // tembakan jauh (pertempuran lain): arah diingat
       const aware = d < 12 || ang < SKILL.fov || (b.ai.hurtBy === o && now - b.ai.hurtAt < 4) || loud || (b.ai.target === o && now - b.ai.seenAt < 2);
       // rumput tinggi: yang jongkok/tiarap tidak terlihat dari jauh (kecuali menembak / bergerak cepat)
       if (aware && GR && o.state === 'ground' && (o.prone || o.crouch) && d > 6) {
@@ -431,6 +485,7 @@ export function createBots(ctx, n = 50) {
       if (col.los(bx, -bz, eh, o.pos.x, -o.pos.z, th) && !(ctx.nades && ctx.nades.smokeBlocks(bx, -bz, eh, o.pos.x, -o.pos.z, th))) { best = o; bd = d; break; } // asap menghalangi
     }
     if (!best && heard) { const a = b.ai; a.heardO = heard; a.heardAt = now; (a.heardPos ||= new THREE.Vector3()).copy(heard.pos); }
+    if (!best && gun) { const a = b.ai; a.gunO = gun; a.gunAt = now; (a.gunPos ||= new THREE.Vector3()).copy(gun.pos); }
     return best;
   }
   function weapon(b) { const w = b.cur >= 0 ? b.weapons[b.cur] : null; return w ? { inst: w, def: WEAPONS[w.kind] } : null; }
@@ -451,7 +506,11 @@ export function createBots(ctx, n = 50) {
   }
 
   // ---------- Bergerak: langsung / grid lokal / jaringan jalan; antar lantai lewat tangga ----------
-  const lvOf = (b) => (b.pos.y > 2 ? HOUSE.floor2 : 0);
+  const lvOf = (b) => (b.pos.y > 4.5 ? b.pos.y : b.pos.y > 2 ? HOUSE.floor2 : 0); // tanah / lantai 2 rumah / atap menara
+  // lift menara (map/collide.js lifts: pintu lobi dLo ↔ pintu atap dHi, z = tinggi atap) per indeks gedung
+  const LIFTS = new Map();
+  for (const L of col.lifts || []) LIFTS.set(L.b, L);
+  function roofLift(x, y, h) { if (h < 4.5 || !LIFTS.size) return null; const L = LIFTS.get(col.inBuilding(x, y)); return L && Math.abs(L.z - h) < 2.5 ? L : null; }
   function homeUp(x, y, h) { // rumah 2 lantai yang lantai atasnya memuat (x, y) bila tinggi h ada di lantai atas
     if (!homes || h < 2) return null;
     const i = col.inBuilding(x, y), H = i >= 0 && homes.get(i);
@@ -467,7 +526,20 @@ export function createBots(ctx, n = 50) {
   // gz = tinggi tujuan (lantai 2 rumah → rute: ke tangga, naik/turun, lalu ke tujuan)
   function go(b, x, y, spd, gz = 0) {
     const a = b.ai, px = b.pos.x, py = -b.pos.z;
+    if (a.lift && a.nav && a.nav.kind === 'lift') return; // sedang di dalam lift: perintah gerak baru menunggu sampai tiba (dulu
+    // anggota yang mengikuti pemimpin ke atap memesan ulang tiap 0,6 dtk sehingga perjalanan lift tak pernah selesai)
     a.route = null;
+    // atap menara: lewat lift (pintu lift → naik/turun → tujuan), sama seperti pemain
+    const tR = roofLift(x, y, gz), bR = roofLift(px, py, b.pos.y);
+    if (tR !== bR) {
+      const legs = [];
+      if (bR) legs.push({ x: bR.hi.x, y: bR.hi.y, lv: bR.z, nd: true }, { lift: bR, up: false });
+      if (tR) legs.push({ x: tR.lo.x, y: tR.lo.y, lv: 0 }, { lift: tR, up: true });
+      legs.push({ x, y, lv: tR ? tR.z : 0, nd: !!tR });
+      a.route = legs; a.routeSpd = spd;
+      nextLeg(b);
+      return;
+    }
     const sH = stairOf(px, py, b.pos.y), bH = sH ? null : homeUp(px, py, b.pos.y), tH = homeUp(x, y, gz);
     if (!sH && bH === tH) { goLevel(b, x, y, spd, bH ? bH.up.floor : 0); return; }
     const legs = [];
@@ -482,10 +554,28 @@ export function createBots(ctx, n = 50) {
   function nextLeg(b) {
     const a = b.ai, L = a.route.shift();
     if (!a.route.length) a.route = null;
-    if (L.H) { const S = L.H.up.stair, end = L.dir > 0 ? S.land : S.ap; a.goal = [end[0], end[1]]; a.spd = Math.min(a.routeSpd, 4.4); a.nav = { kind: 'stair', S, dir: L.dir }; }
-    else goLevel(b, L.x, L.y, a.routeSpd, L.lv);
+    if (L.lift) { // naik/turun lift: harus di dekat pintunya; perjalanan selama waktu yang sama dengan pemain, lalu pindah
+      const Lf = L.lift, door = L.up ? Lf.dLo : Lf.dHi, x = b.pos.x, y = -b.pos.z;
+      if (Math.hypot(door[0] - x, door[1] - y) > 2.6 || Math.abs(b.pos.y - (L.up ? 0 : Lf.z)) > 1) { abandon(b, ctx.now()); return; }
+      a.lift = { L: Lf, up: L.up, at: ctx.now() + 0.35 + Math.min(2.6, 0.9 + Lf.z / 70) };
+      a.nav = { kind: 'lift' }; a.goal = [x, y];
+      return;
+    }
+    if (L.H) {
+      // tangga hanya dimulai dari ujungnya (kaki tangga / bordes) di lantai yang benar; kalau potongan sebelumnya gagal
+      // sampai ke situ, seluruh rute batal (dulu bot langsung "menaiki tangga" dari luar rumah dan menabrak dinding).
+      // Jalur grid bisa berhenti 1–2 m dari ujung tangga (ujungnya terlalu dekat pagar lubang): sisa jarak ditempuh lurus dulu.
+      const S = L.H.up.stair, st = L.dir > 0 ? S.ap : S.land, end = L.dir > 0 ? S.land : S.ap, x = b.pos.x, y = -b.pos.z, lv = L.dir > 0 ? 0 : L.H.up.floor;
+      if (stairOf(x, y, b.pos.y) !== L.H) {
+        const ds = Math.hypot(st[0] - x, st[1] - y);
+        if (ds > 3 || Math.abs(b.pos.y - lv) > 0.8) { abandon(b, ctx.now()); return; }
+        if (ds > 0.8 && !L.near) { L.near = true; (a.route ||= []).unshift(L); a.goal = [st[0], st[1]]; a.lv = lv; a.spd = Math.min(a.routeSpd, 4.4); a.nav = { kind: 'direct' }; return; }
+      }
+      a.goal = [end[0], end[1]]; a.spd = Math.min(a.routeSpd, 4.4); a.nav = { kind: 'stair', S, dir: L.dir };
+    } else goLevel(b, L.x, L.y, a.routeSpd, L.lv, L.nd);
   }
-  function goLevel(b, x, y, spd, lv) {
+  // nd = tanpa jalan memutar lewat pintu (dipakai potongan rute yang memang sudah lewat pintu)
+  function goLevel(b, x, y, spd, lv, nd = false) {
     const a = b.ai, px = b.pos.x, py = -b.pos.z;
     a.spd = spd;
     a.goal = [x, y];
@@ -493,42 +583,146 @@ export function createBots(ctx, n = 50) {
     const d = Math.hypot(x - px, y - py);
     if (d < 0.5) { a.nav = null; return; }
     if (d < 60 && nav.walkable(px, py, x, y, lv)) { a.nav = { kind: 'direct' }; return; }
-    if (d < 115 && spend()) { const pts = nav.path(px, py, x, y, 9000, lv); if (pts) { a.nav = { kind: 'local', pts, i: 0 }; return; } }
+    if (d < 115) {
+      if (!spend()) { a.nav = { kind: 'pend' }; return; } // jatah pencarian jalur frame ini habis: coba lagi frame berikutnya
+      const pts = nav.path(px, py, x, y, 9000, lv);
+      if (pts) { a.nav = { kind: 'local', pts, i: 0, nc: 0 }; return; }
+      if (!lv && !nd && viaDoor(b, x, y, spd)) return;
+    }
+    // di dalam gedung & tujuan jauh: keluar lewat pintunya dulu (dari dalam aula besar simpul jalan tidak terjangkau grid)
+    if (!lv && !nd && d >= 115 && col.inBuilding(px, py) >= 0 && viaDoor(b, x, y, spd, true)) return;
+    if (!lv && d > 90 && ctx.now() < a.hopUntil && hop(b, x, y, d, spd)) return;
     let p = null;
-    if (!lv && d > 40) { p = G.astar(G.nearest(px, py), G.nearest(x, y)); if (!p) p = G.astar(G.nearest(px, py, 300, true), G.nearest(x, y, 300, true)); }
-    a.nav = p && p.length > 1 ? { kind: 'road', path: p, pi: 0 } : { kind: 'direct' };
+    if (!lv && d > 40) p = G.route(px, py, x, y, ctx.now(), (nx, ny) => nav.walkable(px, py, nx, ny));
+    if (p && p.length > 1) { a.nav = { kind: 'road', path: p, pi: 0, nc: 0 }; roadEntry(b); }
+    else if (!lv && d > 90 && hop(b, x, y, d, spd)) return; // tanpa rute jalan: bertahap lewat grid, bukan lurus menabrak gedung
+    else a.nav = { kind: 'direct' };
+  }
+  // jaringan jalan di sekitar sini bermasalah (macet berulang di ruasnya): maju bertahap lewat grid lokal — titik antara
+  // ±80 m searah tujuan (sedikit dibelokkan kalau perlu), sisa perjalanan jadi potongan rute berikutnya
+  function hop(b, x, y, d, spd) {
+    const a = b.ai, px = b.pos.x, py = -b.pos.z;
+    for (let q = 0; q < HOP_ANG.length * 2; q++) { // 80 m dulu, lalu 40 m (di tepi kawasan / di antara gedung besar)
+      if (!spend()) return false; // satu jatah per percobaan (findFree + pencarian jalur)
+      const ang = HOP_ANG[q % HOP_ANG.length], k = (q < HOP_ANG.length ? 80 : 40) / d, dx = (x - px) * k, dy = (y - py) * k;
+      const c = Math.cos(ang), sn = Math.sin(ang), f = col.findFree(px + dx * c - dy * sn, py + dx * sn + dy * c, 8, 0.4, true);
+      if (!f) continue;
+      const pts = nav.path(px, py, f[0], f[1], 9000, 0);
+      if (!pts) continue;
+      const rest = a.route;
+      a.route = [{ x, y, lv: 0 }];
+      if (rest) for (const L of rest) a.route.push(L);
+      a.routeSpd = spd;
+      a.goal = [f[0], f[1]]; a.lv = 0; a.spd = spd;
+      a.nav = { kind: 'local', pts, i: 0, nc: 0 };
+      return true;
+    }
+    return false;
+  }
+  // jalur lokal gagal (jendela A* terbatas: pintu aula besar di luar jendela) dan tujuan / bot ada di dalam gedung yang bisa
+  // dimasuki → rute lewat pintu terdekat: titik 1,3 m di luar pintu → 1,3 m di dalam (atau sebaliknya) → tujuan
+  // own = keluar dulu dari gedung tempat bot berada (bukan masuk ke gedung tujuan)
+  function viaDoor(b, x, y, spd, own = false) {
+    if (!homes) return false;
+    const a = b.ai, px = b.pos.x, py = -b.pos.z, it = col.inBuilding(x, y), ib = col.inBuilding(px, py);
+    const H = own ? (ib >= 0 && ib !== it && homes.get(ib)) || null : (it >= 0 && it !== ib && homes.get(it)) || (ib >= 0 && ib !== it && homes.get(ib)) || null;
+    if (!H || !H.doors || !H.doors.length) return false;
+    const inside = H.i === ib;
+    let best = null, bd = Infinity;
+    for (const dr of H.doors) { const c = Math.hypot(dr.x - px, dr.y - py) + Math.hypot(dr.x - x, dr.y - y); if (c < bd) { bd = c; best = dr; } }
+    const nx = best.e.nx * 1.3, ny = best.e.ny * 1.3, s = inside ? 1 : -1; // e.n menghadap ke dalam
+    const rest = a.route;
+    a.route = [{ x: best.x - nx * s, y: best.y - ny * s, lv: 0, nd: true }, { x, y, lv: 0, nd: true }];
+    if (rest) for (const L of rest) a.route.push(L);
+    a.routeSpd = spd;
+    goLevel(b, best.x + nx * s, best.y + ny * s, spd, 0, true);
+    return true;
+  }
+  const nearSeg = (x, y, i, j, r) => { // titik (x, y) ≤ r m dari ruas jalan simpul i–j?
+    const ax = G.X[i], ay = G.Y[i], dx = G.X[j] - ax, dy = G.Y[j] - ay, L = dx * dx + dy * dy, t = L > 0 ? clamp(((x - ax) * dx + (y - ay) * dy) / L, 0, 1) : 0;
+    return Math.hypot(ax + dx * t - x, ay + dy * t - y) < r;
+  };
+  // simpul jalan pertama tidak terlihat lurus (bot di dalam rumah / di balik pagar): ke sana dulu lewat grid lokal
+  function roadEntry(b) {
+    const a = b.ai, N = a.nav, x = b.pos.x, y = -b.pos.z, i = N.path[N.pi], tx = G.X[i], ty = G.Y[i];
+    if (Math.hypot(tx - x, ty - y) > 100 || nav.walkable(x, y, tx, ty) || !spend()) return;
+    const pts = nav.path(x, y, tx, ty, 6000);
+    if (pts) a.nav = { kind: 'local', pts, i: 0, nc: 0, then: N };
+  }
+  // macet di jalur: cari jalan memutar ke titik antara berikutnya (jalan raya: simpul berikutnya, lalu lanjut di jalan
+  // raya). false = tidak ada jalan memutar → pengawas membuang tujuan ini
+  function repath(b) {
+    const a = b.ai, N = a.nav, x = b.pos.x, y = -b.pos.z;
+    if (!a.goal || !N || N.kind === 'stair') return false;
+    if (!spend()) return true; // coba lagi saat macet berikutnya
+    if (N.kind === 'road') {
+      const j = Math.min(N.pi + 1, N.path.length - 1), i = N.path[j];
+      if (Math.hypot(G.X[i] - x, G.Y[i] - y) > 120) return false;
+      const pts = nav.path(x, y, G.X[i], G.Y[i], 6000);
+      if (!pts) { if (nearSeg(x, y, N.path[N.pi], i, 14)) G.markBad(N.path[N.pi], i, ctx.now() + 120); return false; }
+      N.pi = j; // simpul yang bermasalah dilewati
+      a.nav = { kind: 'local', pts, i: 0, nc: 0, then: N };
+      return true;
+    }
+    const t = N.kind === 'local' ? N.pts[N.pts.length - 1] : a.goal;
+    if (Math.hypot(t[0] - x, t[1] - y) > 110) return false;
+    const pts = nav.path(x, y, t[0], t[1], 9000, a.lv || 0);
+    if (!pts) return false;
+    a.nav = { kind: 'local', pts, i: 0, nc: 0, then: N.then || null };
+    return true;
+  }
+  // dari (x, y) terlihat lurus sampai 4 m melewati titik p ke arah titik berikutnya q? (uji sudut saat menerima titik antara)
+  function aheadOk(x, y, p, q, lv) {
+    const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, k = Math.min(4, L) / L;
+    return nav.walkable(x, y, p[0] + dx * k, p[1] + dy * k, lv);
   }
   function navTarget(b) { // titik yang dituju frame ini, null = sudah sampai (rute antar lantai: lanjut ke potongan berikutnya)
     let p = navStep(b);
-    for (let k = 0; !p && b.ai.route && k < 6; k++) { nextLeg(b); p = navStep(b); }
+    for (let k = 0; !p && !b.ai.nav && b.ai.route && k < 6; k++) { nextLeg(b); p = navStep(b); }
     return p;
   }
   function navStep(b) {
     const a = b.ai, N = a.nav, x = b.pos.x, y = -b.pos.z;
     if (!N || !a.goal) return null;
+    if (N.kind === 'lift') { // di dalam lift: diam sampai tiba, lalu muncul di depan pintu lift tujuan
+      const R = a.lift;
+      if (!R) { a.nav = null; return null; }
+      if (ctx.now() >= R.at) { const to = R.up ? R.L.hi : R.L.lo; b.pos.set(to.x, to.z, -to.y); b.vel.set(0, 0); b.yaw = to.yaw; a.lift = null; a.nav = null; a.anH = -99; }
+      return null;
+    }
+    if (N.kind === 'pend') { // jalur lokal tertunda (jatah frame habis): sementara diam, hitung lagi begitu ada jatah
+      if (budget > 0) { goLevel(b, a.goal[0], a.goal[1], a.spd, a.lv || 0); if (a.nav && a.nav.kind !== 'pend') return navStep(b); }
+      return null;
+    }
     if (N.kind === 'stair') { // ikuti sumbu tangga: kejar titik 1,2 m di depan proyeksi posisi
       const S = N.S, s = (x - S.ax) * S.ux + (y - S.ay) * S.uy;
       if (N.dir > 0 ? s > S.len + 0.75 : s < -0.75) { a.nav = null; return null; }
       const st = N.dir > 0 ? Math.min(S.len + 1.0, s + 1.2) : Math.max(-1.0, s - 1.2);
-      return [S.ax + S.ux * st, S.ay + S.uy * st];
+      a.wp[0] = S.ax + S.ux * st; a.wp[1] = S.ay + S.uy * st;
+      return a.wp;
     }
     if (N.kind === 'road') {
       const i = N.path[N.pi], j = N.path[Math.min(N.pi + 1, N.path.length - 1)];
       const sx = G.X[j] - G.X[i], sy = G.Y[j] - G.Y[i], sl = Math.hypot(sx, sy) || 1;
-      const tx = G.X[i] - sy / sl * a.lane, ty = G.Y[i] + sx / sl * a.lane;
-      if (Math.hypot(tx - x, ty - y) < 3) {
-        N.pi++;
-        if (N.pi >= N.path.length) { // ujung jaringan jalan → ke titik tujuan persis
-          const [gx, gy] = a.goal;
-          if (nav.walkable(x, y, gx, gy)) a.nav = { kind: 'direct' };
-          else { const pts = spend() && nav.path(x, y, gx, gy); a.nav = pts ? { kind: 'local', pts, i: 0 } : { kind: 'direct' }; }
-        }
+      const lw = Math.max(0, G.W[i] / 2 - 0.8), lane = clamp(a.lane, -lw, lw); // lajur tetap di badan jalan (gang sempit: tengah)
+      const tx = G.X[i] - sy / sl * lane, ty = G.Y[i] + sx / sl * lane, dn = Math.hypot(tx - x, ty - y);
+      // simpul dianggap lewat ≤ 3 m hanya kalau ruas berikutnya terlihat lurus dari sini (tidak memotong sudut gedung):
+      // diuji sampai 6 m ke arah simpul berikutnya — cukup untuk sudut, murah walau ruasnya panjang
+      if (dn < 1.2 || (dn < 3 && (N.pi + 1 >= N.path.length || (N.nc++ < 4 && nav.walkable(x, y, G.X[i] + sx / sl * Math.min(6, sl), G.Y[i] + sy / sl * Math.min(6, sl)))))) {
+        N.pi++; N.nc = 0;
+        if (N.pi >= N.path.length) goLevel(b, a.goal[0], a.goal[1], a.spd, a.lv || 0); // ujung jaringan jalan → ke titik tujuan persis
       }
-      return [tx, ty];
+      a.wp[0] = tx; a.wp[1] = ty;
+      return a.wp;
     }
     if (N.kind === 'local') {
-      const last = N.i >= N.pts.length - 1, p = N.pts[Math.min(N.i, N.pts.length - 1)];
-      if (Math.hypot(p[0] - x, p[1] - y) < (last ? 0.6 : 1.1)) { if (last) { a.nav = null; return null; } N.i++; }
+      const last = N.i >= N.pts.length - 1, p = N.pts[Math.min(N.i, N.pts.length - 1)], d = Math.hypot(p[0] - x, p[1] - y);
+      // titik antara dianggap lewat ≤ 1,1 m hanya kalau titik berikutnya terlihat lurus dari posisi sekarang — kalau tidak,
+      // bot memotong sudut dan tersangkut di ujung perabot / kusen pintu
+      if (last ? d < 0.6 : d < 0.45 || (d < 1.1 && N.nc++ < 4 && aheadOk(x, y, p, N.pts[N.i + 1], a.lv || 0))) {
+        if (last) { a.nav = N.then || null; return N.then ? navStep(b) : null; } // jalan memutar selesai → lanjut di jalan raya
+        N.i++; N.nc = 0;
+      }
       return N.pts[Math.min(N.i, N.pts.length - 1)];
     }
     if (Math.hypot(a.goal[0] - x, a.goal[1] - y) < 0.6) { a.nav = null; return null; }
@@ -545,11 +739,109 @@ export function createBots(ctx, n = 50) {
     }
     return [z.x, z.y];
   }
+  // ---------- Jarahan: nilai barang untuk bot, daftar lewati sementara ----------
+  function skipItem(b, it, now, dur) { const a = b.ai; a.skI[a.skK] = it; a.skT[a.skK] = now + dur; a.skK = (a.skK + 1) % SKIP_N; }
+  function skipped(b, it, now) { const a = b.ai; for (let k = 0; k < SKIP_N; k++) if (a.skI[k] === it && now < a.skT[k]) return true; return false; }
+  const ammoFor = (b, am) => (b.weapons[0] && WEAPONS[b.weapons[0].kind].ammo === am) || (b.weapons[1] && WEAPONS[b.weapons[1].kind].ammo === am) || (b.weapons[2] && WEAPONS[b.weapons[2].kind].ammo === am);
+  function weaponValue(b, k) { // senjata k berguna? (aturan sama dengan giveWeapon untuk bot: tier harus lebih tinggi)
+    const W = WEAPONS[k];
+    if (W.slot === 2) return b.weapons[2] && TIER[b.weapons[2].kind] >= TIER[k] ? 0 : b.weapons[0] || b.weapons[1] ? 1.5 : 9;
+    if (!b.weapons[0] && !b.weapons[1]) return 14;
+    if (!b.weapons[0] || !b.weapons[1]) { const h = b.weapons[0] || b.weapons[1]; return h.kind === k ? 1 : TIER[k] >= TIER[h.kind] ? 8 : 5; }
+    return TIER[k] > Math.min(TIER[b.weapons[0].kind], TIER[b.weapons[1].kind]) ? 6 : 0;
+  }
+  function itemValue(b, it) { // 0 = tidak berguna (applyItem akan menolaknya)
+    const d = it.def;
+    switch (d.kind) {
+      case 'weapon': return weaponValue(b, d.w);
+      case 'ammo': return !ammoFor(b, d.ammo) || b.ammo[d.ammo] >= (d.ammo === 'sniper' ? 36 : d.ammo === 'shell' ? 80 : 240) ? 0 : b.ammo[d.ammo] < 60 ? 5 : 2;
+      case 'vest': case 'helmet': { const cur = b[d.kind] | 0; return d.lvl > cur ? 5 + d.lvl : 0; }
+      case 'heal': return d.heal === 'drink' ? 0 : b.heals[d.heal] < (d.heal === 'kit' ? 2 : 5) ? (b.hp < 70 ? 4 : 2.5) : 0;
+      case 'nade': return (b.nades && (b.nades[d.nade] || 0) < (d.nade === 'frag' ? 2 : 1)) ? (d.nade === 'frag' ? 3.5 : SKILL.smoke > 0 ? 1.5 : 0) : 0;
+      case 'crate': { // isi peti diketahui (terlihat saat didekati): hanya yang berguna
+        const c = it.contents;
+        if (!c) return 0;
+        let v = 0;
+        for (const k of c.weapons) v = Math.max(v, weaponValue(b, k));
+        for (const am in c.ammo) if (c.ammo[am] > 0 && ammoFor(b, am) && b.ammo[am] < 120) v = Math.max(v, b.ammo[am] < 60 ? 5 : 2);
+        if (c.vest > (b.vest | 0)) v = Math.max(v, 5 + c.vest);
+        if (c.helmet > (b.helmet | 0)) v = Math.max(v, 5 + c.helmet);
+        if ((c.heals.kit > 0 && b.heals.kit < 2) || (c.heals.band > 0 && b.heals.band < 5)) v = Math.max(v, 3);
+        if (c.nades && c.nades.frag > 0 && b.nades && (b.nades.frag || 0) < 2) v = Math.max(v, 3);
+        return v;
+      }
+      default: return 0; // tas, jeriken, aksesori: tidak dipakai bot
+    }
+  }
+  // perlengkapan sudah cukup untuk bertarung: senjata utama berpeluru, pelindung, obat → berhenti menjarah, berangkat ke zona
+  function geared(b) {
+    const w = b.weapons[0] || b.weapons[1];
+    if (!w) return false;
+    const def = WEAPONS[w.kind];
+    return b.ammo[def.ammo] + w.mag >= def.mag * 2 && (b.vest | 0) >= 1 && b.heals.band + b.heals.kit * 3 >= 3;
+  }
   function setTac(b, tac, now, hold) { b.ai.tac = tac; b.ai.tacUntil = now + hold; if (tac !== 'engage') { b.crouch = false; b.prone = false; } }
   function endFight(b) {
     const a = b.ai;
     a.target = null; a.mode = 'roam'; a.tac = null; a.cover = null; a.nav = null; a.goal = null; a.route = null; a.scanUntil = 0; a.peeks = 0;
     b.crouch = false; b.prone = false;
+  }
+  // zona mendesak: bot sudah di dinding/di luar zona, atau dinding (menyusut sekarang / nanti setelah hitung mundur) akan
+  // menyusulnya sebelum ia sempat masuk lingkaran berikutnya dengan berlari (±5,5 m/dtk lewat jalan, + cadangan 10 dtk)
+  function zoneUrgent(b) {
+    if (zone.mode === 'pre' || !zone.cur) return false;
+    const x = b.pos.x, y = -b.pos.z, out = zone.outside(x, y);
+    if (out > -8) return true;
+    const zn = zone.next;
+    if (!zn) return false;
+    const dn = Math.hypot(x - zn.x, y - zn.y) - zn.r;
+    if (dn <= 0) return false;
+    const need = dn / 5.5 + 10;
+    if (zone.mode === 'shrink') return -out / Math.max(1, (zone.from.r - zn.r) / Math.max(1, zone.dur)) < need;
+    const def = zone.def, ws = Math.max(def.speed, (zone.cur.r - zn.r) / def.maxDur);
+    return zone.timeLeft + -out / ws < need;
+  }
+  // ---------- Pengawas: tujuan tak terjangkau / macet ----------
+  // abandon: tujuan saat ini dibuang — barang, kendaraan, rekan tumbang, perlindungan dilewati sementara (makin sering
+  // gagal beruntun makin lama), rute dibuang, pikir ulang segera. Pemimpin yang tak terkejar: anggota jalan sendiri dulu.
+  function abandon(b, now) {
+    const a = b.ai, n = Math.max(1, a.wdN);
+    if (a.item) { skipItem(b, a.item, now, 40 + 40 * n); if (a.item.claim === b) a.item.claim = null; a.item = null; if (a.mode === 'loot') a.mode = 'roam'; }
+    if ((a.mode === 'toVeh' || a.mode === 'toRide') && a.veh) { a.vehSkip = a.veh; a.vehSkipUntil = now + 90; if (a.veh.claim === b) a.veh.claim = null; a.veh = null; a.mode = 'roam'; }
+    if (a.mode === 'revive' && a.revT) { a.revSkip = a.revT; a.revSkipUntil = now + 10; dropRevive(b); a.mode = 'roam'; }
+    if (a.mode === 'follow') { a.soloUntil = now + 8 + 8 * n; a.mode = 'roam'; }
+    if (a.mode === 'hold') { a.mode = 'roam'; a.holdCD = now + 40; } // tempat bertahan tak tercapai
+    if (a.mode === 'fight') {
+      a.cover = null; a.coverCD = now + 4; a.peeks = 0;
+      if (a.tac === 'hunt' || a.tac === 'flank') { if (n >= 2) endFight(b); else { a.huntFail = now; a.tac = null; } }
+      else if (a.tac !== 'engage' && a.tac !== 'push') a.tac = null;
+    }
+    a.nav = null; a.goal = null; a.route = null;
+    a.next = Math.min(a.next, 0.05);
+  }
+  // unstick: macet (berniat jalan tapi tidak berpindah) → abandon + mundur selangkah ke titik bebas acak yang terjangkau lurus
+  function unstick(b, now) {
+    const a = b.ai;
+    a.wdN = now - a.wdAt < 30 ? a.wdN + 1 : 1;
+    a.wdAt = now; a.stuckN = 0; a.stuckT = 0; a.anW = 0;
+    // macet di jaringan jalan: ruas yang sedang dilalui ditandai buruk (semua bot menghindarinya), macet berulang → jalan bertahap
+    const R = a.nav && (a.nav.kind === 'road' ? a.nav : a.nav.then);
+    if (R && R.pi > 0) { const i = R.path[R.pi - 1], j = R.path[Math.min(R.pi, R.path.length - 1)]; if (nearSeg(b.pos.x, -b.pos.z, i, j, 14)) G.markBad(i, j, now + 120); } // hanya kalau bot memang sedang di ruas itu
+    if (R && a.wdN >= 2) a.hopUntil = now + 30;
+    abandon(b, now);
+    // lepas diri: kembali ke titik bebas terakhir yang pernah diinjak (jejak, pasti terjangkau), atau titik bebas di salah satu
+    // dari 16 arah (2,5 / 5 / 9 m) yang terjangkau lurus — uji longgar, karena bot yang terjepit di celah sempit antar-rumah
+    // berdiri di sel yang bagi grid "terhalang"
+    const x = b.pos.x, y = -b.pos.z, lv = lvOf(b), h = b.pos.y;
+    let ex = null, ey = 0;
+    const bd = Math.hypot(a.bcX - x, a.bcY - y);
+    if (a.wdN > 1 && bd > 1.5 && bd < 25 && Math.abs(a.bcH - h) < 1 && nav.segFree(x, y, a.bcX, a.bcY, 0.22, lv)) { ex = a.bcX; ey = a.bcY; }
+    const a0 = Math.random() * Math.PI * 2;
+    for (let k = 0; ex === null && k < 48; k++) {
+      const ang = a0 + (k % 16) * Math.PI / 8, r = k < 16 ? 2.5 : k < 32 ? 5 : 9, px = x + Math.cos(ang) * r, py = y + Math.sin(ang) * r;
+      if (!nav.blockedAt(px, py, lv) && nav.segFree(x, y, px, py, 0.22, lv)) { ex = px; ey = py; }
+    }
+    if (ex !== null) { a.goal = [ex, ey]; a.lv = lv; a.nav = { kind: 'direct' }; a.spd = 4.4; a.escUntil = now + 2.5; a.route = null; }
   }
   function startHeal(b, now) {
     const a = b.ai;
@@ -558,6 +850,63 @@ export function createBots(ctx, n = 50) {
     b.healEnd = now + (a.healKind === 'kit' ? 6 : 3.5);
     b.reloadEnd = 0;
     b.prone = SKILL.crouch > 0.3 && ((GR && GR.at(b.pos.x, -b.pos.z) > 0.35) || (a.mode === 'fight' && !a.cover));
+    return true;
+  }
+
+  // granat asap ke (tx, ty): menutup pandangan musuh saat mundur / memulihkan rekan (jeda 15 dtk, peluang SKILL.smoke·k)
+  function smokeAt(b, tx, ty, now, k = 1) {
+    const a = b.ai;
+    if (!ctx.nades || !b.nades || !(b.nades.smoke > 0) || now < a.smokeAt || Math.random() > SKILL.smoke * k) return false;
+    a.smokeAt = now + 15;
+    const from = new THREE.Vector3(b.pos.x, b.pos.y + 1.6, b.pos.z), v = ctx.nades.lob(from, tx, ty, b.pos.y);
+    b.nades.smoke--;
+    ctx.nades.throwNade(b, 'smoke', from, v);
+    b.pose.fire = 1;
+    return true;
+  }
+  // menunggu zona dari dalam rumah: rumah ≤ 45 m yang pintunya di dalam zona berikutnya, berdiri ±2,4 m di dalam pintu
+  // menghadap ke luar (pintu = jalan masuk musuh; jendela di sampingnya menghadap jalan). Dicoba paling sering tiap 30 dtk.
+  function tryHold(b, now) {
+    const a = b.ai;
+    if (!homes || now < a.holdCD || zone.mode === 'shrink' || zone.mode === 'final' || !geared(b)) return false;
+    a.holdCD = now + 30;
+    if (Math.random() > SKILL.hold) return false;
+    const x = b.pos.x, y = -b.pos.z, zn = zone.next || zone.cur, seenB = new Set();
+    let best = null, bd = 45;
+    col.near(x, y, 45, (c) => {
+      for (const pi of c.p) {
+        const bi = col.polys[pi].b;
+        if (bi < 0 || seenB.has(bi)) continue;
+        seenB.add(bi);
+        const H = homes.get(bi), d0 = H && H.doors && H.doors[0];
+        if (!d0 || !d0.e || H.holdUntil > now) continue; // satu regu per rumah
+        const dd = Math.hypot(d0.x - x, d0.y - y);
+        if (dd < bd && Math.hypot(d0.x - zn.x, d0.y - zn.y) < zn.r * 0.85) { bd = dd; best = H; }
+      }
+    });
+    if (!best) return false;
+    const d0 = best.doors[0], sx = d0.x + d0.e.nx * 2.4, sy = d0.y + d0.e.ny * 2.4;
+    if (col.blocked(sx, sy, 0.4) || col.inBuilding(sx, sy) !== best.i) return false;
+    best.holdUntil = now + 55;
+    a.holdX = sx; a.holdY = sy;
+    a.holdH = best; a.mode = 'hold'; a.holdEnd = now + rnd(20, 45) * b.trait.patience; a.holdYaw = Math.atan2(-d0.e.nx, d0.e.ny);
+    go(b, sx, sy, 4.4);
+    return true;
+  }
+  // ancaman terdengar dekat (≤ 70 m, 6 dtk terakhir) saat sedang tidak berbuat apa-apa: jangan berdiri di tempat terbuka —
+  // ke sisi gedung yang membelakangi arah suara, jongkok sebentar
+  function warnCover(b, now) {
+    const a = b.ai;
+    if (SKILL.wary <= 0 || now < a.warnCD) return false;
+    const hp = now - a.heardAt < 6 ? a.heardPos : now - a.gunAt < 6 ? a.gunPos : null;
+    if (!hp || Math.hypot(hp.x - b.pos.x, hp.z - b.pos.z) > 70) return false;
+    a.warnCD = now + 12;
+    if (Math.random() > SKILL.wary || !spend()) return false;
+    const c = nav.cover(b.pos.x, -b.pos.z, hp.x, -hp.z, hp.y + 1.5, { R: 14, want: 30, blind: true });
+    if (!c) return false;
+    go(b, c.x, c.y, SKILL.sprint);
+    a.coverWait = now + rnd(4, 7);
+    a.scanYaw = Math.atan2(hp.x - b.pos.x, hp.z - b.pos.z); a.scanT = now + 2;
     return true;
   }
 
@@ -584,7 +933,7 @@ export function createBots(ctx, n = 50) {
     if (!pts) return false;
     setTac(b, 'flank', now, 0);
     a.goal = f;
-    a.nav = { kind: 'local', pts, i: 0 };
+    a.nav = { kind: 'local', pts, i: 0, nc: 0 };
     a.spd = SKILL.sprint;
     a.cover = null;
     return true;
@@ -611,8 +960,12 @@ export function createBots(ctx, n = 50) {
     a.seenAt = now;
     a.lastSeen.copy(e.pos);
     a.losOk = true;
-    if (!b.weapons.some(Boolean)) { // tangan kosong → kabur
-      if (a.mode !== 'flee') { a.mode = 'flee'; go(b, x + (x - ex) / (d || 1) * 60, y + (y - ey) / (d || 1) * 60, SKILL.sprint); }
+    if (!b.weapons.some(Boolean)) { // tangan kosong → kabur (lagi, kalau pelarian sebelumnya sudah selesai/gagal tapi musuh masih terlihat)
+      if (a.mode !== 'flee' || (!a.nav && !a.route)) {
+        a.mode = 'flee';
+        const k = 45 / (d || 1), f = col.findFree(x + (x - ex) * k + rnd(-12, 12), y + (y - ey) * k + rnd(-12, 12), 10, 0.4) || [x + (x - ex) * k, y + (y - ey) * k];
+        go(b, f[0], f[1], SKILL.sprint);
+      }
       return;
     }
     if (b.healEnd) { if (d > 35 && a.cover) return; b.healEnd = 0; }
@@ -623,8 +976,9 @@ export function createBots(ctx, n = 50) {
     const eh = e.pos.y + 1.5, reserve = b.ammo[w.def.ammo];
     const inCover = a.cover && Math.hypot(a.cover.x - x, a.cover.y - y) < 1.6;
     // 1) darah tipis → mundur ke perlindungan yang menjauh, lalu obati
-    if (b.hp < 38 + 20 * (1 - b.trait.aggr) && (b.heals.kit || b.heals.band) && a.tac !== 'retreat' && Math.random() < SKILL.cover) {
-      if (goCover(b, ex, ey, eh, now, { R: 30, want: 60, away: true, blind: true }, 'retreat', 6)) return;
+    // (tanpa obat pun yang sekarat mundur, kecuali lawannya juga lemah/tumbang)
+    if (b.hp < 38 + 20 * (1 - b.trait.aggr) && (b.heals.kit || b.heals.band || (b.hp < 30 && !e.down && e.hp > 40)) && a.tac !== 'retreat' && Math.random() < SKILL.cover) {
+      if (goCover(b, ex, ey, eh, now, { R: 30, want: 60, away: true, blind: true }, 'retreat', 6)) { smokeAt(b, b.pos.x + (ex - x) * 0.25, -b.pos.z + (ey - y) * 0.25, now, 0.5); return; }
     }
     // 2) peluru habis → isi ulang di balik perlindungan kalau dekat
     if (!b.reloadEnd && reserve > 0 && (w.inst.mag === 0 || (w.inst.mag <= w.def.mag * 0.2 && d > 15))) {
@@ -646,7 +1000,9 @@ export function createBots(ctx, n = 50) {
     // 3) musuh terlalu dekat / lemah / sedang isi ulang → desak
     const weak = e.hp < 45 || (e.isPlayer ? !!(ctx.playerBusy && ctx.playerBusy()) : e.reloadEnd > now || e.healEnd > now);
     const closeGun = w.inst.kind === 'shotgun' || w.inst.kind === 'smg' || w.inst.kind === 'dbs' || w.inst.kind === 'pdw';
-    if (d < 7 || (weak && Math.random() < SKILL.push * (0.5 + b.trait.aggr)) || (closeGun && d > 9 && d < 26 && b.trait.aggr > 0.45 && Math.random() < SKILL.push * 0.6)) {
+    // lawan tumbang (tidak bisa menembak balik; perceive mendahulukan yang masih berdiri, jadi tidak ada ancaman lain yang
+    // terlihat): mendekat & habisi sebelum rekannya memulihkan
+    if (d < 7 || (e.down && Math.random() < SKILL.finish) || (weak && Math.random() < SKILL.push * (0.5 + b.trait.aggr)) || (closeGun && d > 9 && d < 26 && b.trait.aggr > 0.45 && Math.random() < SKILL.push * 0.6)) {
       setTac(b, 'push', now, rnd(1.6, 3));
       if (Math.abs(e.pos.y - b.pos.y) > 1.5 || !nav.walkable(x, y, ex, ey, lvOf(b))) go(b, ex, ey, SKILL.sprint, e.pos.y); else a.nav = null;
       return;
@@ -674,7 +1030,7 @@ export function createBots(ctx, n = 50) {
     const a = b.ai, t = a.target, x = b.pos.x, y = -b.pos.z;
     if (!t || !t.alive) { endFight(b); return false; }
     const lost = now - a.seenAt, chasing = (a.tac === 'hunt' || a.tac === 'flank') && !!a.nav;
-    if (lost > (chasing ? 45 : 16 * b.trait.patience)) { endFight(b); return false; } // yang sedang memburu tidak cepat menyerah
+    if (lost > (chasing ? (now - a.third < 40 ? 32 : 45) : 16 * b.trait.patience)) { endFight(b); return false; } // yang sedang memburu tidak cepat menyerah (ikut campur: maks. ±30 dtk)
     a.mode = 'fight';
     const lx = a.lastSeen.x, ly = -a.lastSeen.z, dl = Math.hypot(lx - x, ly - y);
     const w = weapon(b);
@@ -739,6 +1095,7 @@ export function createBots(ctx, n = 50) {
   function planDrive(b) {
     const a = b.ai, v = a.veh;
     if (!a.dest) a.dest = roamDest(b);
+    G.setNow(ctx.now());
     a.dpath = G.astar(G.nearest(v.x, v.y), G.nearest(a.dest[0], a.dest[1])) || G.astar(G.nearest(v.x, v.y, 300, true), G.nearest(a.dest[0], a.dest[1], 300, true));
     a.dpi = 0;
     a.braking = false;
@@ -767,6 +1124,9 @@ export function createBots(ctx, n = 50) {
     }
     if (v.hp < v.def.hp * 0.22) { a.braking = true; if (Math.abs(v.speed) < 4) exitVeh(b); return; }
     a.hold = now < (a.holdUntil || 0) && matesPending(b, v); // pemimpin menunggu anggota naik (maks. 6 dtk)
+    // pengawas: kendaraan tidak berpindah ≥ 4 m dalam 7 dtk (terjepit / maju-mundur di tempat) → turun, jalan kaki
+    if (a.hold || Math.hypot(v.x - a.dAnX, v.y - a.dAnY) > 4) { a.dAnX = v.x; a.dAnY = v.y; a.dAnT = now; }
+    else if (now - a.dAnT > 7) { a.vehSkip = v; a.vehSkipUntil = now + 60; a.braking = true; if (Math.abs(v.speed) < 3) exitVeh(b); return; }
     const L = leaderOf(b);
     if (L) { // anggota yang menyetir sendiri: mengejar pemimpin, turun begitu dekat
       const dl = Math.hypot(L.pos.x - b.pos.x, L.pos.z - b.pos.z);
@@ -871,10 +1231,11 @@ export function createBots(ctx, n = 50) {
   // m.revBot = bot yang ditugaskan; m.reviver = yang sedang memulihkan di sampingnya (bot itu, atau pemain yang menahan F)
   function reviveDuty(b, now) {
     const sq = b.sq, a = b.ai;
-    if (!sq || sq.aliveN === sq.standN || now - a.hurtAt < 1.5) { if (a.mode === 'revive') { dropRevive(b); a.mode = 'roam'; a.nav = null; a.goal = null; } return false; }
+    // (di luar zona tidak bisa memulihkan: main.js damage() membatalkan b.reviving pada tiap kerusakan, termasuk zona)
+    if (!sq || sq.aliveN === sq.standN || now - a.hurtAt < 1.5 || zone.outside(b.pos.x, -b.pos.z) > -1) { if (a.mode === 'revive') { dropRevive(b); a.mode = 'roam'; a.nav = null; a.goal = null; } return false; }
     let best = null, bd = 70;
     for (const m of sq.members) {
-      if (m === b || !m.alive || !m.down) continue;
+      if (m === b || !m.alive || !m.down || (m === a.revSkip && now < a.revSkipUntil) || zone.outside(m.pos.x, -m.pos.z) > -1) continue; // revSkip: baru saja gagal didatangi; rekan di luar zona: tak bisa dipulihkan
       const c = m.revBot, r = m.reviver;
       if ((c && c !== b && standing(c) && c.ai.revT === m) || (r && r !== b && r.reviving === m)) continue; // sudah ada yang menolong
       const d = Math.hypot(m.pos.x - b.pos.x, m.pos.z - b.pos.z) + Math.abs(m.pos.y - b.pos.y) * 2;
@@ -887,7 +1248,12 @@ export function createBots(ctx, n = 50) {
     a.mode = 'revive';
     b.healEnd = 0;
     if (bd > 1.5) { if (!a.nav || !a.goal || Math.hypot(a.goal[0] - best.pos.x, a.goal[1] + best.pos.z) > 1.2) go(b, best.pos.x, -best.pos.z, SKILL.sprint, best.pos.y); }
-    else { a.nav = null; a.goal = null; }
+    else {
+      a.nav = null; a.goal = null;
+      // musuh regu baru terlihat: asap di antara rekan tumbang dan arah musuh sebelum berlutut
+      const f = sq.focus;
+      if (f && f.alive && now - sq.focusAt < 6) { const fx = f.pos.x - best.pos.x, fy = -f.pos.z + best.pos.z, fd = Math.hypot(fx, fy) || 1, k = Math.min(0.45, 9 / fd); if (fd < 80) smokeAt(b, best.pos.x + fx * k, -best.pos.z + fy * k, now); }
+    }
     return true;
   }
   // ada rekan tumbang yang sedang ditolong orang lain → jangan pergi: mendekat (≤ 9 m) lalu berjaga.
@@ -909,12 +1275,12 @@ export function createBots(ctx, n = 50) {
   }
   // kendaraan regu yang bisa ditumpangi: yang dinaiki pemimpin, atau yang disetir rekan lain di dekat sini
   function rideFor(b, L) {
-    const x = b.pos.x, y = -b.pos.z;
-    if (L.state === 'drive' && L.vehicle) { const v = L.vehicle; if (v.alive && v.driver && seatFree(v) && Math.abs(v.speed) < 9 && V.dist(v, x, y) < 60) return v; }
+    const x = b.pos.x, y = -b.pos.z, a = b.ai, skip = ctx.now() < a.vehSkipUntil ? a.vehSkip : null; // yang baru gagal didekati: tidak
+    if (L.state === 'drive' && L.vehicle) { const v = L.vehicle; if (v !== skip && v.alive && v.driver && seatFree(v) && Math.abs(v.speed) < 9 && V.dist(v, x, y) < 60) return v; }
     for (const m of b.sq.members) {
       if (m === b || m === L || !standing(m) || m.state !== 'drive') continue;
       const v = m.vehicle;
-      if (v && v.alive && v.driver === m && seatFree(v) && Math.abs(v.speed) < 6 && V.dist(v, x, y) < 40) return v;
+      if (v && v !== skip && v.alive && v.driver === m && seatFree(v) && Math.abs(v.speed) < 6 && V.dist(v, x, y) < 40) return v;
     }
     return null;
   }
@@ -931,7 +1297,13 @@ export function createBots(ctx, n = 50) {
         go(b, dp[0], dp[1], SKILL.sprint);
         return true;
       }
-      if (L.state === 'drive' && d > 90 && now > (a.chaseAt || 0)) { a.chaseAt = now + 4; if (wantVehicle(b, lx, ly, false, true)) return true; }
+      // kursi penuh / tertinggal: kejar dengan kendaraan sendiri ke tujuan pemimpin (dulu menunggu di samping mobilnya
+      // sampai mobil itu pergi ≥ 90 m)
+      if (L.state === 'drive' && now > (a.chaseAt || 0)) {
+        a.chaseAt = now + 3;
+        const ld = L.ai && L.ai.dest;
+        if (wantVehicle(b, ld ? ld[0] : lx, ld ? ld[1] : ly, false, true)) return true;
+      }
     }
     if (L.state !== 'ground' && L.state !== 'drive') return false; // pemimpin masih di udara
     const ls = L.state === 'drive' ? 0 : L.moveSpeed || 0; // pemimpin bergerak → rapat di belakangnya; diam → boleh agak menyebar
@@ -982,17 +1354,24 @@ export function createBots(ctx, n = 50) {
   function think(b, now) {
     const a = b.ai;
     if (a.mode === 'drive') { thinkDrive(b, now); return; }
+    if (b.state === 'ground' && !nav.blockedAt(b.pos.x, -b.pos.z, lvOf(b))) { a.bcX = b.pos.x; a.bcY = -b.pos.z; a.bcH = b.pos.y; } // jejak titik bebas
     if (a.mode === 'ride') { thinkRide(b, now); return; }
     const enemy = perceive(b, now);
     // sedang memulihkan rekan dan sudah di dekatnya: selesaikan dulu selama musuh masih jauh & tidak sedang ditembaki
     const rt = a.mode === 'revive' ? a.revT : null;
     const busy = !!rt && rt.alive && rt.down && now - a.hurtAt > 2 && Math.hypot(rt.pos.x - b.pos.x, rt.pos.z - b.pos.z) < 7 && (!enemy || Math.hypot(enemy.pos.x - b.pos.x, enemy.pos.z - b.pos.z) > 28);
-    if (enemy && !busy) {
+    // zona mendesak (dinding sudah/hampir melewati bot): baku tembak jarak jauh ditinggalkan, lari ke zona; musuh dekat tetap dilawan
+    if (enemy && !busy && !enemy.down && zoneUrgent(b) && Math.hypot(enemy.pos.x - b.pos.x, enemy.pos.z - b.pos.z) > 22) {
+      if (a.mode === 'fight') endFight(b);
+      a.zoneRun = now + 2.5;
+    } else if (enemy && !busy) {
       if ((a.mode === 'toVeh' || a.mode === 'toRide') && a.veh) { if (a.veh.claim === b) a.veh.claim = null; a.veh = null; }
       fightSeen(b, enemy, now);
       return;
     }
+    const run = now < a.zoneRun;
     a.losOk = false;
+    if (now < a.escUntil && a.nav) return; // sedang melepaskan diri dari tempat macet (lihat unstick)
     // regu: sasaran yang sedang dilihat rekan → pemburu yang kehilangan jejak memakai posisi itu (maju ke tempat yang benar)
     if (a.mode === 'fight' && a.target && now - a.seenAt > 1.5 && b.sq) {
       const f = b.sq.focus;
@@ -1004,9 +1383,10 @@ export function createBots(ctx, n = 50) {
     }
     // jejak sudah dingin dan pemimpin sudah jauh → tinggalkan perburuan, kumpul lagi dengan regu
     if (a.mode === 'fight' && a.target && now - a.seenAt > 4 && now - a.hurtAt > 3) { const Lf = leaderOf(b); if (Lf && Lf.state !== 'plane' && Math.hypot(Lf.pos.x - b.pos.x, Lf.pos.z - b.pos.z) > 45) endFight(b); }
+    if (a.mode === 'fight' && a.target && !run && now - a.seenAt > 1 && zoneUrgent(b) && Math.hypot(a.lastSeen.x - b.pos.x, a.lastSeen.z - b.pos.z) > 15) { endFight(b); a.zoneRun = now + 2.5; } // buruan di luar zona: tinggalkan
     if (a.target && (a.mode === 'fight' || a.mode === 'flee')) { if (a.mode === 'flee' ? (a.nav ? true : (endFight(b), false)) : fightUnseen(b, now)) return; }
     // ditembak dari arah yang tidak terlihat → anggap musuh di sana, cari perlindungan / hadapi
-    if (a.hurtBy && a.hurtBy.alive && now - a.hurtAt < 2 && b.weapons.some(Boolean) && a.mode !== 'fight') {
+    if (!run && a.hurtBy && a.hurtBy.alive && now - a.hurtAt < 2 && b.weapons.some(Boolean) && a.mode !== 'fight') {
       if (a.mode === 'toVeh' && a.veh) { if (a.veh.claim === b) a.veh.claim = null; a.veh = null; }
       a.target = a.hurtBy; a.lastSeen.copy(a.hurtBy.pos); a.seenAt = now - 1.2; a.mode = 'fight'; a.tac = null;
       fightUnseen(b, now);
@@ -1014,7 +1394,8 @@ export function createBots(ctx, n = 50) {
     }
     // terdengar langkah/tembakan dekat tapi tidak terlihat → menoleh ke arah suara, lalu (setelah waktu reaksi; yang
     // terampil lebih cepat) memeriksa: bidik siap/berlindung lalu mendekati posisi suara (logika musuh tak terlihat)
-    if (!busy && a.heardO && now - a.heardAt < 2.5 && a.heardO.alive && a.mode !== 'fight' && a.mode !== 'zone' && b.weapons.some(Boolean)) {
+    if (a.mode === 'hold' && a.heardO && now - a.heardAt < 2.5) { a.scanYaw = Math.atan2(a.heardPos.x - b.pos.x, a.heardPos.z - b.pos.z); a.scanT = now + 2.5; } // yang bertahan: bidik ke arah suara, tunggu
+    else if (!busy && !run && a.heardO && now - a.heardAt < 2.5 && a.heardO.alive && a.mode !== 'fight' && a.mode !== 'zone' && b.weapons.some(Boolean)) {
       if (!a.hearReact || now - a.hearReact > 6) a.hearReact = now + rnd(...SKILL.react);
       if (now >= a.hearReact) {
         if (a.mode === 'toVeh' && a.veh) { if (a.veh.claim === b) a.veh.claim = null; a.veh = null; }
@@ -1025,7 +1406,25 @@ export function createBots(ctx, n = 50) {
       }
       a.scanYaw = Math.atan2(a.heardPos.x - b.pos.x, a.heardPos.z - b.pos.z); a.scanT = now + 1.5;
     }
-    if (!busy && squadFocus(b, now)) return;
+    // tembakan terdengar jauh (70 m – jarak dengar; pertempuran regu lain): menoleh ke arah suara. Pemimpin yang
+    // perlengkapannya lengkap & darahnya cukup kadang ikut campur (third-party) kalau pertempuran itu ada di dalam zona —
+    // memakai logika memburu (lari mendekat, lalu berlindung/mengintip begitu musuh terlihat); regunya ikut pemimpin.
+    if (!busy && !run && a.gunO && now - a.gunAt < 2 && a.gunO.alive && a.mode !== 'fight' && b.weapons.some(Boolean)) {
+      if (a.mode !== 'hold' || now > a.scanT) { a.scanYaw = Math.atan2(a.gunPos.x - b.pos.x, a.gunPos.z - b.pos.z); a.scanT = now + 2; }
+      if (now > a.thirdAt && !leaderOf(b)) {
+        a.thirdAt = now + rnd(18, 30);
+        const zn = zone.next || zone.cur, inZ = Math.hypot(a.gunPos.x - zn.x, -a.gunPos.z - zn.y) < zn.r * 0.8;
+        const calm = zone.mode === 'pre' || (zone.mode === 'wait' && zone.timeLeft > 35); // tidak saat zona menyusut / hampir menyusut
+        if (inZ && calm && b.hp > 60 && geared(b) && !zoneUrgent(b) && Math.random() < SKILL.third * b.trait.aggr) {
+          if ((a.mode === 'toVeh' || a.mode === 'toRide') && a.veh) { if (a.veh.claim === b) a.veh.claim = null; a.veh = null; }
+          if (a.item) { if (a.item.claim === b) a.item.claim = null; a.item = null; }
+          a.target = a.gunO; a.lastSeen.copy(a.gunPos); a.seenAt = now - 3; a.mode = 'fight'; a.tac = null; a.holdEnd = 0; a.third = now;
+          fightUnseen(b, now);
+          return;
+        }
+      }
+    }
+    if (!busy && !run && squadFocus(b, now)) return;
     if (reviveDuty(b, now)) return;
     const guard = guardDowned(b, now);
     if (guard === 1) return;
@@ -1043,13 +1442,15 @@ export function createBots(ctx, n = 50) {
     if (b.healEnd) return; // sedang mengobati
     // L = pemimpin yang diikuti; null = bot ini pemimpin regunya, atau anggota yang menyelamatkan diri sendiri
     // (di luar zona, darah menipis, dan pemimpinnya juga masih di luar zona → masuk zona dengan logika pemimpin)
-    const L0 = guard ? null : leaderOf(b);
+    let L0 = guard || now < a.soloUntil ? null : leaderOf(b); // soloUntil: pemimpin tak terkejar (lihat abandon)
+    if (L0 && L0.ai && L0.ai.wdN >= 3 && now - L0.ai.wdAt < 6) { a.soloUntil = now + 20; L0 = null; } // pemimpin macet berulang: jalan sendiri dulu
     const L = L0 && zone.outside(x, y) > 0 && b.hp < 55 && zone.outside(L0.pos.x, -L0.pos.z) > 0 ? null : L0;
     if (L && followThink(b, L, now)) return;
     // zona: keluar dari zona berikutnya → bergerak masuk (yang pintar berangkat lebih awal)
     const z = zone.next || zone.cur;
     const dz = Math.hypot(x - z.x, y - z.y), outNext = dz > z.r * 0.92, outCur = zone.outside(x, y) > -5;
-    const early = SKILL.zoneEarly && zone.mode === 'wait' && outNext && zone.timeLeft < (dz - z.r) / 5 + 35;
+    // berangkat lebih awal: yang terampil (zoneEarly); yang perlengkapannya sudah lengkap / sesi jarahnya habis lebih awal lagi
+    const early = SKILL.zoneEarly && zone.mode === 'wait' && outNext && zone.timeLeft < (dz - z.r) / 5 + 35 + (geared(b) || now > a.lootEnd ? SKILL.early : 0);
     const solo = !L && !(guard && zone.outside(x, y) <= 0); // anggota mengikuti pemimpin; yang menjaga rekan tumbang bertahan selama masih di dalam zona
     if (!solo) { if (a.mode === 'zone') { a.mode = 'roam'; a.nav = null; a.goal = null; } }
     else if ((outCur || (outNext && zone.mode === 'shrink') || early) && a.mode !== 'zone') {
@@ -1060,37 +1461,52 @@ export function createBots(ctx, n = 50) {
     }
     if (solo && a.mode === 'zone' && !a.nav) { if (!outCur && !outNext) a.mode = 'roam'; else { const d = roamDest(b); if (!wantVehicle(b, d[0], d[1])) go(b, d[0], d[1], SKILL.sprint); } return; }
     if (a.mode === 'zone') return;
+    // bertahan di dalam rumah (tryHold): sampai waktunya habis / zona menyusut; jongkok menghadap pintu (steer)
+    if (a.mode === 'hold') {
+      if (now > a.holdEnd || zone.mode === 'shrink' || (a.holdH && Math.hypot(b.pos.x - a.holdX, -b.pos.z - a.holdY) > 30)) { a.mode = 'roam'; a.nav = null; a.goal = null; a.holdCD = now + 40; }
+      else {
+        if (!a.nav && !b.healEnd) { b.crouch = SKILL.crouch > 0.3; b.prone = false; }
+        if (b.hp < 75 && now - a.hurtAt > 3 && (b.heals.kit || b.heals.band)) startHeal(b, now);
+        return;
+      }
+    }
     // obati diri
     if (b.hp < 60 && now - a.hurtAt > 3 && (b.heals.kit || b.heals.band) && startHeal(b, now)) { a.nav = null; return; }
     // isi ulang saat aman
     const w = weapon(b);
     if (w && w.inst.mag < w.def.mag * 0.6 && b.ammo[w.def.ammo] > 0 && !b.reloadEnd) b.reloadEnd = now + w.def.reload;
     if (w && !usable(b, w.inst)) equipBest(b);
-    // jarah barang di sekitar
-    if (!guard && (a.mode === 'loot' || a.mode === 'flee' || (a.mode === 'roam' && !a.nav))) {
-      if (a.mode === 'loot' && !L && (a.lootT > 32 || a.lootN >= 5)) { a.mode = 'roam'; a.nav = null; a.goal = null; } // pemimpin: sesi jarah dibatasi lalu jalan lagi; anggota menjarah selama pemimpin di dekatnya
-      else {
+    // jarah barang di sekitar. Pemimpin: satu sesi jarah dibatasi waktu (SKILL.lootT) — sesi berikutnya dimulai sendiri
+    // saat menemukan barang lagi di tempat lain; yang perlengkapannya sudah lengkap hanya mampir untuk barang bernilai tinggi.
+    // Barang yang tidak berguna (aturan applyItem) atau gagal dicapai tidak dipilih lagi (daftar lewati, lihat abandon).
+    // Sambil berjalan (roam) bot melirik tiap 1,5 dtk: barang yang jauh lebih baik (senjata saat tangan kosong, pelindung
+    // tinggi) di dekat jalur tetap diambil.
+    const peek = a.mode === 'roam' && !!a.nav && now > a.lootPeek && !L;
+    if (!guard && (a.mode === 'loot' || a.mode === 'flee' || (a.mode === 'roam' && !a.nav) || peek)) {
+      if (peek) a.lootPeek = now + 1.5;
+      if (a.mode === 'loot' && !L && (now > a.lootEnd || a.lootN >= 8)) { if (a.item && a.item.claim === b) a.item.claim = null; a.item = null; a.mode = 'roam'; a.nav = null; a.goal = null; a.lootEnd = 0; } // sesi habis: hanya barang yang berharga
+      {
         let best = null, bs = -1;
-        const armed = b.weapons[0] || b.weapons[1];
+        const armed = b.weapons[0] || b.weapons[1], gear = geared(b), minV = peek ? 7.5 : a.mode === 'loot' ? 0 : gear ? 4.5 : now > a.lootEnd ? 2 : 0;
         loot.near(x, y, L ? 30 : a.mode === 'loot' ? 70 : 30, (it) => {
-          const d = it.def, dist = Math.hypot(it.x - x, it.y - y) + Math.abs(it.z - b.pos.y) * 1.5; // lantai lain: lewat tangga (sedikit lebih jauh)
-          if (it === a.skip0 || it === a.skip1) return; // peti yang baru diperiksa (isinya tidak dibutuhkan)
+          if (it.claim && it.claim !== b && !(it.claim.roof && LIFTS.size)) return; // barang atap (loot.js menandainya 'atap'): bot kini bisa naik lift
+          const v = itemValue(b, it);
+          if (v <= minV || skipped(b, it, now)) return;
           if (L) { // dekat pemimpin saja; barang di kaki pemain — dan senjata di sekitarnya selama pemain belum bersenjata — untuk pemain
             const dl = Math.hypot(it.x - L.pos.x, it.y + L.pos.z);
-            if (dl > 32 || (L.isPlayer && (dl < 3.5 || (d.kind === 'weapon' && dl < 14 && !L.weapons[0] && !L.weapons[1])))) return;
+            if (dl > 32 || (L.isPlayer && (dl < 3.5 || (it.def.kind === 'weapon' && dl < 14 && !L.weapons[0] && !L.weapons[1])))) return;
           }
-          let v = 0;
-          if (d.kind === 'weapon') v = !b.weapons[0] || !b.weapons[1] ? (armed ? 8 : 14) : TIER[d.w] > Math.min(TIER[b.weapons[0].kind], TIER[b.weapons[1].kind]) ? 6 : 0;
-          else if (d.kind === 'ammo') v = b.weapons.some((wi) => wi && WEAPONS[wi.kind].ammo === d.ammo) ? (b.ammo[d.ammo] < 60 ? 5 : 2) : 0.5;
-          else if (d.kind === 'vest' || d.kind === 'helmet') v = d.lvl > b[d.kind] ? 5 + d.lvl : 0;
-          else if (d.kind === 'heal') v = b.heals[d.heal] < (d.heal === 'kit' ? 2 : 5) ? 2.5 : 0;
-          else if (d.kind === 'crate') v = 7;
-          else if (d.kind === 'nade') v = (b.nades && (b.nades[d.nade] || 0) < 2) ? (d.nade === 'frag' ? 3.5 : 1.5) : 0;
-          if (it.claim && it.claim !== b) v = 0;
+          const dist = Math.hypot(it.x - x, it.y - y) + Math.abs(it.z - b.pos.y) * 1.5; // lantai lain: lewat tangga (sedikit lebih jauh)
           const score = v - dist / 12;
-          if (v > 0 && score > bs) { bs = score; best = it; }
+          if (score > bs) { bs = score; best = it; }
         });
-        if (best) { if (a.item && a.item !== best && a.item.claim === b) a.item.claim = null; a.item = best; best.claim = b; a.mode = 'loot'; go(b, best.x, best.y, armed ? 4.6 : SKILL.sprint, best.z); return; }
+        if (best) {
+          if (a.mode !== 'loot' && !L) { a.lootEnd = now + (gear || peek ? 10 : SKILL.lootT); a.lootN = 0; } // sesi jarah baru
+          if (best === a.item && a.mode === 'loot' && (a.nav || a.route)) return; // masih menuju barang yang sama: jalur tidak dihitung ulang
+          if (a.item && a.item !== best && a.item.claim === b) a.item.claim = null;
+          a.item = best; best.claim = b; a.mode = 'loot'; go(b, best.x, best.y, armed ? 4.6 : SKILL.sprint, best.z);
+          return;
+        }
         if (a.mode === 'loot') a.mode = 'roam';
       }
     }
@@ -1101,7 +1517,9 @@ export function createBots(ctx, n = 50) {
         if (L.isPlayer && !b.healEnd) { const near = Math.hypot(L.pos.x - x, -L.pos.z - y) < 14; b.prone = near && !!L.prone; b.crouch = near && !!L.crouch && !L.prone; }
         return;
       }
+      if (now < a.coverWait) { if (!b.healEnd) b.crouch = SKILL.crouch > 0.3; return; } // berlindung sebentar (warnCover)
       if (now < a.idleT) return;
+      if (warnCover(b, now) || tryHold(b, now)) return;
       const d = roamDest(b);
       if (!wantVehicle(b, d[0], d[1], true)) go(b, d[0], d[1], 5);
     }
@@ -1109,18 +1527,27 @@ export function createBots(ctx, n = 50) {
 
   // ---------- Gerak & tembak per frame ----------
   const dir = new THREE.Vector3();
+  // tiarap / tumbang: badan rebah ±0,9 m searah hadap — kepala & kaki didorong keluar dinding (col.fitProne), badan ikut
+  // bergeser halus. Tanpa ini hanya lingkaran 0,35 m di tengah badan yang bertabrakan: kepala menembus dinding & bisa
+  // ditembak dari baliknya. r = hasil col.step/resolve (objek baru) → diubah di tempat.
+  function fitBody(b, r, dt) {
+    if (!col.fitProne) return r;
+    const f = col.fitProne(r.x, r.y, Math.sin(b.yaw), -Math.cos(b.yaw), b.pos.y), k = Math.min(1, dt * 14);
+    r.x += (f.x - r.x) * k; r.y += (f.y - r.y) * k;
+    return r;
+  }
   function steer(b, dt, now) {
     const a = b.ai;
     if (a.mode === 'drive') { driveStep(b, dt, now); return; }
     if (a.mode === 'ride') { rideStep(b, dt, now); return; }
     const x = b.pos.x, y = -b.pos.z;
-    let tx = null, ty = null, speed = a.spd;
+    let tx = null, ty = null, speed = a.spd, navMove = false;
     // ambil barang begitu dekat
     if (a.mode === 'loot' && a.item && Math.abs(a.item.z - b.pos.y) < 1.2 && (Math.hypot(a.item.x - x, a.item.y - y) < 1.5 || (!a.nav && Math.hypot(a.item.x - x, a.item.y - y) < 3))) {
       if (a.item.alive) {
         const r = applyItem(b, a.item, { bot: true });
         if (r && !r.keep) loot.remove(a.item);
-        else { a.skip1 = a.skip0; a.skip0 = a.item; } // masih ada (tidak perlu / sisa peti): jangan didatangi lagi
+        else skipItem(b, a.item, now, 150); // masih ada (tidak perlu / sisa peti): jangan didatangi lagi
         if (r && r.swap) loot.add(r.swap.type, x, y, { z: b.pos.y > 0.5 ? b.pos.y : 0, hp: r.swap.hp }); // pelindung lama bot jatuh ke tanah
         if (r && r.dropped) { const up = b.pos.y > 0.5; loot.add('w_' + r.dropped.kind, x + (up ? 0 : 0.6), y + (up ? 0 : 0.6), { z: up ? b.pos.y : 0 }); }
         if (r) { a.lootN++; equipBest(b); }
@@ -1134,7 +1561,7 @@ export function createBots(ctx, n = 50) {
     if (a.mode === 'toVeh' && a.veh && V) {
       const dp = V.doorPoint(a.veh);
       if (Math.hypot(dp[0] - x, dp[1] - y) < 2.3 || V.dist(a.veh, x, y) < 1.2) {
-        if (V.enter(a.veh, b)) { a.mode = 'drive'; a.nav = null; a.goal = null; b.crouch = false; a.holdUntil = now + 6; a.hold = false; planDrive(b); return; }
+        if (V.enter(a.veh, b)) { a.mode = 'drive'; a.nav = null; a.goal = null; b.crouch = false; a.holdUntil = now + 6; a.hold = false; a.dAnX = a.veh.x; a.dAnY = a.veh.y; a.dAnT = now; planDrive(b); return; }
         a.veh.claim = null; a.veh = null; a.mode = 'zone'; a.nav = null;
       }
     }
@@ -1167,7 +1594,14 @@ export function createBots(ctx, n = 50) {
       if (!want && !a.strafe) tx = null;
     } else {
       const p = navTarget(b);
-      if (p) { [tx, ty] = p; } else if (a.goal && !a.nav) { a.goal = null; if (a.mode === 'roam') a.idleT = now + rnd(1, 3.5); else a.next = Math.min(a.next, 0.05); }
+      if (p) {
+        tx = p[0]; ty = p[1]; navMove = true;
+        // pengawas titik antara: jarak ke titik yang sedang dikejar tidak berkurang ≥ 1 m selama 7 dtk (berputar-putar di
+        // sekitar titik yang tak tercapai, meluncur bolak-balik di dinding) → tujuan dibuang
+        const N = a.nav, wi = N ? (N.kind === 'road' ? N.pi : N.kind === 'local' ? N.i : 0) : 0, dw = Math.hypot(tx - x, ty - y);
+        if (N !== a.wpN || wi !== a.wpI || dw < a.wpD - 1) { a.wpN = N; a.wpI = wi; a.wpD = dw; a.wpT = now; }
+        else if (N && N.kind !== 'stair' && now - a.wpT > 7) { a.wpT = now; unstick(b, now); }
+      } else if (a.goal && !a.nav) { a.goal = null; if (a.mode === 'roam') a.idleT = now + rnd(1, 3.5); else a.next = Math.min(a.next, 0.05); }
       if (fighting && a.tac === 'hunt' && SKILL.crouch > 0.5) b.crouch = !!p && Math.hypot(a.lastSeen.x - x, -a.lastSeen.z - y) < 26;
       if (fighting && a.tac === 'peek') b.crouch = !!a.peekCrouch && !p;
     }
@@ -1211,20 +1645,25 @@ export function createBots(ctx, n = 50) {
     if (V) { const q2 = V.pushOut(r.x, r.y, 0.35); if (q2.x !== r.x || q2.y !== r.y) r = col.resolve(q2.x, q2.y, 0.35, false, ay); } // tidak menembus kendaraan
     const moved = Math.hypot(r.x - x, r.y - y);
     b.moveSpeed = moved / Math.max(dt, 1e-4);
+    navMove = navMove && tx !== null;
     if (Math.hypot(mx, my) > 1 && b.moveSpeed < 0.6) {
       a.stuckT += dt;
       if (a.stuckT > 1.2) {
         a.stuckT = 0;
-        a.stuckN++;
         a.lane = rnd(-2, 2);
-        if (a.nav && a.nav.kind === 'stair') { a.nav = null; a.goal = null; a.route = null; a.idleT = 0; } // macet di tangga → batalkan rute
-        else if (a.goal && a.stuckN < 3 && spend()) { const pts = nav.path(x, y, a.goal[0], a.goal[1], 9000, a.lv || 0); a.nav = pts ? { kind: 'local', pts, i: 0 } : null; }
-        else { if (a.item) { a.item.claim = null; a.item = null; } a.nav = null; a.goal = null; a.idleT = 0; a.stuckN = 0; if (fighting) a.tacUntil = 0; }
-        if (fighting && a.tac === 'engage') a.strafe = -a.strafe;
+        // macet di jalur: jalan memutar dulu (tangga / gagal memutar / macet ke-3 → tujuan dibuang); dulu jalur dibuang tapi
+        // tujuannya dipilih lagi pada pikiran berikutnya → bot mendorong tembok yang sama tanpa akhir
+        if (navMove) { a.stuckN++; if (a.stuckN >= 3 || !repath(b)) unstick(b, now); }
+        else if (fighting && a.tac === 'engage') a.strafe = -a.strafe;
       }
     } else { a.stuckT = Math.max(0, a.stuckT - dt); if (b.moveSpeed > 1) a.stuckN = 0; }
+    if (b.prone) fitBody(b, r, dt);
     b.pos.x = r.x;
     b.pos.z = -r.y;
+    // pengawas kemajuan: berniat jalan (punya jalur) tapi tidak berpindah ≥ 2,5 m selama WD_T dtk — termasuk yang
+    // bergetar di sudut/meluncur di dinding (kecepatan sesaat > 0,6 sehingga deteksi macet di atas tidak pernah jalan)
+    if (Math.abs(r.x - a.anX) > 2.5 || Math.abs(r.y - a.anY) > 2.5 || Math.abs(b.pos.y - a.anH) > 1.2) { a.anX = r.x; a.anY = r.y; a.anH = b.pos.y; a.anW = 0; }
+    else if (navMove && (a.anW += dt) > WD_T) unstick(b, now);
     if (b.state === 'ground') { const fl = col.floorAt(r.x, r.y, ay); b.pos.y = fl >= ay - 0.45 ? fl : Math.max(fl, ay - 8 * dt); } // ikuti tangga / lantai 2, jatuh dari tepi
     // arah hadap: ke musuh (bidik), ke posisi terakhir musuh (siap tembak), atau ke arah jalan; diam = lihat sekeliling
     let face = null;
@@ -1233,7 +1672,7 @@ export function createBots(ctx, n = 50) {
     else if (fighting && !(a.tac === 'flank' && b.moveSpeed > 2) && now - a.seenAt < 20) face = Math.atan2(a.lastSeen.x - b.pos.x, a.lastSeen.z - b.pos.z);
     else if (b.moveSpeed > 0.5) face = Math.atan2(r.x - x, -(r.y - y));
     else {
-      if (now > a.scanT) { a.scanT = now + rnd(1.2, 3.2); a.scanYaw = b.yaw + rnd(-1.8, 1.8); }
+      if (now > a.scanT) { a.scanT = now + rnd(1.2, 3.2); a.scanYaw = a.mode === 'hold' ? a.holdYaw + rnd(-0.8, 0.8) : b.yaw + rnd(-1.8, 1.8); }
       face = a.scanYaw;
     }
     if (face !== null) b.yaw += clamp(wrap(face - b.yaw), -dt * SKILL.turn, dt * SKILL.turn);
@@ -1311,6 +1750,7 @@ export function createBots(ctx, n = 50) {
     sp.y += (my - sp.y) * k;
     const r = col.step(x, y, x + sp.x * dt, y + sp.y * dt, 0.35, false, b.pos.y);
     b.moveSpeed = Math.hypot(r.x - x, r.y - y) / Math.max(dt, 1e-4);
+    fitBody(b, r, dt); // rebah: kepala & kaki tidak menembus dinding
     b.pos.x = r.x; b.pos.z = -r.y;
     if (b.moveSpeed > 0.2) b.yaw += clamp(wrap(Math.atan2(r.x - x, -(r.y - y)) - b.yaw), -dt * 3, dt * 3);
     b.moveYaw = 0;
@@ -1345,6 +1785,7 @@ export function createBots(ctx, n = 50) {
     // dt detik, now detik, flight = { t, pos(t) }, cam = posisi kamera
     update(dt, now, flight, cam) {
       budget = 4 + Math.round(n / 20); // jatah pencarian jalur/perlindungan per frame
+      frameT0 = performance.now();
       for (const b of bots) {
         if (!b.alive && b.state === 'dead') {
           const a = b.ai; // lepaskan klaim barang/kendaraan milik bot yang tersingkir
@@ -1361,7 +1802,6 @@ export function createBots(ctx, n = 50) {
         if (b.state === 'fall' || b.state === 'chute') { if (!(b.ally && allyAir(b, dt))) airStep(b, dt); continue; }
         if (b.down) { downStep(b, dt, now); continue; }
         b.ai.next -= dt;
-        if (b.ai.mode === 'loot') b.ai.lootT += dt;
         if (b.ai.next <= 0) { b.ai.next = 0.25 + Math.random() * 0.1; think(b, now); }
         steer(b, dt, now);
         if (cam && b.state === 'ground') stepSound(b, dt, cam);
@@ -1415,6 +1855,7 @@ export function createBots(ctx, n = 50) {
           p.crouch = !driving && !p.prone && (b.crouch || !!b.healEnd || !!b.reviving);
           { const w0 = b.cur >= 0 && b.weapons[b.cur]; p.reload = b.reloadEnd && w0 ? 1 - (b.reloadEnd - now) / WEAPONS[w0.kind].reload : null; }
           p.heal = (!!b.healEnd || !!b.reviving) && b.alive;
+          p.healKind = b.healEnd ? b.ai.healKind : null; // pose per jenis obat (rig.js): perban / P3K
           p.gunKind = b.cur >= 0 && b.weapons[b.cur] ? b.weapons[b.cur].kind : null;
           p.sit = driving ? (b.sitKind || 'car') : null;
           p.recline = driving ? (b.sitRecline || 0) : 0;

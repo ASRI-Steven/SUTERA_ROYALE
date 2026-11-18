@@ -1,16 +1,16 @@
 // Katalog & penerapan skin (karakter + senjata). Dipakai lobi (toko, koleksi, pratinjau) dan game (pemain, rekan regu, senjata).
 // Semua motif dihitung di shader (game/skinfx.js) — tanpa tekstur, tanpa unduhan tambahan:
 // - Karakter: warna slot pakaian (palet per karakter) + nomor pola `fx` → map/rig.js (tubuh ber-kulit; kerumunan tetap ber-instans).
-//   Legendaris: aura (pendar tepi di shader) + serbuk cahaya yang tertinggal saat bergerak (createAura, orang ketiga & lobi).
+//   Legendaris: aura = selubung bercahaya berbentuk tubuh (api emas / api roh / medan energi beranimasi; setCharAura).
 // - Senjata orang pertama: varian material per skin (game/weapons.js vmSkinned); model dunia (di tangan karakter): material
-//   berwarna-verteks dengan pola yang sama. Tingkat epik & legendaris: animasi, warna pelacak & kilatan moncong, partikel
-//   moncong, pendar saat isi ulang/periksa/cabut, suara tembakan sendiri (game/audio.js), efek & spanduk kill (game/killfx.js).
+//   berwarna-verteks dengan pola yang sama. Tingkat epik & legendaris: animasi, warna pelacak & kilatan moncong, nyala
+//   moncong beranimasi (shader, bukan titik), pendar saat isi ulang/periksa/cabut, suara tembakan sendiri (game/audio.js), efek & spanduk kill (game/killfx.js).
 // Harga menurut kelangkaan: biasa 300, langka 800, epik 1800, legendaris 4000 koin; bawaan 0.
 // ID lama (char_default … char_garuda, gun_default … gun_garuda) tetap sama → profil lama (dimiliki & dipakai) tetap sah.
 import * as THREE from 'three';
 import { buildCharacter } from '../map/rig.js';
 import { vmSkinned, setVmArms, gunPreview, setSkinFx, SF_G0 } from './weapons.js';
-import { CHAR_FX, GUN_FX, GUN_SKIN_GLSL, SF_U, onSkinTick } from './skinfx.js';
+import { CHAR_FX, GUN_FX, GUN_SKIN_GLSL, SF_U, AURA_VS_PARS, AURA_VS_BEGIN, AURA_FS } from './skinfx.js';
 import { profile } from './profile.js';
 import * as audio from './audio.js';
 
@@ -34,7 +34,7 @@ export const DEFAULT_OUTFIT = { shirt: '#503EBA', sleeve: '#503EBA', pants: '#2b
 
 // ---------- Karakter ----------
 // outfit: warna slot (shirt/sleeve/pants/glove/cuff/inner) + perlengkapan (gear = helm & rompi, pack = ransel); fx = pola (skinfx.js)
-// x: { aura: warna aura legendaris, cuffGlow: manset menyala (lengan orang pertama) }
+// x: { aura: { style 0 api emas · 1 api roh · 2 medan energi, c1, c2 } selubung aura legendaris, cuffGlow: manset menyala }
 const C = (id, name, rarity, col, desc, fx, outfit, x = {}) => ({ id, name, rarity, col, price: outfit ? PRICE[rarity] : 0, desc, fx, outfit, kind: 'character', ...x });
 export const CHAR_SKINS = [
   C('char_default', 'Rekrut Sutera', 'biasa', 'taktis', 'Seragam bawaan regu Sutera: ungu dengan manset emas.', 0, null),
@@ -67,15 +67,16 @@ export const CHAR_SKINS = [
   C('char_kencana', 'Kencana', 'epik', 'kencana', 'Marmer gading berurat emas dengan kilau emas yang menyapu pelan.', CHAR_FX.kencana,
     { shirt: '#f3efe7', sleeve: '#f3efe7', pants: '#f3efe7', glove: '#f3efe7', cuff: '#e3b24e', inner: '#efe6d4', gear: '#e9e2cf', pack: '#e3b24e' }),
   C('char_garuda', 'Garuda Emas', 'legendaris', 'pusaka', 'Putih upacara berhias bulu garuda emas yang berkilau bergelombang, berselubung aura & serbuk cahaya emas.', CHAR_FX.garuda,
-    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: '#ffc64a' }),
+    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' } }),
   C('char_warok', 'Warok Barong', 'legendaris', 'panggung', 'Hitam warok, dalaman loreng merah-putih, mata bulu merak berpelangi di bahu & punggung, aura toska-emas.', CHAR_FX.warok,
-    { shirt: '#0b0a0c', sleeve: '#0b0a0c', pants: '#0b0a0c', glove: '#0b0a0c', cuff: '#d6a446', inner: '#f1ede4', gear: '#141218', pack: '#0b0a0c' }, { aura: '#1fd6b4' }),
+    { shirt: '#0b0a0c', sleeve: '#0b0a0c', pants: '#0b0a0c', glove: '#0b0a0c', cuff: '#d6a446', inner: '#f1ede4', gear: '#141218', pack: '#0b0a0c' }, { aura: { style: 1, c1: '#0fbf9a', c2: '#ffb830' } }),
   C('char_reaktor', 'Reaktor Sutera', 'legendaris', 'neo', 'Zirah keramik putih & grafit dengan kanal energi biru yang mengalir, inti dada berdenyut, dan aura plasma.', CHAR_FX.reaktor,
-    { shirt: '#e6eaee', sleeve: '#e6eaee', pants: '#1c1f25', glove: '#1c1f25', cuff: '#9fe9ff', inner: '#20242c', gear: '#e6eaee', pack: '#1c1f25' }, { aura: '#33d6ff', cuffGlow: '#33d6ff' }),
+    { shirt: '#e6eaee', sleeve: '#e6eaee', pants: '#1c1f25', glove: '#1c1f25', cuff: '#9fe9ff', inner: '#20242c', gear: '#e6eaee', pack: '#1c1f25' }, { aura: { style: 2, c1: '#1fb8ff', c2: '#dffbff' }, cuffGlow: '#33d6ff' }),
 ];
 
 // ---------- Senjata ----------
-// th (tema): coat = berpernis (MeshPhysicalMaterial), tracer/flash = warna HDR [r, g, b], muzzle = partikel moncong,
+// th (tema): coat = berpernis (MeshPhysicalMaterial), tracer/flash = warna HDR [r, g, b], flame = nyala moncong beranimasi
+// ({ style: fire|plasma|glint|spirit|arc|frost|glow, c1, c2 }),
 // glow = pendar isi ulang/periksa/cabut, voice = suara tembakan (audio.js VOICES), kill = efek kill (killfx.js),
 // emblem = lambang spanduk kill (hud.js), color/color2 = warna tema (spanduk, toko)
 const G = (id, name, rarity, col, desc, fx, th = {}) => ({ id, name, rarity, col, price: fx ? PRICE[rarity] : 0, desc, fx, kind: 'weapon', th });
@@ -92,27 +93,27 @@ export const GUN_SKINS = [
   G('gun_ondel', 'Ondel-ondel', 'langka', 'panggung', 'Pernis merah berbunga emas dan gading berpita kembang kelapa warna-warni.', GUN_FX.ondel, { coat: true, tracer: [7.5, 3, 2.6], color: '#e8323a', color2: '#f2c230' }),
   G('gun_marmer', 'Marmer Kencana', 'langka', 'kencana', 'Marmer putih dipoles dengan urat emas seperti kintsugi; gagang marmer hitam.', GUN_FX.marmer, { coat: true, tracer: [6.5, 5.2, 3.2], color: '#e9b44a', color2: '#f2efe9' }),
   G('gun_es', 'Kristal Es', 'epik', 'alam', 'Faset es dengan cahaya aurora yang bergerak di dalamnya, kilau salju, dan aksen kristal berpendar. Tembakan berdenting kristal; lawan pecah jadi serpih es.', GUN_FX.es,
-    { coat: true, tracer: [2.6, 5.2, 8.5], flash: [2.6, 4.8, 7.2], muzzle: 'frost', glow: true, voice: 'crystal', kill: 'shatter', emblem: 'es', color: '#5fd8ff', color2: '#e8f8ff' }),
+    { coat: true, tracer: [2.6, 5.2, 8.5], flash: [2.6, 4.8, 7.2], flame: { style: 'frost', c1: '#7fd8ff', c2: '#ffffff' }, glow: true, voice: 'crystal', kill: 'shatter', emblem: 'es', color: '#5fd8ff', color2: '#e8f8ff' }),
   G('gun_neon', 'Neon Ungu', 'epik', 'neo', 'Kisi segi enam menyala dengan gelombang energi yang mengalir ke moncong dan sel data berkedip. Tembakan synth berdenyut.', GUN_FX.neon,
-    { coat: true, tracer: [5.5, 1.6, 8], flash: [5, 1.6, 7], muzzle: 'spark', glow: true, voice: 'pulse', kill: 'pixel', emblem: 'neo', color: '#b24dff', color2: '#22e6ff' }),
+    { coat: true, tracer: [5.5, 1.6, 8], flash: [5, 1.6, 7], flame: { style: 'arc', c1: '#b24dff', c2: '#7ff4ff' }, glow: true, voice: 'pulse', kill: 'pixel', emblem: 'neo', color: '#b24dff', color2: '#22e6ff' }),
   G('gun_songket', 'Songket Emas', 'epik', 'wastra', 'Sutra marun bertenun benang emas; kilau berjalan di sepanjang benang dan bintang delapan berkelip. Tembakan berdenting bonang.', GUN_FX.songket,
-    { tracer: [7.5, 5, 1.8], flash: [7, 4.8, 1.8], muzzle: 'petal', glow: true, voice: 'bonang', kill: 'petal', emblem: 'wastra', color: '#f2c25a', color2: '#9a1830' }),
+    { tracer: [7.5, 5, 1.8], flash: [7, 4.8, 1.8], flame: { style: 'glint', c1: '#f2a83a', c2: '#fff1c0' }, glow: true, voice: 'bonang', kill: 'petal', emblem: 'wastra', color: '#f2c25a', color2: '#9a1830' }),
   G('gun_keris', 'Pamor Keris', 'epik', 'pusaka', 'Baja hitam bergaris pamor nikel yang berpendar beriak, warangka kayu timoho, mendak emas bermata. Tembakan bergaung gong; lawan lenyap jadi asap tuah.', GUN_FX.keris,
-    { tracer: [3.2, 6.5, 5.2], flash: [4, 6, 4.8], muzzle: 'smoke', glow: true, voice: 'gong', kill: 'spirit', emblem: 'keris', color: '#2fd3b0', color2: '#d6a446' }),
+    { tracer: [3.2, 6.5, 5.2], flash: [4, 6, 4.8], flame: { style: 'spirit', c1: '#13b894', c2: '#ffcf6a' }, glow: true, voice: 'gong', kill: 'spirit', emblem: 'keris', color: '#2fd3b0', color2: '#d6a446' }),
   G('gun_petir', 'Badai Petir', 'epik', 'alam', 'Logam badai dengan kilat bercabang yang menyambar dan berkedip. Tembakan menggelegar; kill menyambar petir.', GUN_FX.petir,
-    { coat: true, tracer: [5, 5, 10], flash: [4.4, 4.2, 9], muzzle: 'spark', glow: true, voice: 'thunder', kill: 'bolt', emblem: 'petir', color: '#9d90ff', color2: '#efeaff' }),
+    { coat: true, tracer: [5, 5, 10], flash: [4.4, 4.2, 9], flame: { style: 'arc', c1: '#7f70ff', c2: '#ffffff' }, glow: true, voice: 'thunder', kill: 'bolt', emblem: 'petir', color: '#9d90ff', color2: '#efeaff' }),
   G('gun_holo', 'Holografik', 'epik', 'neo', 'Foil pelangi yang bergeser mengikuti sudut pandang, garis difraksi, dan pindaian cahaya. Tembakan berkedip digital.', GUN_FX.holo,
-    { coat: true, tracer: [7, 3.5, 7.5], flash: [6, 4.5, 7.5], muzzle: 'spark', glow: true, voice: 'glitch', kill: 'pixel', emblem: 'holo', color: '#ff7ad9', color2: '#62e6ff' }),
+    { coat: true, tracer: [7, 3.5, 7.5], flash: [6, 4.5, 7.5], flame: { style: 'glint', c1: '#ff6ad2', c2: '#7ff0ff' }, glow: true, voice: 'glitch', kill: 'pixel', emblem: 'holo', color: '#ff7ad9', color2: '#62e6ff' }),
   G('gun_mutiara', 'Mutiara Laut', 'epik', 'kencana', 'Nacre berlapis berwarna pastel yang berkilau pelan, berhias emas mawar. Tembakan berdenting lonceng air.', GUN_FX.mutiara,
-    { coat: true, tracer: [6.5, 6, 6.8], flash: [5.8, 5.5, 6.5], muzzle: 'frost', glow: true, voice: 'chime', kill: 'pearl', emblem: 'kencana', color: '#f7c6d8', color2: '#bff0ec' }),
+    { coat: true, tracer: [6.5, 6, 6.8], flash: [5.8, 5.5, 6.5], flame: { style: 'glow', c1: '#ffc6dc', c2: '#c7f0ec' }, glow: true, voice: 'chime', kill: 'pearl', emblem: 'kencana', color: '#f7c6d8', color2: '#bff0ec' }),
   G('gun_garuda', 'Emas Garuda', 'legendaris', 'pusaka', 'Emas berukir bulu garuda dan pernis merah tua berfiligri sayap. Cahaya keemasan menyapu badan senjata, tembakan berdentang gong garuda, dan lawan tersingkir dalam hujan bulu emas.', GUN_FX.garuda,
-    { coat: true, tracer: [8, 5.6, 1.6], flash: [8, 5.6, 2], muzzle: 'gold', glow: true, voice: 'garuda', kill: 'feather', emblem: 'garuda', color: '#ffc64a', color2: '#9a1414' }),
+    { coat: true, tracer: [8, 5.6, 1.6], flash: [8, 5.6, 2], flame: { style: 'glint', c1: '#ffb43a', c2: '#fff4c8', size: 0.042 }, glow: true, voice: 'garuda', kill: 'feather', emblem: 'garuda', color: '#ffc64a', color2: '#9a1414' }),
   G('gun_reog', 'Dadak Merak', 'legendaris', 'panggung', 'Mata bulu merak berpelangi yang berdenyut dan loreng macan barongan. Tembakan berkendang & bergong, kill disambut kipas bulu merak.', GUN_FX.reog,
-    { coat: true, tracer: [1.6, 6.5, 4.6], flash: [2.6, 6, 4.2], muzzle: 'peacock', glow: true, voice: 'reog', kill: 'peacock', emblem: 'merak', color: '#19c9a8', color2: '#2a6bff' }),
+    { coat: true, tracer: [1.6, 6.5, 4.6], flash: [2.6, 6, 4.2], flame: { style: 'spirit', c1: '#14c9a8', c2: '#ffc64a' }, glow: true, voice: 'reog', kill: 'peacock', emblem: 'merak', color: '#19c9a8', color2: '#2a6bff' }),
   G('gun_magma', 'Inti Magma', 'legendaris', 'alam', 'Obsidian dengan lava yang mengalir di retakannya; laras membara makin panas saat menembak. Dentuman naga, lawan meledak jadi bara.', GUN_FX.magma,
-    { coat: true, tracer: [9, 3.4, 0.6], flash: [9, 3.6, 0.8], muzzle: 'ember', glow: true, voice: 'dragon', kill: 'ember', emblem: 'api', color: '#ff6a1a', color2: '#ffd860' }),
+    { coat: true, tracer: [9, 3.4, 0.6], flash: [9, 3.6, 0.8], flame: { style: 'fire', c1: '#ff2a00', c2: '#ffe27a', size: 0.06 }, glow: true, voice: 'dragon', kill: 'ember', emblem: 'api', color: '#ff6a1a', color2: '#ffd860' }),
   G('gun_plasma', 'Reaktor Plasma', 'legendaris', 'neo', 'Zirah keramik putih dengan kanal plasma yang mengalir ke moncong dan inti yang makin terang saat menembak. Lawan terurai jadi piksel cahaya.', GUN_FX.plasma,
-    { coat: true, tracer: [1.8, 7, 10], flash: [1.8, 6.4, 9], muzzle: 'plasma', glow: true, voice: 'plasma', kill: 'disintegrate', emblem: 'reaktor', color: '#2fd8ff', color2: '#e8ecf0' }),
+    { coat: true, tracer: [1.8, 7, 10], flash: [1.8, 6.4, 9], flame: { style: 'plasma', c1: '#1fb8ff', c2: '#e8fdff', size: 0.04 }, glow: true, voice: 'plasma', kill: 'disintegrate', emblem: 'reaktor', color: '#2fd8ff', color2: '#e8ecf0' }),
 ];
 const BY = new Map([...CHAR_SKINS, ...GUN_SKINS].map((s) => [s.id, s]));
 export const skinById = (id) => BY.get(id) || null;
@@ -127,11 +128,11 @@ export function skinFeatures(s) {
     if (th.voice) f.push(['sound', 'Suara tembakan khusus']);
     if (th.kill) f.push(['kill', 'Spanduk & denting kill khusus']);
     if (th.tracer) f.push(['tracer', th.flash ? 'Pelacak & kilatan khusus' : 'Pelacak berwarna']);
-    if (th.muzzle) f.push(['muzzle', 'Partikel moncong']);
+    if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
   } else {
     if (RARITY[s.rarity].rank >= 2 || s.fx === CHAR_FX.samudra) f.push(['anim', 'Pola beranimasi']);
     if (s.cuffGlow) f.push(['glow', 'Manset menyala']);
-    if (s.aura) f.push(['aura', 'Aura & jejak cahaya']);
+    if (s.aura) f.push(['aura', 'Aura api / energi beranimasi']);
   }
   return f;
 }
@@ -202,68 +203,45 @@ export function applyGunSkin(root, id) {
   return root;
 }
 
-// ---------- Aura karakter legendaris: serbuk cahaya yang naik berputar & tertinggal saat bergerak ----------
-// Satu THREE.Points (ruang dunia, aditif, ±64 partikel). Diperbarui lewat onSkinTick (detak skin per frame); hanya
-// memancar selama karakternya tampil. root = akar karakter yang diikuti. Dilepas dengan dispose().
-const AURA_VS = `attribute vec4 col; attribute float size; uniform float uH; varying vec4 vC;
-void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
-  gl_PointSize = min(48.0, size * uH * projectionMatrix[1][1] * 0.5 / max(0.05, -mv.z)); vC = col; vC.a *= smoothstep(0.3, 1.2, -mv.z); }`;
-const AURA_FS = `varying vec4 vC; void main() { vec2 c = gl_PointCoord - 0.5; float a = exp(-dot(c, c) * 18.0) + exp(-dot(c, c) * 160.0); if (a * vC.a < 0.003) discard; gl_FragColor = vec4(vC.rgb * a * vC.a, a * vC.a); }`;
-export function createAura(color, root, scene) {
-  const N = 64, pos = new Float32Array(N * 3), col = new Float32Array(N * 4), size = new Float32Array(N), S = new Float32Array(N * 8); // vx vy vz t life ph r0 s0
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('col', new THREE.BufferAttribute(col, 4));
-  geo.setAttribute('size', new THREE.BufferAttribute(size, 1));
-  geo.setDrawRange(0, 0);
-  const uni = { uH: { value: 720 } };
-  const pts = new THREE.Points(geo, new THREE.ShaderMaterial({ uniforms: uni, vertexShader: AURA_VS, fragmentShader: AURA_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  pts.frustumCulled = false; pts.matrixAutoUpdate = false; pts.renderOrder = 22;
-  pts.onBeforeRender = (renderer) => { const rt = renderer.getRenderTarget(); uni.uH.value = rt ? rt.height : renderer.domElement.height; };
-  scene.add(pts);
-  const c = new THREE.Color(color), wp = new THREE.Vector3();
-  let n = 0, acc = 0;
-  const off = onSkinTick((dt, t) => {
-    if (!dt) return;
-    let on = !!root.visible && !!root.parent;
-    for (let o = root.parent; on && o; o = o.parent) if (!o.visible) on = false;
-    if (on) {
-      wp.setFromMatrixPosition(root.matrixWorld);
-      acc += dt * 34;
-      while (acc >= 1 && n < N) {
-        acc -= 1;
-        const i = n++, a = Math.random() * Math.PI * 2, r = 0.22 + Math.random() * 0.22, k = i * 8;
-        pos[i * 3] = wp.x + Math.cos(a) * r; pos[i * 3 + 1] = wp.y + 0.1 + Math.random() * 1.6; pos[i * 3 + 2] = wp.z + Math.sin(a) * r;
-        S[k] = Math.cos(a) * 0.05; S[k + 1] = 0.25 + Math.random() * 0.45; S[k + 2] = Math.sin(a) * 0.05; S[k + 3] = 0; S[k + 4] = 0.9 + Math.random() * 0.9; S[k + 5] = a; S[k + 6] = r; S[k + 7] = 0.04 + Math.random() * 0.05;
-      }
-      if (acc >= 1) acc = 0;
-    }
-    for (let i = 0; i < n; i++) {
-      const k = i * 8;
-      S[k + 3] += dt;
-      if (S[k + 3] >= S[k + 4]) { n--; if (i < n) { const j = n; for (let q = 0; q < 3; q++) pos[i * 3 + q] = pos[j * 3 + q]; for (let q = 0; q < 8; q++) S[k + q] = S[j * 8 + q]; i--; } continue; }
-      const f = S[k + 3] / S[k + 4], sw = 1.6 * dt; // naik sambil berputar pelan mengitari badan
-      const x = pos[i * 3] - wp.x, z = pos[i * 3 + 2] - wp.z, ca = Math.cos(sw), sa = Math.sin(sw);
-      if (on) { pos[i * 3] = wp.x + x * ca - z * sa; pos[i * 3 + 2] = wp.z + x * sa + z * ca; }
-      pos[i * 3] += S[k] * dt; pos[i * 3 + 1] += S[k + 1] * dt; pos[i * 3 + 2] += S[k + 2] * dt;
-      const a = Math.sin(Math.PI * f) * (0.75 + 0.25 * Math.sin(t * 9 + k));
-      col[i * 4] = c.r * 4.5; col[i * 4 + 1] = c.g * 4.5; col[i * 4 + 2] = c.b * 4.5; col[i * 4 + 3] = a;
-      size[i] = S[k + 7] * (1 - 0.5 * f);
-    }
-    geo.setDrawRange(0, n);
-    if (n) geo.attributes.position.needsUpdate = geo.attributes.col.needsUpdate = geo.attributes.size.needsUpdate = true;
-  });
-  return { pts, dispose() { off(); scene.remove(pts); geo.dispose(); pts.material.dispose(); } };
+// ---------- Aura karakter legendaris: selubung bercahaya berbentuk tubuh (bukan titik) ----------
+// Mesh tubuh yang sama (geometri & kerangka dipakai bersama) digambar sekali lagi sedikit dikembangkan menurut normal,
+// aditif, terang di tepi siluet; pola api naik / api roh / medan energi beranimasi (skinfx.js AURA_*). Satu draw call per
+// karakter legendaris yang tampil (pemain orang ketiga & lobi). Material dibuat sekali per gaya+warna lalu dipakai bersama.
+const AURA_MATS = new Map();
+function auraMaterial(a) {
+  const key = a.style + a.c1 + a.c2;
+  if (AURA_MATS.has(key)) return AURA_MATS.get(key);
+  const m = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  m.defines = { SF_AURA: a.style | 0 };
+  const U = { uAC1: { value: new THREE.Color(a.c1).multiplyScalar(1.9) }, uAC2: { value: new THREE.Color(a.c2).multiplyScalar(1.9) } };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uSfT = SF_U.uSfT; Object.assign(sh.uniforms, U);
+    sh.vertexShader = AURA_VS_PARS + sh.vertexShader
+      .replace('#include <begin_vertex>', AURA_VS_BEGIN)
+      .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\n  vAN = normalize(transformedNormal);')
+      .replace('#include <project_vertex>', '#include <project_vertex>\n  vAV = -mvPosition.xyz;');
+    sh.fragmentShader = AURA_FS + sh.fragmentShader.replace('#include <opaque_fragment>', '{ vec4 sfA = sfAura(); gl_FragColor = vec4(sfA.rgb, sfA.a); }');
+  };
+  m.customProgramCacheKey = () => 'sfaura';
+  AURA_MATS.set(key, m);
+  return m;
 }
-// aura untuk karakter (char = hasil buildCharacter): satu aura per karakter, diganti/dilepas sesuai skin
-export function setCharAura(char, color) {
+// aura untuk karakter (char = hasil buildCharacter v3): satu selubung per karakter, diganti/dilepas sesuai skin.
+// a = { style, c1, c2 } atau null. char.aura = { dispose() } (dipakai lobi saat karakter dibangun ulang).
+export function setCharAura(char, a) {
   if (!char) return;
-  if (char.aura && char.aura.color === color) return;
+  const key = a ? a.style + a.c1 + a.c2 : '';
+  if (char.aura && char.aura.key === key) return;
   if (char.aura) { char.aura.dispose(); char.aura = null; }
-  const sc = char.root.parent;
-  if (!color || !sc) return;
-  char.aura = createAura(color, char.root, sc);
-  char.aura.color = color;
+  if (!a) return;
+  const body = char.root.children.find((o) => o.isSkinnedMesh && o.material && o.material.map && o.geometry.attributes.normal);
+  if (!body) return; // model lama (bagian kaku): tanpa aura
+  const shell = new THREE.SkinnedMesh(body.geometry, auraMaterial(a));
+  shell.skeleton = body.skeleton;
+  shell.bindMatrix.copy(body.bindMatrix); shell.bindMatrixInverse.copy(body.bindMatrixInverse);
+  shell.frustumCulled = false; shell.renderOrder = 22; shell.castShadow = false; shell.receiveShadow = false;
+  body.parent.add(shell);
+  char.aura = { key, dispose() { if (shell.parent) shell.parent.remove(shell); } };
 }
 
 // ---------- Di dalam game ----------
@@ -278,10 +256,11 @@ export function applyEquipped(char, vm, base = DEFAULT_OUTFIT) {
   setVmArms(o === base ? {} : { sleeve: o.sleeve || o.shirt, glove: o.glove, cuff: o.cuff, fx: o.fx, cuffGlow: cs && cs.cuffGlow });
   if (vm && vm.gunRoots) for (const g of vm.gunRoots()) applyGunSkin(g, gid);
   if (char && char.parts) for (const k in char.parts) if (k.startsWith('gun_')) for (const m of char.parts[k]) applyGunSkin(m, gid);
-  setSkinFx({ tracer: th.tracer || null, flash: th.flash || null, muzzle: th.muzzle || null, glow: !!th.glow, cue: th.voice ? (ev) => audio.skinCue(ev) : null });
+  setSkinFx({ tracer: th.tracer || null, flash: th.flash || null, flame: th.flame || null, glow: !!th.glow, cue: th.voice ? (ev) => audio.skinCue(ev) : null });
   audio.setShotVoice(th.voice || null);
   setCharAura(char, cs && cs.aura);
   if (vm && vm.compile && R0) { try { vm.compile(R0, warmRT()); } catch (e) { console.warn('Kompilasi shader skin gagal:', e.message); } }
+  if (char && char.aura && SCENE && CAM) compileSkinAsync(char.root, CAM, SCENE); // selubung aura: siap sebelum orang ketiga pertama (terjun)
 }
 let RTW = null;
 const warmRT = () => RTW || (RTW = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true }));
