@@ -93,7 +93,7 @@ export function createPlayer(ctx) {
     if (st.lootUI) { closeLoot(true); return; } // klik di luar panel loot = tutup
     if (st.wantLock && !locked()) softLockAt = performance.now();
     if (!locked() && !lockFailed) { ctx.lock(); if (!st.wantLock) return; } // menunggu kunci setelah Esc: klik ini tetap dihitung (menembak)
-    if (!me.alive) { if (e.button === 0 && ctx.specNext) ctx.specNext(1); return; } // menonton rekan: klik = rekan berikutnya
+    if (!me.alive) { if (ctx.specNext && (e.button === 0 || e.button === 2)) ctx.specNext(e.button === 0 ? 1 : -1); return; } // menonton: klik kiri = berikutnya, kanan = sebelumnya
     if (me.down) return; // tumbang: tidak bisa menembak
     if (drv()) { // kendaraan: klik kiri tembak, klik kanan bidik (cabut senjata yang boleh dipakai di kursi ini dulu)
       if ((e.button === 0 || e.button === 2) && vehDraw()) { if (e.button === 0) { st.firing = true; st.trigger = true; } else st.ads = true; }
@@ -122,10 +122,11 @@ export function createPlayer(ctx) {
     if (st.wantLock) { if (locked()) st.wantLock = false; else if (e.code !== 'Escape' && e.code !== 'KeyM' && !st.lootUI && !e.repeat && !(ctx.mapOpen && ctx.mapOpen())) { softLockAt = performance.now(); ctx.lock(); } }
     // Esc saat peta besar (M) terbuka: tutup peta saja — sama seperti panel loot, mouse dikunci lagi setelah Esc dilepas
     if (e.code === 'Escape' && ctx.mapOpen && ctx.mapOpen()) { e.preventDefault(); if (!e.repeat) { ctx.closeMap(); escRelock = true; st.wantLock = true; st.escAt = performance.now(); relockLoop(); } return; }
-    if (!me.alive) { // tersingkir, rekan masih main: Spasi/F/D/→ = rekan berikutnya, A/← = sebelumnya, M = peta
+    if (!me.alive) { // menonton: Spasi/F/D/→ = berikutnya, A/← = sebelumnya, V = kamera ikut/bebas, M = peta
       if (e.repeat || !ctx.specNext) return;
       if (e.code === 'Space' || e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'KeyD' || e.code === 'ArrowRight') { e.preventDefault(); ctx.specNext(1); }
       else if (e.code === 'KeyA' || e.code === 'ArrowLeft') { e.preventDefault(); ctx.specNext(-1); }
+      else if (e.code === 'KeyV') { st.specFree = !st.specFree; hud.flash(st.specFree ? 'Kamera bebas (mouse)' : 'Kamera ikut pandangan'); }
       else if (e.code === 'KeyM') ctx.toggleMap();
       return;
     }
@@ -741,16 +742,26 @@ export function createPlayer(ctx) {
     if (st.shake > 0) { camera.rotation.x += (Math.random() - 0.5) * st.shake * 0.05; camera.rotation.y += (Math.random() - 0.5) * st.shake * 0.05; st.shake = Math.max(0, st.shake - dt * 2.5); }
   }
 
-  // Menonton rekan (pemain sudah tersingkir): kamera orang ketiga mengitari rekan, mouse = lihat sekeliling
+  // Menonton (pemain sudah tersingkir): kamera orang ketiga di atas bahu yang ditonton. Bawaan "ikut": selama mouse diam
+  // ±1,2 dtk kamera berputar pelan ke arah hadap/laju yang ditonton (melihat apa yang ia lihat); V = bebas (mouse saja).
   function specCamera(dt) {
     const t = st.spec, p = t.pos, inVeh = t.state === 'drive', dist = inVeh ? 7.5 : t.state === 'ground' ? 3.6 : 7;
+    if (!st.specFree && ctx.now() - st.lookT > 1.2) {
+      const ty = inVeh && t.vehicle ? t.vehicle.yaw : t.yaw;
+      if (ty === ty) st.yaw += wrap(ty - st.yaw) * (1 - Math.exp(-dt * 2.6));
+      st.pitch += ((inVeh ? -0.2 : -0.13) - st.pitch) * (1 - Math.exp(-dt * 2));
+    }
     aimDir(fwd);
+    right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
+    const side = t.state === 'ground' && !t.down ? 0.55 : 0; // geser ke bahu kanan supaya yang ditonton tidak menutupi tengah layar
     const pivot = tmp.set(p.x, inVeh ? (t.sitY || 0) + 1.6 : p.y + (t.down || t.prone ? 0.8 : 1.65), p.z);
+    tmp2.copy(fwd).multiplyScalar(-dist).addScaledVector(right, side);
+    const len = tmp2.length();
     let d = dist;
-    const tw = col.ray(pivot.x, -pivot.z, pivot.y, -fwd.x, fwd.z, -fwd.y, dist);
-    if (tw < dist) d = Math.max(0.6, tw - 0.3);
+    const tw = col.ray(pivot.x, -pivot.z, pivot.y, tmp2.x / len, -tmp2.z / len, tmp2.y / len, len);
+    if (tw < len) d = Math.max(0.6, (tw - 0.3) * dist / len);
     st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (d < st.camD ? 30 : 5))) : d;
-    camera.position.copy(pivot).addScaledVector(fwd, -st.camD);
+    camera.position.copy(pivot).addScaledVector(fwd, -st.camD).addScaledVector(right, side * st.camD / dist);
     if (camera.position.y < 0.4) camera.position.y = 0.4;
     camera.rotation.set(st.pitch, st.yaw + Math.PI, 0);
   }
