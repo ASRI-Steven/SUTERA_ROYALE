@@ -418,10 +418,11 @@ function start(D, realAssets) {
   function specNext(dir) {
     const L = specAll ? agents : mySquad.members, n = L.length, at = spec ? L.indexOf(spec) : 0;
     spec = null;
-    for (let k = 1; k <= n; k++) { const m = L[((at + dir * k) % n + n) % n]; if (m.alive && !m.isPlayer) { spec = m; break; } }
+    // yang masih di pesawat (posisinya belum ikut pesawat) hanya dipilih kalau tidak ada yang lain
+    for (let pass = 0; pass < 2 && !spec; pass++) for (let k = 1; k <= n; k++) { const m = L[((at + dir * k) % n + n) % n]; if (m.alive && !m.isPlayer && (pass || m.state !== 'plane')) { spec = m; break; } }
     player.spectate(spec);
   }
-  function specTo(a) { if (a && a.alive && !a.isPlayer) { spec = a; player.spectate(a); } else specNext(1); }
+  function specTo(a) { if (a && a.alive && !a.isPlayer && a.state !== 'plane') { spec = a; player.spectate(a); } else specNext(1); }
   const CAUSE = { zone: 'Terjebak di luar zona', drown: 'Tenggelam', crash: 'Kecelakaan kendaraan', bleed: 'Kehabisan darah', blast: 'Terkena ledakan' };
   function eliminated(killer, w, part) {
     specAll = true;
