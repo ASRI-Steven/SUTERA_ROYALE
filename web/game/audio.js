@@ -93,6 +93,13 @@ export function shot(kind, dist = 0, p = 0, muffled = false) {
 export function hit(head) { if (ok()) tone({ f0: head ? 1900 : 1250, f1: head ? 1700 : 1100, dur: 0.07, gain: 0.25, type: 'triangle' }); }
 export function kill() { if (!ok()) return; tone({ f0: 880, f1: 880, dur: 0.12, gain: 0.3, type: 'triangle' }); tone({ t: 0.09, f0: 1320, f1: 1320, dur: 0.2, gain: 0.3, type: 'triangle' }); }
 export function hurt() { if (ok()) { burst({ dur: 0.09, freq: 500, gain: 0.5 }); tone({ f0: 90, f1: 50, dur: 0.12, gain: 0.5 }); } }
+// tinju: ayunan (desis pendek); kena = dentum tumpul
+export function punch(hitOk, dist = 0, p = 0) {
+  if (!ok()) return;
+  const vol = 1 / (1 + dist / 6);
+  burst({ dur: 0.09, freq: 900, gain: 0.16 * vol, type: 'bandpass', q: 0.8, p });
+  if (hitOk) { burst({ t: 0.03, dur: 0.06, freq: 420, gain: 0.5 * vol, type: 'lowpass', p }); tone({ t: 0.03, f0: 150, f1: 60, dur: 0.11, gain: 0.55 * vol, p }); }
+}
 export function click(t = 0) { if (ok()) burst({ t, dur: 0.035, freq: 4200, type: 'bandpass', q: 3, gain: 0.35 }); }
 export function reload(sec) { if (!ok()) return; click(0.05); click(sec * 0.45); click(sec * 0.85); }
 export function pickup() { if (ok()) { tone({ f0: 660, f1: 990, dur: 0.09, gain: 0.18, type: 'triangle' }); } }

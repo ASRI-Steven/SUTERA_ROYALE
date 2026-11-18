@@ -144,6 +144,7 @@ function start(D, realAssets) {
     runOver: (a, dmg, driver, v) => damage(a, dmg, 'run', driver && driver !== a ? driver : null, { def: { short: v.def.short } }),
     explode: (x, y, h, R, maxDmg, attacker, v) => explode(x, y, h, R, maxDmg, attacker, v),
     ejectBot: (b, v) => { vehicles.exit(v, b); bots.ejected(b); },
+    onFlood: () => { hud.message('Mesin mati terendam air', 'Kendaraan tidak bisa dipakai lagi · turun dengan F', 'warn'); audio.beep(true); },
     onBurn: () => { hud.message('Kendaraan terbakar!', 'Turun sekarang (F) sebelum meledak', 'warn'); audio.beep(true); },
   });
   vehicles.spawnAll();
@@ -293,7 +294,11 @@ function start(D, realAssets) {
     if (!t.isPlayer && attacker) bots.hurt(t, attacker, now);
     if (t.reviving) t.reviving = null; // kena tembak: batal memulihkan rekan
     if (t.hp > 0) return;
-    if (t.down) { kill(t, t.downBy || attacker, t.downBy ? t.downW : w, part === 'bleed' || t.downBy ? t.downPart : part, attacker); return; } // kill milik yang melumpuhkan
+    if (t.down) { // kill milik yang menghabisi; yang melumpuhkan dapat bantuan. Tanpa penghabis (kehabisan darah / zona) → milik yang melumpuhkan
+      if (attacker && attacker !== t) kill(t, attacker, w, part, attacker);
+      else kill(t, t.downBy, t.downW, t.downPart, null);
+      return;
+    }
     // regu masih punya anggota yang berdiri → tumbang (bisa dipulihkan); kalau tidak → tersingkir
     const canDown = DOWNS && (t.state === 'ground' || t.state === 'drive') && !t.swim && t.sq.standN > 1;
     if (canDown) knock(t, attacker, w, part); else kill(t, attacker, w, part, attacker);
@@ -379,10 +384,10 @@ function start(D, realAssets) {
     if (t.vehicle) { const v = t.vehicle; vehicles.exit(v, t, true); if (!t.isPlayer) bots.ejected(t); }
     if (attacker && attacker !== t) {
       attacker.kills++;
-      if (attacker.isPlayer && !wasDown) credit(t, w, part); // yang tumbang sudah dihitung saat dilumpuhkan
+      if (attacker.isPlayer && (!wasDown || t.downBy !== attacker)) credit(t, w, part); // yang dilumpuhkan pemain sendiri sudah dihitung saat tumbang
     }
-    // bantuan: pemain ikut melukai (≤ 12 dtk terakhir) atau menghabisi, tapi kill-nya milik rekan/orang lain
-    if (!t.isPlayer && attacker !== me && t.team !== me.team && ((t.hitByMe && now - t.hitByMe < 12) || finisher === me)) stat.assists++;
+    // bantuan: pemain melumpuhkan atau ikut melukai (≤ 12 dtk terakhir), tapi kill-nya milik yang menghabisi
+    if (!t.isPlayer && attacker !== me && t.team !== me.team && ((wasDown && t.downBy === me) || (t.hitByMe && now - t.hitByMe < 12))) stat.assists++;
     aliveCount--;
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
     const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, vestHp: t.vestHp, helmetHp: t.helmetHp, bag: t.bag | 0, fuel: t.fuel | 0 };
@@ -424,7 +429,35 @@ function start(D, realAssets) {
     const vh = vehicles.ray(o, d, hit ? hit.t : tw, shooter);
     return vh ? vh.t : hit ? hit.t : tw;
   }
-  const combat = { fire, damage, probe };
+  // ---------- Tinju (tangan kosong) ----------
+  // Jangkauan 1,9 m dari mata. Kena kalau sinar bidik menyentuh badan; kalau meleset tipis, lawan terdekat di dalam
+  // kerucut ±35° di depan tetap kena (badan). Tembok menghalangi. Rompi/helm tetap meredam lewat damage().
+  const FIST = { def: { short: 'Tinju', name: 'Tinju' } }, FIST_RANGE = 1.9, FIST_DMG = 18;
+  function melee(attacker, origin, dir) {
+    attacker.lastPunch = now;
+    const tw = col.ray(origin.x, -origin.z, origin.y, dir.x, -dir.z, dir.y, FIST_RANGE, rayOut);
+    let hit = hitAgents(attacker, origin, dir, Math.min(tw, FIST_RANGE));
+    if (!hit) {
+      let bd = 1e9;
+      for (const a of agents) {
+        if (a === attacker || !a.alive || a.state !== 'ground' || a.team === attacker.team) continue;
+        const cx = a.pos.x - origin.x, cz = a.pos.z - origin.z, dh = Math.hypot(cx, cz), mid = a.pos.y + (a.prone ? 0.3 : a.crouch ? 0.7 : 1.1);
+        if (dh > FIST_RANGE - 0.2 || dh >= bd || Math.abs(mid - origin.y) > 1.5) continue;
+        const hl = Math.hypot(dir.x, dir.z) || 1;
+        if (dh > 0.3 && (cx * dir.x + cz * dir.z) / (dh * hl) < 0.82) continue;
+        if (!col.los(origin.x, -origin.z, origin.y, a.pos.x, -a.pos.z, mid)) continue;
+        bd = dh; hit = { a, t: dh, part: 'body' };
+      }
+    }
+    const dist = attacker.isPlayer ? 0 : camera.position.distanceTo(origin);
+    if (dist < 40) audio.punch(!!hit, dist, attacker.isPlayer ? 0 : panOf(origin));
+    if (!hit) return null;
+    end.copy(origin).addScaledVector(dir, Math.max(0.3, hit.t));
+    fx.burst(end, 'hit', 5);
+    damage(hit.a, FIST_DMG * (hit.part === 'head' ? 1.5 : hit.part === 'legs' ? 0.85 : 1), hit.part, attacker, FIST);
+    return hit.a;
+  }
+  const combat = { fire, damage, probe, melee };
 
   let player = null;
   const nades = createNades({ scene, col, camera, renderer, fx, particles: createParticles, now: () => now, explode: (x, y, h, R, dmg, attacker) => explode(x, y, h, R, dmg, attacker, null, NADE_HIT) });
@@ -460,7 +493,8 @@ function start(D, realAssets) {
     // pemain menahan F di dekat rekan tumbang: on = sedang memulihkan (kemajuan dihitung squadTick)
     reviveHold(t, on) { if (on && t && t.down && t.alive) { t.reviver = me; me.reviving = t; } else me.reviving = null; },
     specNext: (d) => { if (spec || !me.alive) specNext(d || 1); },
-    throwNade: (a, kind, o, v) => nades.throwNade(a, kind, o, v),
+    throwNade: (a, kind, o, v, cooked) => nades.throwNade(a, kind, o, v, cooked),
+    nadeCook: (left) => nades.cook(left),
     nadeAim: (o, v) => nades.aim(o, v),
     scene, camera, renderer, col, loot, combat, hud, agent: me, inArea, areaCenter: center, vehicles,
     now: () => now,

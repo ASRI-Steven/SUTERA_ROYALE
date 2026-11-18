@@ -55,13 +55,13 @@ export function createNades(ctx) {
     return null;
   }
 
-  function throwNade(owner, kind, pos, vel) {
+  function throwNade(owner, kind, pos, vel, cooked = 0) { // cooked = detik sumbu yang sudah terpakai di tangan
     const def = NADES[kind];
     if (!def) return;
     const mesh = new THREE.Mesh(geos[kind], mat);
     mesh.castShadow = true;
     scene.add(mesh);
-    list.push({ owner, kind, def, p: pos.clone(), v: vel.clone(), t: 0, mesh, spin: new THREE.Vector3(Math.random() * 9 - 4.5, Math.random() * 6, Math.random() * 9 - 4.5), rest: false, cloud: null });
+    list.push({ owner, kind, def, p: pos.clone(), v: vel.clone(), t: cooked, mesh, spin: new THREE.Vector3(Math.random() * 9 - 4.5, Math.random() * 6, Math.random() * 9 - 4.5), rest: false, cloud: null });
     if (camDist(pos)[0] < 25) audio.click(); // bunyi pin dicabut hanya terdengar dekat
   }
 
@@ -146,6 +146,27 @@ export function createNades(ctx) {
     return new THREE.Vector3(dx / d * vh, (th - from.y) / T + 0.5 * G * T, dz / d * vh);
   }
 
+  // hitung mundur sumbu granat pemain: angka kecil yang menempel di granat (layar), merah di detik terakhir
+  const fuseEl = document.createElement('div'), fuseV = new THREE.Vector3();
+  fuseEl.style.cssText = 'position:fixed;left:0;top:0;z-index:40;pointer-events:none;display:none;padding:2px 8px;border-radius:9px;background:rgba(18,16,34,.78);color:#fff;font:700 15px/1.2 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;will-change:transform';
+  document.body.appendChild(fuseEl);
+  let fuseTxt = '', cookLeft = null; // cookLeft: sisa sumbu granat yang sedang ditahan pemain (null = tidak menahan)
+  function setFuse(txt, left) { if (txt !== fuseTxt) { if (fuseTxt === '') fuseEl.style.display = 'block'; fuseTxt = txt; fuseEl.textContent = '\u23F1 ' + txt + ' dtk'; fuseEl.style.color = left < 1.5 ? '#ff6b5e' : '#fff'; } }
+  function drawFuse() {
+    if (cookLeft !== null) { // masih di tangan: angka di bawah bidikan
+      setFuse(Math.max(0, cookLeft).toFixed(1), cookLeft);
+      fuseEl.style.transform = 'translate(' + Math.round(innerWidth / 2) + 'px,' + Math.round(innerHeight * 0.62) + 'px) translate(-50%,-100%)';
+      return;
+    }
+    let n = null;
+    for (const o of list) if (o.kind === 'frag' && o.owner && o.owner.isPlayer && (!n || o.t < n.t)) n = o; // yang terakhir dilempar
+    if (!n) { if (fuseTxt !== '') { fuseTxt = ''; fuseEl.style.display = 'none'; } return; }
+    const left = Math.max(0, n.def.fuse - n.t);
+    setFuse(left.toFixed(1), left);
+    fuseV.copy(n.p); fuseV.y += 0.45; fuseV.project(camera);
+    const behind = fuseV.z > 1, sx = behind ? 0.5 : Math.min(0.94, Math.max(0.06, fuseV.x * 0.5 + 0.5)), sy = behind ? 0.62 : Math.min(0.9, Math.max(0.08, -fuseV.y * 0.5 + 0.5)); // di belakang kamera: tampil di bawah bidikan
+    fuseEl.style.transform = 'translate(' + Math.round(sx * innerWidth) + 'px,' + Math.round(sy * innerHeight) + 'px) translate(-50%,-100%)';
+  }
   function update(dt, now) {
     const h = dt / SUB;
     for (let i = list.length - 1; i >= 0; i--) {
@@ -160,11 +181,12 @@ export function createNades(ctx) {
         if (n.cloud) { n.cloud.x = n.p.x; n.cloud.z = n.p.z; if (now - n.cloud.t0 > n.def.dur + 2) { scene.remove(n.mesh); list.splice(i, 1); } }
       }
     }
+    drawFuse();
     updateClouds(dt, now);
     if (renderer) smoke.uni.scale.value = glow.uni.scale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
     smoke.update(dt);
     glow.update(dt);
   }
 
-  return { throwNade, update, aim, lob, smokeBlocks, boomFx, get active() { return list.length; }, get clouds() { return clouds; } };
+  return { throwNade, update, aim, lob, cook(left) { cookLeft = left; }, smokeBlocks, boomFx, get active() { return list.length; }, get clouds() { return clouds; } };
 }

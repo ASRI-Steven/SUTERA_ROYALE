@@ -37,6 +37,7 @@ export const TYPES = {
 };
 // kursi = tata letak fisik: motor 2 (pengendara + pembonceng), mobil 2 pintu 2, mobil 4 pintu 4, trem = bangkunya
 const SEATS = { lintas: 4, banteng: 4, walet: 2, loop: 12, halilintar: 2, jawara: 2 };
+const FLOOD_D = { bike: 0.5, car: 0.85, bus: 1.2 }; // kedalaman air (m) yang mematikan mesin
 const FUEL_RATE = 0.4, FUEL_BOOST = 2.5; // % bensin per detik saat gas; pengali saat boost (tangki penuh: ±4 menit gas, ±100 dtk boost)
 const NO_INPUT = { throttle: 0, steer: 0, handbrake: true, boost: false };
 // tanpa pengemudi (turun / tewas / hangus): rem penuh dengan cengkeraman ban penuh — berhenti ±1 dtk, lurus, tidak
@@ -687,7 +688,7 @@ export function createVehicles(ctx) {
       L: tpl.length, W: tpl.width, H: tpl.height, cz: tpl.cz, wheelR: tpl.wheelR,
       x, y, yaw, vx: 0, vy: 0, speed: 0, steerA: 0, steerN: 0, hp: T.hp, fuel: 35 + Math.random() * 65, alive: true, // fuel: bensin 0–100 % burnT: 0, wreck: false, wreckT: 0,
       driver: null, occ: tpl.seats.map(() => null), lastDriver: null, claim: null, killer: null, input: { ...NO_INPUT }, sleep: true, // occ[0] = driver
-      pitch: 0, roll: 0, leanA: 0, accel: 0, latAcc: 0, skid: 0, wheelRot: 0, lastCrash: 0, smokeT: 0, fireT: 0, rpm: 0, braking: false, ejectAt: 0,
+      pitch: 0, roll: 0, leanA: 0, accel: 0, latAcc: 0, skid: 0, wheelRot: 0, lastCrash: 0, smokeT: 0, fireT: 0, rpm: 0, braking: false, ejectAt: 0, wet: 0, sinkY: 0, floodT: 0, flooded: false,
     };
     v.circles = circlesOf(v);
     frame(v);
@@ -778,9 +779,11 @@ export function createVehicles(ctx) {
   }
   function collideWorld(v, x0, y0, now) {
     let px = 0, py = 0, kick = 0;
+    // air: kendaraan yang disetir pemain (atau yang sudah berada di air) boleh masuk; yang disetir bot tetap tertahan di tepi
+    const wetOk = v.wet > 0 || !!(v.driver && v.driver.isPlayer);
     for (let it = 0; it < 2; it++) {
       for (const [off, r] of v.circles) {
-        const cx = v.x + v.fx * off, cy = v.y + v.fy * off, p = col.resolve(cx, cy, r);
+        const cx = v.x + v.fx * off, cy = v.y + v.fy * off, p = col.resolve(cx, cy, r, wetOk);
         const dx = p.x - cx, dy = p.y - cy;
         if (dx * dx + dy * dy > 1e-10) { v.x += dx; v.y += dy; px += dx; py += dy; kick += off * (v.fx * dy - v.fy * dx); }
       }
@@ -809,9 +812,18 @@ export function createVehicles(ctx) {
     const onRoad = roadAt(v.x, v.y), boost = inp.boost && inp.throttle > 0;
     // Bensin (hanya dihitung saat pemain yang menyetir; bot tidak pernah kehabisan): gas menghabiskan FUEL_RATE %/dtk,
     // boost FUEL_BOOST× lebih boros. Tangki kosong → mesin mati (tidak bisa menambah laju; rem & setir tetap jalan).
-    const metered = !!(v.driver && v.driver.isPlayer), eng = metered && v.fuel <= 0 ? 0 : 1;
+    // Air: makin dalam makin berat & lambat. Terendam melewati batas (motor 0,5 m, mobil 0,85 m, bus 1,2 m) selama
+    // ±0,7 dtk → mesin mati permanen (seperti kehabisan bensin, tidak bisa diisi/dinyalakan lagi).
+    const wd = onRoad ? 0 : col.waterDepth(v.x, v.y);
+    if (wd > 0 && !(v.wet > 0) && spdAbs > 3) { const dC = camera.position.distanceTo(tmp.set(v.x, 0, -v.y)); if (dC < 60) audio.splash(clamp(spdAbs / 18, 0.2, 0.8) * (1 - dC / 60)); }
+    v.wet = wd;
+    if (!v.flooded && v.alive) {
+      v.floodT = wd > FLOOD_D[T.kind] ? v.floodT + dt : 0;
+      if (v.floodT > 0.7) { v.flooded = true; if (v.occ.some((a) => a && a.isPlayer) && ctx.onFlood) ctx.onFlood(v); }
+    }
+    const metered = !!(v.driver && v.driver.isPlayer), eng = v.flooded || (metered && v.fuel <= 0) ? 0 : 1;
     if (metered && eng && Math.abs(inp.throttle) > 0.05) v.fuel = Math.max(0, v.fuel - dt * FUEL_RATE * (boost ? FUEL_BOOST : 1));
-    const top = T.maxSpeed * (onRoad ? 1 : T.offroad) * (boost ? 1.12 : 1);
+    const top = T.maxSpeed * (onRoad ? 1 : T.offroad) * (boost ? 1.12 : 1) * (wd > 0 ? Math.max(0.22, 1 - wd / 1.3) : 1);
     let a = 0;
     v.braking = false;
     if (inp.throttle > 0.05) {
@@ -823,7 +835,7 @@ export function createVehicles(ctx) {
     }
     vf += a * dt;
     if (inp.park) { vf -= Math.sign(vf) * Math.min(Math.abs(vf), Math.max(T.brake, 12) * dt); if (Math.abs(vf) > 1) v.braking = true; }
-    const drag = (onRoad ? 0.3 : 1.5) + 0.0006 * vf * vf + (Math.abs(inp.throttle) > 0.05 ? 0 : onRoad ? 0.5 : 1.3);
+    const drag = (onRoad ? 0.3 : 1.5) + 0.0006 * vf * vf + (Math.abs(inp.throttle) > 0.05 ? 0 : onRoad ? 0.5 : 1.3) + (wd > 0 ? 2 + wd * 7 : 0);
     vf -= Math.sign(vf) * Math.min(Math.abs(vf), drag * dt);
     if (vf > top) vf -= Math.min(vf - top, 5 * dt);
     if (inp.handbrake) { vf -= Math.sign(vf) * Math.min(Math.abs(vf), T.brake * 0.5 * dt); if (spdAbs > 2) v.braking = true; }
@@ -841,6 +853,14 @@ export function createVehicles(ctx) {
     collideWorld(v, x0, y0, now);
     v.onRoad = onRoad;
     if (!v.driver && v.burnT <= 0 && Math.hypot(v.vx, v.vy) < 0.05) { v.sleep = true; v.vx = v.vy = v.speed = 0; } else v.sleep = false;
+    if (wd > 0 && spdAbs > 1.5) { // cipratan air
+      v.smokeT -= dt;
+      if (v.smokeT <= 0) {
+        v.smokeT = 0.05;
+        const side = rnd(-1, 1) < 0 ? -1 : 1;
+        smoke.emit(v.x + v.fx * rnd(-v.L * 0.4, v.L * 0.4) + v.rx * side * v.W * 0.55, 0.15, -(v.y + v.fy * rnd(-v.L * 0.4, v.L * 0.4) + v.ry * side * v.W * 0.55), v.rx * side * rnd(0.5, 2), rnd(1, 2.5 + spdAbs * 0.15), -v.ry * side * rnd(0.5, 2), 0.5, 1.8, rnd(0.5, 0.9), 0.82, 0.9, 0.96, 0.4);
+      }
+    } else
     // debu di luar jalan / asap ban saat selip
     if ((!onRoad && spdAbs > 6) || v.skid > 0.2) {
       v.smokeT -= dt;
@@ -942,7 +962,8 @@ export function createVehicles(ctx) {
 
   // ---------- Tampilan per frame ----------
   function place(v, dt, now) {
-    v.root.position.set(v.x, 0, -v.y);
+    v.sinkY += (Math.min(v.wet || 0, 1.7) - v.sinkY) * (dt ? 1 - Math.exp(-dt * 3) : 1); // roda di dasar air (dibatasi 1,7 m: atap masih tampak)
+    v.root.position.set(v.x, -v.sinkY, -v.y);
     v.root.rotation.y = v.yaw;
     const k = 1 - Math.exp(-dt * 6);
     if (v.def.kind === 'bike') {
@@ -1128,7 +1149,9 @@ export function createVehicles(ctx) {
       // urutan: pintu kursi → pintu seberang → belakang (berlawanan arah gerak) → pintu lebih jauh; tidak pernah di depan
       const spot = [at3(near), at3(far), new THREE.Vector3(0, 0, v.cz - dirS * (v.L / 2 + 1.1)), at3(near, 0.9), at3(far, 0.9)];
       const safe = (x, y) => {
-        if (!inArea(x, y) || col.blocked(x, y, 0.36)) return false;
+        if (!inArea(x, y)) return false;
+        if (a.isPlayer && v.wet > 0 && col.waterAt(x, y)) { const q = col.resolve(x, y, 0.36, true); if (Math.hypot(q.x - x, q.y - y) > 0.02) return false; } // pemain turun ke air (berenang / mengarungi)
+        else if (col.blocked(x, y, 0.36)) return false;
         if (list.some((o) => distTo(o, x, y) < (o === v ? 0.65 : 0.5))) return false; // di luar badan kendaraan (dengan sela)
         if (moving) { // bukan di lintasan kendaraan yang masih bergerak
           const lf = (x - v.x) * v.fx + (y - v.y) * v.fy - v.cz, ll = (x - v.x) * v.rx + (y - v.y) * v.ry;
