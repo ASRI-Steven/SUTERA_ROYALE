@@ -675,7 +675,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const AX_L = new THREE.Vector3(-0.328, -0.429, 0.842).normalize(); // fp_hand_l (sumbu utama lengan baju)
   const AX_R = new THREE.Vector3(0.239, -0.406, 0.882).normalize(); // fp_hand_r
   const AX_N = new THREE.Vector3(0.325, -0.849, 0.416).normalize(); // fp_hand_nade
-  const AXL = AX_L.toArray(), AXR = AX_R.toArray(), AXN = AX_N.toArray();
+  const AXL = AX_L.toArray(), AXR = AX_R.toArray();
   const _ad = new THREE.Vector3(), _aq = new THREE.Quaternion(), _aq2 = new THREE.Quaternion(), _fz = new THREE.Vector3();
   function aimArm(o, a, pos, dir, roll, qInv) {
     o.position.copy(pos);
@@ -706,6 +706,21 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const th = new THREE.Mesh(vwxOf(new THREE.CapsuleGeometry(0.009, 0.035, 3, 8)), glove); th.rotation.set(Math.PI / 2, 0, 0.8); th.position.set(0.045, 0.004, -0.02); g.add(th);
     const cf = new THREE.Mesh(vwxOf(new THREE.CylinderGeometry(0.036, 0.036, 0.02, 12)), cuff); cf.rotation.x = Math.PI / 2; cf.position.z = 0.055; g.add(cf);
     return g;
+  }
+  // Lengan bawah kaku ±0,37 m: ujung lengan baju tidak boleh terlihat di layar (tampak seperti lengan terpotong). Kalau
+  // ujungnya masuk layar (mis. tangan naik saat isi ulang), lengan bawah diputar di telapak ke arah siku di bawah kamera,
+  // makin kuat makin dalam ujungnya masuk. parent = grup senjata (matriks lokalnya = ruang kamera) atau null (ruang kamera).
+  const SLV = 0.37, _kh = new THREE.Vector3(), _kd = new THREE.Vector3(), _ke = new THREE.Vector3(), _kq = new THREE.Quaternion(), _kq2 = new THREE.Quaternion();
+  function keepSleeve(o, a, parent) {
+    _kh.copy(o.position); if (parent) _kh.applyMatrix4(parent.matrix);
+    _kd.copy(a).applyQuaternion(o.quaternion); if (parent) _kd.applyQuaternion(parent.quaternion);
+    const ez = Math.min(-0.03, _kh.z + _kd.z * SLV), ny = (_kh.y + _kd.y * SLV) / (-0.51 * ez), nx = Math.abs(_kh.x + _kd.x * SLV) / (-0.92 * ez);
+    const w = Math.min(clamp01((ny + 1.14) / 0.14), clamp01((1.14 - nx) / 0.14)); // ujung di dalam layar → koreksi penuh, di tepi → halus
+    if (w <= 0) return;
+    _ke.set(_kh.x * 0.5, -0.62, -0.08).sub(_kh).normalize().lerp(_kd, 1 - w).normalize(); // arah aman: siku di bawah kamera
+    _kq.setFromUnitVectors(_kd, _ke);
+    if (parent) { _kq2.copy(parent.quaternion).invert(); o.quaternion.premultiply(parent.quaternion).premultiply(_kq).premultiply(_kq2); }
+    else o.quaternion.premultiply(_kq);
   }
   // salinan potongan tangan+lengan GLB (material orang pertama, ikut warna skin karakter) atau cadangan prosedural
   function armPiece(name, a) {
@@ -1312,6 +1327,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       curve(u, H.Rt, tg);
       aimArm2(hArmR, AX_R, hp2, fd2, GRIPY, tg);
     }
+    keepSleeve(hArmL, AX_L, null); keepSleeve(hArmR, AX_R, null);
     return gunDown;
   }
   const KIT_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.6, 0.35, -0.1));
@@ -1354,8 +1370,9 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       nP.y += Math.sin(st.t * 3) * 0.003;
       nF.set(0.45, -0.75, 0.5).lerp(tmp.set(0.55, -0.45, 0.7), wind);
       aimArm(nArm, AX_N, nP, nF, -0.3 - 0.3 * wind);
+      keepSleeve(nArm, AX_N, null);
       nArmL.visible = N.t < 0.72 && !N.quick;
-      if (nArmL.visible) { curve(N.t, NK.pinL, hp2); aimArm(nArmL, AX_L, hp2, tmp.set(-0.55, -0.55, 0.62), 1.3); }
+      if (nArmL.visible) { curve(N.t, NK.pinL, hp2); aimArm(nArmL, AX_L, hp2, tmp.set(-0.55, -0.55, 0.62), 1.3); keepSleeve(nArmL, AX_L, null); }
       pinRing.visible = N.t > 0.44 && N.t < 0.72;
       pinRing.position.set(0.0, 0.03, -0.03);
       for (const nk in nadeMesh) nadeMesh[nk].visible = nk === N.kind;
@@ -1368,6 +1385,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       nP.lerp(nHold, 1 - ease(seg(t, 0, 0.1)));
       nF.set(0.55, -0.45, 0.7).lerp(tmp.set(0.2, -0.85, 0.5), ease(seg(t, 0.06, 0.3)));
       aimArm(nArm, AX_N, nP, nF, -0.6 + 1.2 * ease(seg(t, 0.04, 0.2)));
+      keepSleeve(nArm, AX_N, null);
       nArmL.visible = false; pinRing.visible = false;
       for (const nk in nadeMesh) nadeMesh[nk].visible = false; // granat sudah di dunia
       if (t > 0.5) { st.nade = null; nadeRig.visible = false; }
@@ -1566,6 +1584,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         if (aPos.x || aPos.y || aPos.z || aRot.x || aRot.y || aRot.z) { mBase.multiply(mAct.compose(aPos, qAct, ONE)); mBase.decompose(G.g.position, G.g.quaternion, _v3); }
         else { G.g.position.copy(pBase); G.g.quaternion.copy(qBase); }
         G.g.updateMatrix();
+        if (rA || st.inspW > 0 || st.boltT) { // tangan beraksi: ujung lengan tetap di luar layar
+          if (G.armL) keepSleeve(G.handL, AX_L, G.g);
+          if (G.armR) { if (!st.boltT && !(rA && rA.K.ev.bolt)) G.handR.quaternion.identity(); keepSleeve(G.handR, AX_R, G.g); } // tangan kanan diam di pegangan: mulai dari pose asli tiap frame
+        }
         G.g.visible = low < 0.98;
         if (!rA) { // pompa shotgun mundur-maju setelah menembak (tangan kiri ikut)
           if (G.pump && G.pumpZ0 !== undefined && st.pumpT !== undefined && st.pumpT < 0.6) {

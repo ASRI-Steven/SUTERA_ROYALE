@@ -156,7 +156,7 @@ const k = (r) => 1 - Math.exp(-_kdt * r);
 // isi ulang (IK tangan kiri): penyangga → lubang magasin (pegang) → magasin ditarik → kantong rompi → di bawah lubang →
 // masuk → tuas kokang → penyangga. Waktu kunci (0..1); titik dihitung di rl3Point (ruang senjata, kecuali kantong = dada)
 const RL3_T = [0, 0.12, 0.22, 0.38, 0.52, 0.6, 0.72, 0.86];
-const _ra = new THREE.Vector3(), _rb = new THREE.Vector3(), _rc = new THREE.Vector3();
+const _ra = new THREE.Vector3(), _rb = new THREE.Vector3();
 function rl3Point(i, G, pis, gun, out) {
   const g0 = G[0], g1 = G[1], mz = pis ? g0[2] : (g0[2] + g1[2]) * 0.5 - 0.02, my = pis ? g0[1] - 0.07 : g0[1] - 0.03;
   if (i === 3) return out.set(0.1, 0.08, 0.2); // kantong rompi kiri (ruang dada)
