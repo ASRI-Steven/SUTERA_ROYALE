@@ -539,9 +539,14 @@ export function createBots(ctx, n = 50) {
     if (!a.route.length) a.route = null;
     if (L.H) {
       // tangga hanya dimulai dari ujungnya (kaki tangga / bordes) di lantai yang benar; kalau potongan sebelumnya gagal
-      // sampai ke situ, seluruh rute batal (dulu bot langsung "menaiki tangga" dari luar rumah dan menabrak dinding)
-      const S = L.H.up.stair, st = L.dir > 0 ? S.ap : S.land, end = L.dir > 0 ? S.land : S.ap, x = b.pos.x, y = -b.pos.z;
-      if (stairOf(x, y, b.pos.y) !== L.H && (Math.hypot(st[0] - x, st[1] - y) > 1.8 || Math.abs(b.pos.y - (L.dir > 0 ? 0 : L.H.up.floor)) > 0.8)) { abandon(b, ctx.now()); return; }
+      // sampai ke situ, seluruh rute batal (dulu bot langsung "menaiki tangga" dari luar rumah dan menabrak dinding).
+      // Jalur grid bisa berhenti 1–2 m dari ujung tangga (ujungnya terlalu dekat pagar lubang): sisa jarak ditempuh lurus dulu.
+      const S = L.H.up.stair, st = L.dir > 0 ? S.ap : S.land, end = L.dir > 0 ? S.land : S.ap, x = b.pos.x, y = -b.pos.z, lv = L.dir > 0 ? 0 : L.H.up.floor;
+      if (stairOf(x, y, b.pos.y) !== L.H) {
+        const ds = Math.hypot(st[0] - x, st[1] - y);
+        if (ds > 3 || Math.abs(b.pos.y - lv) > 0.8) { abandon(b, ctx.now()); return; }
+        if (ds > 0.8 && !L.near) { L.near = true; (a.route ||= []).unshift(L); a.goal = [st[0], st[1]]; a.lv = lv; a.spd = Math.min(a.routeSpd, 4.4); a.nav = { kind: 'direct' }; return; }
+      }
       a.goal = [end[0], end[1]]; a.spd = Math.min(a.routeSpd, 4.4); a.nav = { kind: 'stair', S, dir: L.dir };
     } else goLevel(b, L.x, L.y, a.routeSpd, L.lv, L.nd);
   }
@@ -560,10 +565,14 @@ export function createBots(ctx, n = 50) {
       if (pts) { a.nav = { kind: 'local', pts, i: 0, nc: 0 }; return; }
       if (!lv && !nd && viaDoor(b, x, y, spd)) return;
     }
+    // di dalam gedung & tujuan jauh: keluar lewat pintunya dulu (dari dalam aula besar simpul jalan tidak terjangkau grid)
+    if (!lv && !nd && d >= 115 && col.inBuilding(px, py) >= 0 && viaDoor(b, x, y, spd, true)) return;
     if (!lv && d > 90 && ctx.now() < a.hopUntil && hop(b, x, y, d, spd)) return;
     let p = null;
     if (!lv && d > 40) p = G.route(px, py, x, y, ctx.now(), (nx, ny) => nav.walkable(px, py, nx, ny));
-    if (p && p.length > 1) { a.nav = { kind: 'road', path: p, pi: 0, nc: 0 }; roadEntry(b); } else a.nav = { kind: 'direct' };
+    if (p && p.length > 1) { a.nav = { kind: 'road', path: p, pi: 0, nc: 0 }; roadEntry(b); }
+    else if (!lv && d > 90 && hop(b, x, y, d, spd)) return; // tanpa rute jalan: bertahap lewat grid, bukan lurus menabrak gedung
+    else a.nav = { kind: 'direct' };
   }
   // jaringan jalan di sekitar sini bermasalah (macet berulang di ruasnya): maju bertahap lewat grid lokal — titik antara
   // ±80 m searah tujuan (sedikit dibelokkan kalau perlu), sisa perjalanan jadi potongan rute berikutnya
@@ -587,10 +596,11 @@ export function createBots(ctx, n = 50) {
   }
   // jalur lokal gagal (jendela A* terbatas: pintu aula besar di luar jendela) dan tujuan / bot ada di dalam gedung yang bisa
   // dimasuki → rute lewat pintu terdekat: titik 1,3 m di luar pintu → 1,3 m di dalam (atau sebaliknya) → tujuan
-  function viaDoor(b, x, y, spd) {
+  // own = keluar dulu dari gedung tempat bot berada (bukan masuk ke gedung tujuan)
+  function viaDoor(b, x, y, spd, own = false) {
     if (!homes) return false;
     const a = b.ai, px = b.pos.x, py = -b.pos.z, it = col.inBuilding(x, y), ib = col.inBuilding(px, py);
-    const H = (it >= 0 && it !== ib && homes.get(it)) || (ib >= 0 && ib !== it && homes.get(ib)) || null;
+    const H = own ? (ib >= 0 && ib !== it && homes.get(ib)) || null : (it >= 0 && it !== ib && homes.get(it)) || (ib >= 0 && ib !== it && homes.get(ib)) || null;
     if (!H || !H.doors || !H.doors.length) return false;
     const inside = H.i === ib;
     let best = null, bd = Infinity;
@@ -603,6 +613,10 @@ export function createBots(ctx, n = 50) {
     goLevel(b, best.x + nx * s, best.y + ny * s, spd, 0, true);
     return true;
   }
+  const nearSeg = (x, y, i, j, r) => { // titik (x, y) ≤ r m dari ruas jalan simpul i–j?
+    const ax = G.X[i], ay = G.Y[i], dx = G.X[j] - ax, dy = G.Y[j] - ay, L = dx * dx + dy * dy, t = L > 0 ? clamp(((x - ax) * dx + (y - ay) * dy) / L, 0, 1) : 0;
+    return Math.hypot(ax + dx * t - x, ay + dy * t - y) < r;
+  };
   // simpul jalan pertama tidak terlihat lurus (bot di dalam rumah / di balik pagar): ke sana dulu lewat grid lokal
   function roadEntry(b) {
     const a = b.ai, N = a.nav, x = b.pos.x, y = -b.pos.z, i = N.path[N.pi], tx = G.X[i], ty = G.Y[i];
@@ -620,7 +634,7 @@ export function createBots(ctx, n = 50) {
       const j = Math.min(N.pi + 1, N.path.length - 1), i = N.path[j];
       if (Math.hypot(G.X[i] - x, G.Y[i] - y) > 120) return false;
       const pts = nav.path(x, y, G.X[i], G.Y[i], 6000);
-      if (!pts) { G.markBad(N.path[N.pi], i, ctx.now() + 120); return false; }
+      if (!pts) { if (nearSeg(x, y, N.path[N.pi], i, 14)) G.markBad(N.path[N.pi], i, ctx.now() + 120); return false; }
       N.pi = j; // simpul yang bermasalah dilewati
       a.nav = { kind: 'local', pts, i: 0, nc: 0, then: N };
       return true;
@@ -775,7 +789,7 @@ export function createBots(ctx, n = 50) {
     a.wdAt = now; a.stuckN = 0; a.stuckT = 0; a.anW = 0;
     // macet di jaringan jalan: ruas yang sedang dilalui ditandai buruk (semua bot menghindarinya), macet berulang → jalan bertahap
     const R = a.nav && (a.nav.kind === 'road' ? a.nav : a.nav.then);
-    if (R && R.pi > 0) G.markBad(R.path[R.pi - 1], R.path[Math.min(R.pi, R.path.length - 1)], now + 120);
+    if (R && R.pi > 0) { const i = R.path[R.pi - 1], j = R.path[Math.min(R.pi, R.path.length - 1)]; if (nearSeg(b.pos.x, -b.pos.z, i, j, 14)) G.markBad(i, j, now + 120); } // hanya kalau bot memang sedang di ruas itu
     if (R && a.wdN >= 2) a.hopUntil = now + 30;
     abandon(b, now);
     // lepas diri: kembali ke titik bebas terakhir yang pernah diinjak (jejak, pasti terjangkau), atau titik bebas di salah satu
