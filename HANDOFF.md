@@ -1097,7 +1097,35 @@ Permintaan Steven: skin senjata dibikin keren, suara tembakan berubah sesuai ski
 - **Ukur (headless, GPU dipakai bersama 5 Chrome lain)**: pass view-model 2268×1350, kueri waktu GPU diselang-seling pabrik/skin, rata-rata 3 terkecil dari 24: selisih skin −0,22…+0,30 ms, rata-rata +0,06 ms (derau ±0,15). Tidak ada program shader baru setelah pertandingan mulai selain satu milik peti (lambert, sudah ada sebelumnya). Partikel kill: perkiraan isi piksel 0,1–0,3 ms hanya saat 5 kill serentak.
 - **Belum**: rekan regu bot belum memakai skin di pertandingan (bots.js), skin per jenis senjata (kini satu skin untuk semua senjata), aura hanya orang ketiga pemain & lobi.
 
-## 30. Animasi orang pertama & ketiga dirombak (18 Nov 2026, agen `anim`)
+## 30. Gedung, menonton, perbaikan tampilan (18 Nov 2026, integrator + agen `world`)
+
+Permintaan Steven (18 Nov): gedung masih bug (tembok seperti tidak ter-render penuh), lompat dari lantai 2 ke kanopi tembus, perbaiki objek ber-collision, mode menonton setelah mati, bot sering diam, objek lingkungan lebih banyak & realistis (contoh tower pemancar), semua gedung bisa dimasuki, skin (§29), animasi reload/obat cacat.
+
+Kerja di branch lokal **`feat/royale-v2`** (belum di-push). Agen paralel bekerja di git worktree `.wt/<nama>` (branch `wip/<nama>`, `.wt/` di `.git/info/exclude`) lalu digabung ke `feat/royale-v2`. Alat uji di `.wt/_tools` (README di sana: `serve.mjs` menyuntik `window.__G`/`__LOGS` saat menyajikan, `cdpd.mjs` satu Chrome headless Metal yang halamannya tetap fokus, `cdp` klien, `setup.js` → `window.__T` kamera bebas & mode kebal). Tidak ada kait uji di `web/`.
+
+### 30.1 Kanopi & API rintangan (`map/collide.js`)
+- Kanopi teras, kanopi ruko & kanopi pintu mal kini punya `floor` (atapnya bisa dipijak): lompat dari jendela lantai 2 mendarat di atap teras (2,82 m). Uji: `vaultSpot` dari kamar atas rumah #14 → y 3,3 → 2,82.
+- `col.addObstacles(list)`: rintangan dari modul lain — poligon `{pts}`, lingkaran `{x,y,r}` (segi-8), kotak `{x,y,w,d,rot}`; `h`, `z0`, `floor`. Indeks gedung −3. Panggil sebelum bot bernavigasi (sel nav di-cache).
+
+### 30.2 Mode menonton (`main.js`, `player.js`, `hud.js`, `royale.css`, `royale.html`)
+- Regu pemain habis (dan masih > 1 regu lain) → `eliminated()`: ringkasan & hadiah langsung (`summary()` sekali per pertandingan), kartu **Tersingkir** (`hud.death(info, onWatch, onLobby)`: peringkat, penyingkir + senjata atau sebab — zona/tenggelam/kecelakaan/kehabisan darah/ledakan, kill, kerusakan, lama bertahan), tombol Tonton pertandingan / Kembali ke lobi. Kartu terbuka tidak dianggap jeda (`hud.deathOpen()` di `pointerlockchange`).
+- Menonton (`specAll`): semua yang masih hidup, mulai dari penyingkir; yang ditonton tersingkir → kamera pindah ke penyingkirnya (`specTo`); yang masih di pesawat hanya dipilih kalau tidak ada yang lain. Bilah bawah: nama, regu/kill/senjata/keadaan (`specSub`), darah.
+- Kontrol: Spasi/F/D/→/klik kiri berikutnya, A/←/klik kanan sebelumnya, V kamera ikut pandangan ↔ bebas (`st.specFree`; ikut = kamera berputar ke arah hadap yang ditonton bila mouse diam 1,2 dtk, di atas bahu kanan), M peta, Esc → menu jeda dengan tombol **Kembali ke lobi** (`#lobbyBtn`, hanya saat menonton).
+- Pertandingan selesai saat menonton → "Pertandingan selesai · Juara: regu X" lalu layar akhir (3,2 dtk). `finish(win, quick)`: quick = dari kartu/menu (langsung).
+
+### 30.3 Gedung & collision (agen `world`, `map/world.js`, `interiors.js`, `collide.js`, `player.js`, `loot.js`)
+- **Tembok bolong yang ditemukan & diperbaiki:** (1) celah tembus ke luar di pojok cekung — 373 gedung / 737 pojok (sisi dalam dinding & strip collider kini bertemu di pojok, `e.x0/e.x1` di `edgesOf`); (2) ±100 pintu belakang di sisi buta tampak tembok dari luar tetapi terbuka dari dalam (shader kini menggambar pintunya, hanya jendela yang ditiadakan); (3) bangunan jenis 5 (atap OSM) dulu prisma putih padat tanpa collision — kini kanopi pelat bertiang (tiang padat, pelat menahan peluru, atasnya bisa dipijak; `D.canopy`), #5513 (129,9 m) jadi menara kaca (jenis 5 > 12 m → 2 di `buildWorld`); (4) kamera orang ketiga dekat dinding/pagar tangga (jarak min 0,12 m, karakter disembunyikan < 0,4 m); (5) collider tangga 6 irisan (dulu satu kotak 3,3 m menahan peluru di udara kosong); (6) menara di atas podium. Penyisiran 5.799 gedung: tanpa exception saat membangun interior.
+- **Semua gedung bisa dimasuki:** 5.799/5.799 gedung tertutup (3 sisanya kanopi terbuka). Rumah besar/aneh dibagi banyak ruang (ambang 1,6 m), pintu cadangan bertahap sampai 1 m; jenis 0 > 1.500 m² = aula. **32 menara/jenis 3**: lobi (pintu kaca + kanopi, resepsionis, kolom, sofa, tanaman, inti lift 2 pintu) dan **lift**: F di pintu lift → layar meredup "▲ ATAP" → atap (dek + parapet 0,9 m: berdiri/jongkok bisa menembak, tiarap = perlindungan; penthouse + pintu lift, tandon, unit AC, helipad di #839); F lagi turun. `col.lifts`, `liftAt`, `roofAt`; `D.roofs`. Parasut bisa mendarat di atap/kanopi/penthouse. Loot di kanopi, lobi, 153 di atap (`claim = {roof:true}` → bot tidak mengincarnya).
+- **Collision:** batang pohon menahan peluru & pandangan (silinder per sel; tinggi 3,2/8,5/5 m; tajuk tetap tembus; `out.b = −4`), kursi meja makan, lemari dapur atas, atap kios, parapet/penthouse/AC/tandon, daun pintu kaca lobi. Pagar jembatan disamakan dengan `bridges()` (data sekarang tanpa jembatan).
+- **Interior:** tetap dibangun malas ≤ 85 m, kini dengan anggaran 1,5 ms/frame; frame > 4 ms karena interior 67 → 6–22 (3 rute × 2). Biaya frame setara (≤ +0,2 ms CPU, draw call +6…+14 dekat mal/menara).
+- **Belum:** dinding lobi padat dari dalam (kaca tidak tembus pandang), satu tata letak lobi untuk semua, bot tidak memakai lift, tanpa kerusakan jatuh.
+
+### 30.4 Perbaikan tampilan lain (integrator)
+- **Rumput & daun putih di grafik Hemat** (bug lama, ada sejak `60847a1`): shader daun (`realism.js foliageMaterial`) menulis alfa 0,25 sebagai topeng AO; `R.uPost` tidak pernah diubah, jadi tanpa post-processing alfa itu tertulis ke kanvas dan tembus ke latar halaman. Kini `main.js` frame(): `R.uPost.value = postOn ? 1 : 0`.
+- **Efek kill dari jarak sangat dekat menutup layar** (sprite sampai 900 px): `killfx.js` VS memudarkan partikel < ±1,5 m dari kamera atau > 30–70 % tinggi layar.
+- **Eksposur di atap gedung rendah** (< 9 m) dulu dianggap dalam gedung: kini dikecualikan bila `col.roofAt(...) > 0`.
+
+## 31. Animasi orang pertama & ketiga dirombak (18 Nov 2026, agen `anim`)
 
 Keluhan Steven: "animasi beberapa diperbaikin kek reload, pake medkit dll, keliatan cacadnya; animasi yang senjata itu juga termasuk reload". Audit filmstrip (waktu virtual, 10–16 frame per aksi) menemukan: lengan kiri (potongan GLB tangan+lengan kaku) dipindah utuh → tangan melayang tanpa lengan / lengan baju menutupi layar; tiap kunci animasi berhenti (smoothstep per segmen); magasin hanya bergeser (tidak ikut tangan berputar); shotgun memasukkan selongsong 11 cm di bawah lubang isi; speedloader ke DEPAN silinder; bunyi isi ulang di 5/45/85 % durasi (tidak sesuai animasi); batal/ganti aksi meloncat; P3K & minuman: tangan datar kaku, layar kosong ±0,7 dtk, tutup kaleng menghadap kamera, senjata naik + dip kedua setelah selesai; granat orang ketiga tidak punya pose; periksa senjata memutar popor melintasi tengah layar.
 

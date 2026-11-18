@@ -928,7 +928,9 @@ function start(D, realAssets) {
       // mata menyesuaikan: di dalam gedung eksposur naik pelan-pelan
       let expT = 1, shade = 1;
       if (phase === 'play' && !under) {
-        if (col.inBuilding(camera.position.x, -camera.position.z) >= 0 && camera.position.y < 9) { expT = 1.7; shade = 0.12; } // di dalam: mata menyesuaikan (matahari kini masuk lewat jendela, tidak perlu setinggi dulu)
+        // di dalam: mata menyesuaikan (matahari kini masuk lewat jendela, tidak perlu setinggi dulu); berdiri di atap terbuka
+        // gedung rendah (< 9 m, di atas tapaknya) tetap dianggap di luar
+        if (camera.position.y < 9 && col.inBuilding(camera.position.x, -camera.position.z) >= 0 && !(col.roofAt(camera.position.x, -camera.position.z, camera.position.y) > 0)) { expT = 1.7; shade = 0.12; }
         else if (view.fp && col.ray(camera.position.x, -camera.position.z, camera.position.y, sunDir.x, -sunDir.z, sunDir.y, 300) < 300) shade = 0.12; // berdiri di bayangan
       }
       exposure += (expT - exposure) * (1 - Math.exp(-dt * 1.6));
