@@ -943,17 +943,19 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       } else { rot.push(kP(X.seat + 0.06, T)); pos.push(kP(X.seat + 0.06, Sh)); }
     } else {
       // masih ada peluru: magasin lama dicabut & disimpan, magasin baru masuk, ditepuk; tanpa kokang
-      const g0 = X.tin - 0.02, sT = X.seat + 0.08;
-      hand = [kP(0, R), kP(g0 - 0.05, vAdd(MG, -0.025, -0.06, 0.05)), kP(g0, MG, 1), kP(g0 + 0.04, vAdd(MG, 0, -0.012, 0), 1), kP(g0 + 0.1, vAdd(MG, -0.01, -0.13, 0.03)), kP(X.po + 0.1, PO, 1), kP(X.poE + 0.1, PO, 1), kP(X.pre + 0.04, vAdd(PRE, -0.03, -0.09, 0.05)), kP(X.pre + 0.08, PRE, 1), kP(sT, MG, 1), kP(sT + 0.035, vAdd(MG, -0.008, -0.035, 0.02)), kP(sT + 0.06, vAdd(MG, 0, -0.008, 0.004), 1), kP(sT + 0.09, vAdd(MG, -0.015, -0.05, 0.03))];
-      fdir = [kP(0, AXL), kP(g0 - 0.05, FD.mag), kP(g0 + 0.1, FD.mag), kP(X.po + 0.1, FD.pouch), kP(X.poE + 0.1, FD.pouch), kP(X.pre + 0.04, FD.mag), kP(sT + 0.09, FD.mag)];
-      roll = [kS(0, 0), kS(g0 - 0.05, rM), kS(g0 + 0.1, rM), kS(X.po + 0.1, 0.2), kS(X.poE + 0.1, 0.2), kS(X.pre + 0.04, rM), kS(sT + 0.09, rM)];
-      ev = { grab: g0, out: g0 + 0.04, seat: sT, ch: -1, swap: (X.po + X.poE) / 2 + 0.1 };
+      // waktu taktis: pegang setelah senjata selesai dimiringkan (magasin tidak berputar di lubangnya), cabut, simpan di
+      // kantong (di luar layar), ambil yang baru, sejajarkan, masuk, tepuk
+      const g0 = X.tin + 0.05, po = g0 + 0.2, poE = po + 0.06, ap = poE + 0.1, pr = ap + 0.05, sT = pr + 0.07;
+      hand = [kP(0, R), kP(g0 - 0.06, vAdd(MG, -0.025, -0.06, 0.05)), kP(g0, MG, 1), kP(g0 + 0.04, vAdd(MG, 0, -0.012, 0), 1), kP(g0 + 0.09, vAdd(MG, -0.01, -0.13, 0.03)), kP(po, PO, 1), kP(poE, PO, 1), kP(ap, vAdd(PRE, -0.03, -0.09, 0.05)), kP(pr, PRE, 1), kP(sT, MG, 1), kP(sT + 0.035, vAdd(MG, -0.008, -0.035, 0.02)), kP(sT + 0.06, vAdd(MG, 0, -0.008, 0.004), 1), kP(sT + 0.09, vAdd(MG, -0.015, -0.05, 0.03))];
+      fdir = [kP(0, AXL), kP(g0 - 0.06, FD.mag), kP(g0 + 0.09, FD.mag), kP(po, FD.pouch), kP(poE, FD.pouch), kP(ap, FD.mag), kP(sT + 0.09, FD.mag)];
+      roll = [kS(0, 0), kS(g0 - 0.06, rM), kS(g0 + 0.09, rM), kS(po, 0.2), kS(poE, 0.2), kS(ap, rM), kS(sT + 0.09, rM)];
+      ev = { grab: g0, out: g0 + 0.04, seat: sT, ch: -1, swap: (po + poE) / 2 };
       cues = [[g0 + 0.04, 'out'], [sT, 'in'], [sT + 0.06, 'tap']];
       rot.push(kP(sT, T), kP(sT + 0.06, vAdd(T, 0.02, 0, 0.03)));
       pos.push(kP(sT, Sh), kP(sT + 0.06, Sh));
     }
     if (snip && empty) { // runduk: tangan kiri kembali ke penyangga dulu, lalu tangan kanan mengokang bolt
-      hand.push(kP(X.seat + 0.12, vAdd(R, 0, -0.006, 0.006)), kP(X.ch0, R, 1)); fdir.push(kP(X.seat + 0.12, AXL)); roll.push(kS(X.seat + 0.12, 0));
+      hand.push(kP(X.seat + 0.075, vAdd(R, 0, -0.006, 0.006)), kP(X.ch0, R, 1)); fdir.push(kP(X.seat + 0.075, AXL)); roll.push(kS(X.seat + 0.075, 0));
       rot.push(kP(X.ch0, vAdd(T, 0, -0.05, 0.12)), kP(X.chE, vAdd(T, 0, -0.05, 0.12)));
     }
     // kembali ke pegangan: senjata berputar balik dengan sedikit lewat lalu diam
@@ -1008,10 +1010,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const roll = [kS(0, 0), kS(0.12, 0), kS(0.3, 0.2), kS(0.48, 0.9)];
     const cues = [[0.11, 'open'], [0.15, 'eject']];
     for (let i = 0; i < n; i++) { const s0 = 0.5 + i * 0.09; hand.push(kP(s0, vAdd(br, i ? 0.012 : -0.012, -0.012, 0.03)), kP(s0 + 0.05, vAdd(br, i ? 0.012 : -0.012, -0.005, -0.012), 1)); cues.push([s0 + 0.05, 'shell']); }
-    const sE = 0.5 + n * 0.09;
-    hand.push(kP(sE + 0.04, vAdd(fore, -0.02, -0.03, 0.04)), kP(0.72, vAdd(fore, 0, -0.012, 0), 1), kP(0.76, vAdd(R, 0, 0.008, 0)), kP(0.86, R), kP(1, R));
-    fdir.push(kP(sE + 0.04, AXL), kP(1, AXL));
-    roll.push(kS(sE, 0.9), kS(sE + 0.04, 0), kS(1, 0));
+    const sE = 0.5 + n * 0.09; // setelah selongsong terakhir: tangan ke popor depan, menutup laras (0,72–0,76)
+    hand.push(kP(Math.min(sE + 0.03, 0.68), vAdd(fore, -0.02, -0.03, 0.04)), kP(0.73, vAdd(fore, 0, -0.012, 0), 1), kP(0.77, vAdd(R, 0, 0.008, 0)), kP(0.86, R), kP(1, R));
+    fdir.push(kP(Math.min(sE + 0.03, 0.68), AXL), kP(1, AXL));
+    roll.push(kS(sE - 0.01, 0.9), kS(Math.min(sE + 0.03, 0.68), 0), kS(1, 0));
     cues.push([0.76, 'close']);
     const sIn = [0.55, 0.64]; // waktu tiap selongsong masuk penuh
     return { rot, pos, hand, fdir, roll, ev: { open: [0.07, 0.14], close: [0.72, 0.76], eject: 0.15, n, sE, sIn, sHand: 0.4 }, cues, br };
@@ -1117,14 +1119,14 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (s >= 0 && s < 0.72) {
       if (s < 0.4) tmp.set(port[0] + B[0], port[1] + B[1], port[2] + B[2]).lerp(tmp2.set(port[0] + Q[0], port[1] + Q[1], port[2] + Q[2]), easeOut(s / 0.4));
       else if (s < 0.56) tmp.set(port[0] + Q[0], port[1] + Q[1], port[2] + Q[2]).lerp(tmp2.set(port[0] + I[0], port[1] + I[1], port[2] + I[2]), ease((s - 0.4) / 0.16));
-      else tmp.set(port[0] + I[0], port[1] + I[1], port[2] + I[2]).lerp(tmp2.set(port[0] + T[0], port[1] + T[1], port[2] + T[2]), easeIn((s - 0.56) / 0.16));
+      else tmp.set(port[0] + I[0], port[1] + I[1], port[2] + I[2]).lerp(tmp2.set(port[0] + T[0], port[1] + T[1], port[2] + T[2]), ease((s - 0.56) / 0.16));
       sh.visible = w > 0.5 && s > 0.08 && s < 0.7;
       sh.position.copy(tmp);
       sh.rotation.set(0.3 * (1 - ease(s / 0.56)), 0, 0); // ujung depan sedikit naik saat diarahkan ke lubang
       hp.copy(tmp).add(tmp2.set(SG_HAND[0], SG_HAND[1], SG_HAND[2])); // genggaman di belakang-bawah selongsong, jempol mendorong
     } else {
       sh.visible = false;
-      const back = s >= 0.72 ? easeOut((s - 0.72) / 0.28) : 1;
+      const back = s >= 0.72 ? ease((s - 0.72) / 0.28) : 1;
       hp.set(port[0] + T[0] + SG_HAND[0], port[1] + T[1] + SG_HAND[1], port[2] + T[2] + SG_HAND[2]).lerp(tmp2.set(port[0] + B[0] + SG_HAND[0], port[1] + B[1] + SG_HAND[1], port[2] + B[2] + SG_HAND[2]), back);
     }
     // masuk/keluar fase isi: dari & ke pompa (pose diam)
@@ -1163,7 +1165,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       tmp.set(G.cyl.position.x - 0.03, G.cyl.position.y - 0.12, rz + 0.12).lerp(tmp2.set(G.cyl.position.x, G.cyl.position.y, rz + 0.045), k1);
       tmp.lerp(tmp2.set(G.cyl.position.x, G.cyl.position.y, rz + 0.012), k2);
       spl.position.copy(tmp); spl.quaternion.copy(G.cyl.quaternion);
-      const k = ease(seg(u, s0, s0 + 0.05)) * (1 - ease(seg(u, s1 - 0.005, s1 + 0.02)));
+      const k = ease(seg(u, s0, s0 + 0.08)) * (1 - ease(seg(u, s1 - 0.005, s1 + 0.03)));
       hp.lerp(tmp.add(tmp2.set(-0.004, -0.036, 0.03)), k);
     }
   }
@@ -1191,7 +1193,8 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       const k = ease(seg(u, sIn - 0.05, sIn));
       tmp.set(x, 0.03, 0.06 * (1 - k) - 0.024 * k).applyQuaternion(G.brk.quaternion).add(G.brk.position);
       s.position.copy(tmp); s.quaternion.copy(G.brk.quaternion);
-      if (u < sIn + 0.01) hp.copy(tmp).sub(tmp2.set(x * 0.8, 0.03, -0.012)); // tangan mendorong selongsong ini
+      const wf = ease(seg(u, sIn - 0.075, sIn - 0.045)) * (1 - ease(seg(u, sIn + 0.005, sIn + 0.035))); // tangan mendorong selongsong ini
+      if (wf > 0) hp.lerp(tmp.sub(tmp2.set(x * 0.8, 0.03, -0.012)), wf);
     }
   }
   function endReload(kind) { const G = guns[kind]; if (G) heldPose(G); }
