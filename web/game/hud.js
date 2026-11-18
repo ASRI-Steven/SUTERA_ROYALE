@@ -29,6 +29,9 @@ const GLYPHS = {
   helm: '<path d="M4 13.5C4 8.3 7.6 4.6 12 4.6s8 3.7 8 8.9v2.2H4z"/><path d="M6.2 16.8h1.7c.3 2 1.8 3.2 4.1 3.2s3.8-1.2 4.1-3.2h1.7c-.3 3-2.5 4.9-5.8 4.9s-5.5-1.9-5.8-4.9z" opacity=".6"/>',
   vest: '<path fill-rule="evenodd" d="M7.2 3.2h2.3c.4 1.4 1.3 2.2 2.5 2.2s2.1-.8 2.5-2.2h2.3l2.7 3.4-1.2 2.2v9.9c0 .9-.7 1.6-1.6 1.6H7.3c-.9 0-1.6-.7-1.6-1.6V8.8L4.5 6.6zM11.55 7.6v12.7h.9V7.6zM7.4 10.3v1.3h2.9v-1.3zm6.3 0v1.300h2.900v-1.300zm0 3.500v3.400h2.900v-3.400z"/>',
   band: '<g transform="rotate(-45 12 12)"><path fill-rule="evenodd" d="M4.5 8h15a3.5 3.5 0 0 1 3.500 3.500v1a3.500 3.500 0 0 1-3.500 3.500h-15A3.500 3.500 0 0 1 1 12.500v-1A3.500 3.500 0 0 1 4.500 8zm4.700 1.500v5h5.600v-5z"/><rect x="9.200" y="9.500" width="5.600" height="5" opacity=".5"/></g>',
+  fuel: '<path fill-rule="evenodd" d="M5 4.5c0-.8.7-1.500 1.500-1.500h6c.8 0 1.500.7 1.500 1.500V11h1.200c1 0 1.800.8 1.800 1.800v4.400a.9.9 0 0 0 1.800 0V9.600l-1.900-1.900 1.100-1.100 2.300 2.300c.3.300.5.700.5 1.100v7.200a2.700 2.700 0 0 1-5.400 0v-4.400h-1.400V21H5zm2 1.500V10h5V6z"/>',
+  bag: '<path fill-rule="evenodd" d="M9 3.5h6c.8 0 1.500.7 1.500 1.500v1.200c1.700.5 3 2.100 3 4v8.300c0 1.100-.9 2-2 2h-11c-1.100 0-2-.9-2-2v-8.300c0-1.900 1.300-3.500 3-4V5c0-.8.7-1.500 1.500-1.500zm.5 2v.5h5v-.5zm-2 8v4h9v-4z"/>',
+  drink: '<path d="M8.5 2.5h7l1 3.2v14.1c0 1-.8 1.7-1.7 1.7H9.200c-1 0-1.700-.8-1.700-1.700V5.700z"/>',
   kit: '<path fill-rule="evenodd" d="M9 4.5h6c.8 0 1.5.7 1.5 1.5v1.500h2.300c1 0 1.700.800 1.700 1.700v8.600c0 1-.700 1.700-1.700 1.700H5.200c-1 0-1.700-.700-1.700-1.700V9.200c0-.900.700-1.700 1.700-1.700h2.300V6c0-.800.700-1.500 1.500-1.500zm.300 1.800v1.200h5.400V6.300zm1.500 4.400v1.900H8.900V15h1.900v1.900h2.400V15h1.900v-2.400h-1.900v-1.900z"/>',
   zone: '<path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 2.200a6.800 6.800 0 1 1 0 13.600 6.800 6.800 0 0 1 0-13.600z"/><circle cx="12" cy="12" r="2.600"/>',
   warn: '<path fill-rule="evenodd" d="M12 3.200c.600 0 1.100.300 1.400.800l7.600 13.300c.600 1.100-.200 2.400-1.400 2.400H4.400c-1.200 0-2-1.300-1.400-2.400L10.600 4c.300-.500.800-.800 1.400-.800zm-1 5.600v5.400h2V8.800zm0 7v2h2v-2z"/>',
@@ -61,8 +64,8 @@ const EMPTY = ['Senjata utama', 'Senjata utama', 'Pistol', 'Granat'];
 const modeOf = (d) => (d.bolt ? 'BOLT' : d.burst ? 'SEMBUR ' + d.burst : d.auto ? 'AUTO' : d.pellets ? (d.mag <= 2 ? 'GANDA' : 'POMPA') : 'SEMI');
 const NADE_KEYS = Object.keys(NADES);
 const VEH_KEYS = {
-  drv: '<kbd>F</kbd> turun <kbd>Spasi</kbd> rem tangan <kbd>Shift</kbd> boost <kbd>H</kbd> klakson <kbd>V</kbd> kamera · klik kiri: pistol/SMG',
-  pass: '<kbd>F</kbd> turun · klik kiri tembak · klik kanan bidik <kbd>R</kbd> isi ulang <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> senjata <kbd>V</kbd> kamera',
+  drv: '<kbd>F</kbd> turun <kbd>Spasi</kbd> rem tangan <kbd>Shift</kbd> boost <kbd>B</kbd> isi bensin <kbd>H</kbd> klakson <kbd>V</kbd> kamera · klik kiri: pistol/SMG',
+  pass: '<kbd>F</kbd> turun <kbd>B</kbd> isi bensin · klik kiri tembak · klik kanan bidik <kbd>R</kbd> isi ulang <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> senjata <kbd>V</kbd> kamera',
 };
 const WHY = { zone: 'tersingkir di luar zona', fall: 'jatuh dari kendaraan', crash: 'tewas dalam tabrakan', blast: 'terkena ledakan', run: 'tertabrak kendaraan', drown: 'tenggelam' };
 const WHY_IC = { zone: 'zone', fall: 'fall', crash: 'veh', blast: 'blast', run: 'veh', drown: 'drown' };
@@ -138,6 +141,7 @@ const TEMPLATE = SPRITE + `
   <div class="hv-info">
     <div class="hv-head"><span data-h="vehName"></span><em data-h="vehRole"></em></div>
     <div class="hv-hp">${ic('veh')}<div class="hv-bar"><i data-h="vehHp"></i></div><b data-h="vehHpT"></b></div>
+    <div class="hv-hp hv-fuel" data-h="vehFuelBox" title="Bensin">${ic('fuel')}<div class="hv-bar"><i data-h="vehFuel"></i></div><b data-h="vehFuelT"></b></div>
     <div class="hv-keys" data-h="vehKeys"></div>
   </div>
   <div class="hv-seats" data-h="vehSeats"></div>
@@ -157,11 +161,13 @@ const TEMPLATE = SPRITE + `
       <div class="ha" data-h="vest" title="Rompi">${ic('vest')}<b></b><span class="pips"><i></i><i></i><i></i></span></div>
     </div>
     <div class="h-hp" data-h="hpBox">
-      ${ic('plus')}<div class="hp-track"><i class="hp-heal" data-h="hpHeal"></i><i class="hp-ghost nt" data-h="hpGhost"></i><i class="hp-fill" data-h="hpFill"></i><i class="hp-seg"></i></div><b class="hp-num" data-h="hpNum">100</b>
+      ${ic('plus')}<div class="hp-track"><i class="hp-heal" data-h="hpHeal"></i><i class="hp-ghost nt" data-h="hpGhost"></i><i class="hp-fill" data-h="hpFill"></i><i class="hp-seg"></i></div><b class="hp-num" data-h="hpNum">100</b><i class="hp-boost" data-h="boost" title="Tenaga"></i>
     </div>
     <div class="h-items">
       <div class="hit" data-h="band" title="Perban"><i class="prog" data-h="bandP"></i><kbd>4</kbd>${ic('band')}<b data-h="bandN">0</b></div>
       <div class="hit" data-h="kit" title="Kotak P3K"><i class="prog" data-h="kitP"></i><kbd>5</kbd>${ic('kit')}<b data-h="kitN">0</b></div>
+      <div class="hit" data-h="drink" title="Minuman energi"><i class="prog" data-h="drinkP"></i><kbd>6</kbd>${ic('drink')}<b data-h="drinkN">0</b></div>
+      <div class="hit bag on" data-h="bag" title="Isi tas (bobot terpakai)"><i class="prog" data-h="bagP"></i><kbd data-h="bagL">Tas</kbd>${ic('bag')}<b data-h="bagN">0%</b></div>
     </div>
   </div>
 </div>`;
@@ -342,6 +348,34 @@ export function createHud() {
         lpEl.setAttribute('aria-label', 'Inventaris dan barang');
         document.body.appendChild(lpEl);
         lpEl.addEventListener('mousedown', (e) => e.stopPropagation());
+        lpEl.addEventListener('contextmenu', (e) => { // klik kanan barang di inventaris = buang ke tanah
+          e.preventDefault();
+          const t = e.target.closest('[data-drop]');
+          if (t && lpH && lpH.drop) lpH.drop(t.dataset.drop);
+        });
+        // seret-dan-lepas aksesori: label aksesori → senjata lain (pindah) / kolom kanan (buang); kartu aksesori di sekitar → senjata (pasang)
+        let drag = null;
+        const clearHot = () => { for (const n of lpEl.querySelectorAll('.lp-hot')) n.classList.remove('lp-hot'); };
+        const target = (e) => (drag ? e.target.closest('[data-gun]') || (drag.att ? e.target.closest('.lp-loot, .lp-bag') : drag.bag ? e.target.closest('.lp-loot') : null) : null);
+        lpEl.addEventListener('dragstart', (e) => {
+          const a = e.target.closest('.lp-att'), c = a ? null : e.target.closest('.lp-card[draggable="true"]'), b = a || c ? null : e.target.closest('.lp-item[draggable="true"]');
+          if (!a && !c && !b) { e.preventDefault(); return; }
+          drag = a ? { att: a.dataset.drop } : c ? { take: +c.dataset.take } : { bag: b.dataset.drop };
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', a ? a.dataset.drop : c ? 'take' : b.dataset.drop);
+          lpEl.classList.add('lp-dragging');
+        });
+        lpEl.addEventListener('dragover', (e) => { const t = target(e); clearHot(); if (t) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; t.classList.add('lp-hot'); } });
+        lpEl.addEventListener('drop', (e) => {
+          const t = target(e), d = drag;
+          clearHot();
+          if (!t || !d || !lpH) return;
+          e.preventDefault();
+          if (t.dataset.gun !== undefined) { if (d.att) lpH.moveAtt(d.att, +t.dataset.gun); else if (d.bag) lpH.bagTo(d.bag, +t.dataset.gun); else lpH.takeTo(d.take, +t.dataset.gun); }
+          else if (d.att && t.classList.contains('lp-bag')) lpH.stashAtt(d.att); // ke tas: lepas & simpan
+          else lpH.drop(d.att || d.bag); // ke kolom kanan: buang ke tanah
+        });
+        lpEl.addEventListener('dragend', () => { drag = null; clearHot(); lpEl.classList.remove('lp-dragging'); });
         lpEl.addEventListener('click', (e) => {
           const t = e.target.closest('[data-take],[data-all],[data-close]');
           if (!t || !lpH) { if (e.target === lpEl && lpH) lpH.close(); return; }
@@ -353,18 +387,18 @@ export function createHud() {
       if (key === lpKey) return;
       lpKey = key;
       const img = (type, cls = '') => { const u = type && lpH && lpH.icon ? lpH.icon(type) : ''; return u ? `<img class="${cls}" src="${u}" alt="" draggable="false">` : `<span class="lp-noimg ${cls}"></span>`; };
-      const gun = (g) => (g.type ? `<div class="lp-gun"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small></div></div>`
+      const gun = (g) => (g.type ? `<div class="lp-gun lp-drop" data-gun="${g.slot}" data-drop="w:${g.slot}" title="Klik kanan untuk membuang"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span>${img(g.type, 'lp-gimg')}<div class="lp-gtx"><b>${esc(g.name)}</b><small>${g.mag}/${g.cap} · cadangan ${g.ammo}</small>${(g.att || []).length ? '<span class="lp-atts">' + g.att.map((a) => `<i class="lp-att lp-drop" draggable="true" data-drop="x:${g.slot}:${a.k}" title="${esc(a.name)} — seret ke senjata lain untuk memindahkan · klik kanan untuk melepas">${esc(a.name)}</i>`).join('') + '</span>' : ''}</div></div>`
         : `<div class="lp-gun lp-empty"><span class="lp-slot">${g.slot === 2 ? 3 : g.slot + 1}</span><small>${g.slot === 2 ? 'Slot pistol kosong' : 'Slot senjata kosong'}</small></div>`);
-      const bag = (it) => `<div class="lp-item" title="${esc(it.name)}">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
-      const gear = (g) => `<div class="lp-item lp-gear${g.type ? '' : ' lp-empty'}">${img(g.type)}<small>${esc(g.name)}</small></div>`;
-      const card = (it, i) => `<button type="button" class="lp-card" data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
+      const bag = (it) => `<div class="lp-item lp-drop"${/^x_/.test(it.type) ? ' draggable="true"' : ''} data-drop="${esc(it.type)}" title="${esc(it.name)} — ${/^x_/.test(it.type) ? 'seret ke senjata untuk memasang · ' : ''}klik kanan untuk membuang">${img(it.type)}<span class="lp-n">${it.n}</span><small>${esc(it.name)}</small></div>`;
+      const gear = (g) => `<div class="lp-item lp-gear${g.type ? ' lp-drop' : ' lp-empty'}"${g.type ? ` data-drop="${esc(g.type)}" title="${esc(g.name)} — klik kanan untuk membuang"` : ''}>${img(g.type)}<small>${esc(g.name)}</small></div>`;
+      const card = (it, i) => `<button type="button" class="lp-card"${/^x_/.test(it.type) ? ' draggable="true" title="Klik untuk memasang · seret ke senjata tertentu"' : ''} data-take="${i}" style="--rar:${RARC[it.rar] || RARC[0]}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${img(it.type)}<span>${esc(it.name)}</span></button>`;
       lpEl.innerHTML = `<div class="lp-box">
         <section class="lp-col lp-inv"><h3>Inventaris</h3>${model.guns.map(gun).join('')}<div class="lp-row">${model.gear.map(gear).join('')}</div>
-          <h4>Tas</h4><div class="lp-bag">${model.items.length ? model.items.map(bag).join('') : '<p class="lp-muted">Tas kosong</p>'}</div></section>
+          <h4>Tas <span class="lp-cap${model.bagW >= model.bagCap - 0.5 ? ' full' : ''}">${Math.min(100, Math.round(model.bagW / model.bagCap * 100))}% · ${model.bagW} / ${model.bagCap}</span></h4><div class="lp-capbar"><i style="width:${Math.min(100, model.bagW / model.bagCap * 100).toFixed(1)}%"></i></div><div class="lp-bag">${model.items.length ? model.items.map(bag).join('') : '<p class="lp-muted">Tas kosong</p>'}</div></section>
         <section class="lp-col lp-loot"><div class="lp-head"><h3>${esc(model.title)}</h3>${model.loot.length ? '<button type="button" class="lp-all" data-all>Ambil semua</button>' : ''}</div>
           <div class="lp-cards">${model.loot.length ? model.loot.map(card).join('') : '<p class="lp-muted">Tidak ada barang di sini</p>'}</div></section>
       </div>
-      <div class="lp-hint">Klik barang untuk mengambil · <kbd>1</kbd>–<kbd>9</kbd> · <kbd>F</kbd> / <kbd>Tab</kbd> / <kbd>Esc</kbd> tutup <button type="button" class="lp-x" data-close aria-label="Tutup">✕</button></div>`;
+      <div class="lp-hint">Klik barang untuk mengambil · klik kanan barang di inventaris untuk membuang · <kbd>1</kbd>–<kbd>9</kbd> · <kbd>F</kbd> / <kbd>Tab</kbd> / <kbd>Esc</kbd> tutup <button type="button" class="lp-x" data-close aria-label="Tutup">✕</button></div>`;
     },
     show(on) { el.hud.hidden = !on; if (on) { measureMap(); slowT = -1e9; } },
     // pemberitahuan singkat; "Diambil: …" tampil sebagai baris ambil barang bergambar
@@ -495,12 +529,12 @@ export function createHud() {
       const hk = s.heal || '';
       set('heal', hk, (v) => {
         el.hpBox.classList.toggle('healing', !!v);
-        el.band.classList.toggle('use', v === 'band'); el.kit.classList.toggle('use', v === 'kit');
-        el.bandP.style.transform = el.kitP.style.transform = 'scaleY(0)'; last.healK = last.healT = null;
+        el.band.classList.toggle('use', v === 'band'); el.kit.classList.toggle('use', v === 'kit'); el.drink.classList.toggle('use', v === 'drink');
+        el.bandP.style.transform = el.kitP.style.transform = el.drinkP.style.transform = 'scaleY(0)'; last.healK = last.healT = null;
       });
       if (hk) {
-        set('healT', hk === 'kit' ? 100 : Math.min(75, hp + 15), (v) => { el.hpHeal.style.transform = 'scaleX(' + v / 100 + ')'; });
-        set('healK', Math.round(clamp01(s.healK) * 50), (v) => { (hk === 'kit' ? el.kitP : el.bandP).style.transform = 'scaleY(' + v / 50 + ')'; });
+        set('healT', hk === 'kit' ? 100 : hk === 'drink' ? hp : Math.min(75, hp + 15), (v) => { el.hpHeal.style.transform = 'scaleX(' + v / 100 + ')'; });
+        set('healK', Math.round(clamp01(s.healK) * 50), (v) => { (hk === 'kit' ? el.kitP : hk === 'drink' ? el.drinkP : el.bandP).style.transform = 'scaleY(' + v / 50 + ')'; });
       }
       const br = s.breath >= 0 ? Math.round(clamp01(s.breath) * 50) : -1;
       set('breath', br, (v) => {
@@ -510,10 +544,14 @@ export function createHud() {
         set('breathS', v <= 0 ? 2 : v <= 12 ? 1 : 0, (k) => { el.breath.className = 'h-breath' + (k === 2 ? ' out' : k === 1 ? ' low' : ''); el.breathT.textContent = k === 2 ? 'Kehabisan napas! Naik (Spasi)' : 'Napas'; });
       });
       // ---- pelindung & obat ----
-      set('helm', s.helmet | 0, (v) => { el.helm.className = 'ha' + (v ? ' on lv' + v : ''); el.helm.children[1].textContent = v ? 'Lv' + v : ''; });
-      set('vest', s.vest | 0, (v) => { el.vest.className = 'ha' + (v ? ' on lv' + v : ''); el.vest.children[1].textContent = v ? 'Lv' + v : ''; });
+      // tingkat + sisa daya tahan (persen hanya tampil kalau sudah rusak)
+      for (const [k, lv, pc] of [['helm', s.helmet | 0, s.helmPct], ['vest', s.vest | 0, s.vestPct]]) set(k, lv + '|' + (pc | 0), () => { el[k].className = 'ha' + (lv ? ' on lv' + lv : '') + (lv && pc <= 30 ? ' worn' : ''); el[k].children[1].textContent = lv ? 'Lv' + lv + (pc < 100 ? ' ' + (pc | 0) + '%' : '') : ''; });
       set('band', s.band | 0, (v) => { el.bandN.textContent = v; el.band.classList.toggle('on', v > 0); });
       set('kit', s.kit | 0, (v) => { el.kitN.textContent = v; el.kit.classList.toggle('on', v > 0); });
+      set('bagPct', Math.max(0, Math.min(100, Math.round(s.bagPct || 0))), (v) => { el.bagN.textContent = v + '%'; el.bagP.style.transform = 'scaleY(' + v / 100 + ')'; el.bag.classList.toggle('full', v >= 100); el.bag.classList.toggle('high', v >= 80 && v < 100); });
+      set('bagLv', s.bag | 0, (v) => { el.bagL.textContent = v ? 'Tas ' + v : 'Tas'; });
+      set('drink', s.drink | 0, (v) => { el.drinkN.textContent = v; el.drink.classList.toggle('on', v > 0); });
+      set('boost', Math.round(clamp01((s.boost || 0) / 100) * 100), (v) => { el.boost.style.transform = 'scaleX(' + v / 100 + ')'; }); // tenaga (minuman energi)
       // ---- senjata & granat ----
       for (let i = 0; i < 3; i++) drawCard(i, s);
       drawNade(s);
@@ -522,7 +560,7 @@ export function createHud() {
       set('act', act === 'rev' ? 'rev|' + (s.reviveBy ? '<' : '>') + s.reviveName : act, () => {
         el.act.hidden = !act;
         el.act.className = 'h-act' + (act === 'heal' ? ' heal' : act === 'rev' ? ' rev' : '');
-        el.actL.textContent = act === 'rl' ? 'Isi ulang' : act === 'rev' ? (s.reviveBy ? 'Dipulihkan ' : 'Memulihkan ') + s.reviveName : hk === 'kit' ? 'Memakai P3K' : hk ? 'Memasang perban' : '';
+        el.actL.textContent = act === 'rl' ? 'Isi ulang' : act === 'rev' ? (s.reviveBy ? 'Dipulihkan ' : 'Memulihkan ') + s.reviveName : hk === 'kit' ? 'Memakai P3K' : hk === 'drink' ? 'Meminum minuman energi' : hk ? 'Memasang perban' : '';
         last.actK = last.actT = null;
       });
       if (act) {
@@ -601,6 +639,15 @@ export function createHud() {
         const hpk = Math.max(0, Math.round(v.hp / v.hpMax * 100));
         set('vehHp', hpk + (v.burning ? 'b' : ''), () => { el.vehHp.style.transform = 'scaleX(' + hpk / 100 + ')'; el.vehHp.className = v.burning || hpk <= 25 ? 'low' : hpk <= 50 ? 'mid' : ''; el.vehHpT.textContent = hpk + '%'; el.veh.classList.toggle('burning', !!v.burning); });
         set('vehBoost', !!v.boost, (b) => { el.veh.classList.toggle('boost', b); });
+        { // bensin: persen + jumlah jeriken yang dibawa; saat mengisi batangnya naik sesuai kemajuan
+          const fk = Math.max(0, Math.min(100, Math.round(v.fuel === undefined ? 100 : v.fuel))), fg = v.fueling > 0 ? Math.round(v.fueling * 20) : -1;
+          set('vehFuel', fk + '|' + fg + '|' + (v.cans | 0), () => {
+            el.vehFuel.style.transform = 'scaleX(' + fk / 100 + ')';
+            el.vehFuel.className = fk <= 15 ? 'low' : fk <= 35 ? 'mid' : '';
+            el.vehFuelT.textContent = fg >= 0 ? 'isi ' + fg * 5 + '%' : fk + '%' + (v.cans ? ' +' + v.cans : '');
+            el.vehFuelBox.classList.toggle('dry', fk <= 0);
+          });
+        }
       }
       // ---- minimap (≤ 10×/dtk; panah pemain = elemen DOM yang berputar tiap frame) ----
       if (mapImg && mapCtx && tNow - mapT >= 100) {

@@ -145,7 +145,8 @@ const GRIP = { pistol: [[0, -0.07, -0.03], [0.025, -0.085, -0.01]], smg: [[0, -0
 // s: { speed m/s, moveYaw (arah gerak relatif hadap, rad), crouch, air, armed, aim, pitch (rad, + = ke atas),
 //      fire (impuls), hit (impuls), dead, freefall, chute, sit ('car' | 'bike' | null), steer (−1 kiri … 1 kanan),
 //      reload (0..1 kemajuan isi ulang, null = tidak), heal (bool), swap (impuls ganti senjata), prone (bool),
-//      gunKind ('pistol'|'smg'|'ar'|'shotgun'|'dmr', untuk posisi tangan), swim (bool: berenang) }
+//      gunKind ('pistol'|'smg'|'ar'|'shotgun'|'dmr', untuk posisi tangan), swim (bool: berenang),
+//      chuteDrive (saat payung: 1 = melaju/condong maju, −1 = mengerem/kaki diangkat siap mendarat) }
 // Saat duduk, root diletakkan setinggi jok − 0,93 (pinggul tepat di atas jok).
 // (pose dipanggil tiap frame untuk banyak karakter: tanpa closure/array/objek baru per panggilan)
 let _kdt = 0;
@@ -161,7 +162,7 @@ export class Rig {
     this.chain = Object.values(b); // induk selalu lebih dulu dari anaknya (urutan makeBones)
     this.phase = Math.random() * PI * 2;
     this.t = Math.random() * 10;
-    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, heal: 0, swap: 0, prone: 0, swim: 0, stroke: 0 };
+    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, heal: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0 };
     this.cphase = 0;
   }
   pose(s, dt) {
@@ -175,6 +176,8 @@ export class Rig {
     m.armed += ((s.armed ? 1 : 0) - m.armed) * k(8);
     m.fall += ((s.freefall ? 1 : 0) - m.fall) * k(4);
     m.chute += ((s.chute ? 1 : 0) - m.chute) * k(4);
+    m.cd += ((s.chute ? clamp(s.chuteDrive || 0, -1, 1) : 0) - m.cd) * k(5);
+    const cfw = Math.max(0, m.cd) * m.chute, cbr = Math.max(0, -m.cd) * m.chute; // payung: melaju (W) / mengerem (S)
     m.dead += ((s.dead ? 1 : 0) - m.dead) * k(s.dead ? 4.5 : 30);
     m.pitch += ((s.pitch || 0) - m.pitch) * k(14);
     if (s.hit) { m.hit = 1; s.hit = 0; }
@@ -203,6 +206,9 @@ export class Rig {
       // payung: kaki menggantung, sedikit berayun
       tx = lerp(tx, -0.18 + Math.sin(this.t * 1.6 + off) * 0.12, m.chute);
       kx = lerp(kx, 0.28, m.chute);
+      // payung melaju: kaki tertinggal ke belakang; mengerem: lutut diangkat ke depan, siap mendarat
+      tx = lerp(lerp(tx, 0.22, cfw), -0.95, cbr);
+      kx = lerp(lerp(kx, 0.45, cfw), 0.75, cbr);
       // terjun bebas: kaki terbuka, lutut menekuk
       tx = lerp(tx, 0.3, m.fall);
       kx = lerp(kx, 0.95, m.fall);
@@ -220,11 +226,17 @@ export class Rig {
     const breathe = Math.sin(this.t * 1.8) * 0.012 * (1 - walkW);
     b.hips.position.y = lerp(lerp(0.98 - 0.4 * cr + bob, 0.98, Math.max(m.chute, m.fall)), 0.13, m.dead);
     b.hips.rotation.set(lerp(lerp(0, 1.35, m.fall), -PI / 2, m.dead), m.hipYaw + sn * 0.1 * walkW * (1 - m.dead), Math.cos(ph) * 0.035 * walkW);
+    { // payung: badan condong maju saat melaju, sedikit rebah saat mengerem — berputar di titik gantung (bahu), bukan di pinggul
+      const ca = (0.38 * cfw - 0.18 * cbr) * (1 - m.dead);
+      b.hips.rotation.x += ca;
+      b.hips.position.z = -0.47 * Math.sin(ca);
+      b.hips.position.y += 0.47 * (1 - Math.cos(ca));
+    }
     const lean = 0.05 * walkW + 0.2 * runK * (1 - 0.7 * Math.max(aim, arm * 0.5)) + 0.28 * cr;
     b.spine.rotation.set(lean + breathe - 0.32 * m.hit, -m.hipYaw - sn * 0.1 * walkW, 0);
     const look = m.pitch * (1 - m.dead) * (1 - m.fall);
     b.chest.rotation.set(-look * 0.5 - 0.07 * m.fire + breathe, 0, 0);
-    b.head.rotation.set(-look * 0.45 - 0.15 * m.hit + lerp(0, -0.9, m.fall), 0, 0);
+    b.head.rotation.set(-look * 0.45 - 0.15 * m.hit + lerp(0, -0.9, m.fall) - 0.25 * cfw, 0, 0);
     // ----- lengan: ayun bebas ↔ pegang senjata (siaga ↔ bidik) ↔ payung / terjun / mati
     const swingA = (0.3 + 0.6 * runK) * walkW, elbow = -(0.22 + 1.15 * runK) * walkW - 0.12;
     const arms = this.arms;
@@ -239,6 +251,7 @@ export class Rig {
       az = lerp(az, hz, arm);
       fx = lerp(fx, hf, arm);
       ax = lerp(ax, -2.75, m.chute); az = lerp(az, 0.28 * side, m.chute); fx = lerp(fx, -0.25, m.chute);
+      ax = lerp(ax, -1.7, cbr); fx = lerp(fx, -1.2, cbr); // mengerem: kedua tali kemudi ditarik turun
       ax = lerp(ax, -0.25, m.fall); az = lerp(az, 1.35 * side, m.fall); fx = lerp(fx, -0.45, m.fall);
       ax = lerp(ax, -0.25, m.dead); az = lerp(az, 1.05 * side, m.dead); fx = lerp(fx, -0.2, m.dead);
       ua.rotation.set(ax, ay, az);

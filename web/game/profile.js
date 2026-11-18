@@ -5,6 +5,7 @@ const DEF = {
   name: 'Pemain', coins: 0,
   owned: ['char_default', 'gun_default'],
   equipped: { character: 'char_default', weapon: 'gun_default' },
+  party: [false, false, false], // slot rekan 2–4 yang terisi bot (lobi mulai sendirian; diisi lewat tombol + di lobi)
   squad: [],      // tiga rekan regu (bot): { name, skin, variant, hair, tone, hairC } — lihat ensureSquad()
   quests: null,   // keadaan misi — diisi game/quests.js
   // fields: bidang ringkasan pertandingan tambahan yang pernah diterima (misi yang memerlukannya baru muncul setelah itu)
@@ -40,6 +41,13 @@ export function ensureSquad() {
   });
   return profile.squad;
 }
+// slot rekan (indeks 0–2 = anggota 2–4) yang terisi bot; selalu tiga boolean
+export function partySlots() {
+  const p = Array.isArray(profile.party) ? profile.party : [];
+  profile.party = [0, 1, 2].map((i) => p[i] === true);
+  return profile.party;
+}
+export function setParty(i, on) { const p = partySlots(); if (i < 0 || i > 2) return false; p[i] = !!on; saveProfile(); return true; }
 export function setMate(i, patch) {
   const m = ensureSquad()[i];
   if (!m) return false;
