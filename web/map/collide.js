@@ -88,8 +88,15 @@ export function createCollider(D, inArea, homes) {
     if (H.up) { // rumah 2 lantai: pelat lantai 2 berlubang tangga, atap, tangga, pagar
       for (const piece of H.up.plate) addPoly(piece.flat(), H.up.floor, b, 1, H.ceil, { floor: H.up.floor });
       addPoly(H.pts.flat(), H.h, b, 1, H.up.ceil, { slab: true });
-      const S = H.up.stair;
-      addPoly(S.rect.flat(), H.up.floor, b, 1, 0, { stair: { ax: S.ax, ay: S.ay, ux: S.ux, uy: S.uy, len: S.len, h1: H.up.floor } });
+      // tangga: 6 potong sepanjang naiknya, tiap potong setinggi anak tangganya + pagar 0,95 m (dulu satu kotak 3,3 m:
+      // peluru & kamera tertahan di udara kosong di atas anak tangga bawah); berjalan tetap memakai rampH
+      const S = H.up.stair, st = { ax: S.ax, ay: S.ay, ux: S.ux, uy: S.uy, len: S.len, h1: H.up.floor }, R4 = S.rect;
+      for (let k = 0; k < 6; k++) {
+        const f0 = k / 6, f1 = (k + 1) / 6, q = (p, r, f) => [p[0] + (r[0] - p[0]) * f, p[1] + (r[1] - p[1]) * f];
+        const lo = S.dir > 0 ? [R4[0], R4[1], R4[2], R4[3]] : [R4[1], R4[0], R4[3], R4[2]]; // [kaki-dinding, puncak-dinding, puncak-dalam, kaki-dalam]
+        const piece = [q(lo[0], lo[1], f0), q(lo[0], lo[1], f1), q(lo[3], lo[2], f1), q(lo[3], lo[2], f0)];
+        addPoly(piece.flat(), Math.min(H.up.floor + 0.95, f1 * H.up.floor + 0.95), b, 1, 0, { stair: st });
+      }
       for (const r of H.up.rail) addPoly(r.flat(), H.up.floor + 0.95, b, 1, H.up.floor);
     } else if (R) { // lantai di atas lobi sampai lantai atap; lantai atap (di dalam parapet) bisa dipijak
       addPoly(H.pts.flat(), R.z, b, 1, H.ceil, { slab: true });
@@ -124,6 +131,8 @@ export function createCollider(D, inArea, homes) {
         const c = Math.cos(f.rot), sn = Math.sin(f.rot), hw = f.w / 2, hd = f.d / 2 + (f.kind === 'table' ? 0.51 : 0), pts = [];
         for (const [a, d] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) pts.push(f.x + a * c - d * sn, f.y + a * sn + d * c);
         addPoly(pts, z0 + f.h + (f.kind === 'tv' ? 0.7 : 0), b, 1, z0);
+        if (f.kind === 'counter') { const o = -f.d / 2 + 0.17; addPoly(rectFlat(f.x - o * sn, f.y + o * c, c, sn, f.w, 0.34), z0 + 2.2, b, 1, z0 + 1.5); } // lemari gantung dapur
+        else if (f.kind === 'kiosk') addPoly(pts, z0 + 2.42, b, 1, z0 + 2.3); // atap kios
       }
     };
     parts(H.parts, 0, H.ceil);

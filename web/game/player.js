@@ -725,7 +725,7 @@ export function createPlayer(ctx) {
       { // jangan menembus dinding (sinar tepat, aman untuk dinding tipis rumah)
         tmp2.copy(fwd).multiplyScalar(-dist).addScaledVector(right, hor ? 0.6 : 0);
         const len = tmp2.length(), t = col.ray(pivot.x, -pivot.z, pivot.y, tmp2.x / len, -tmp2.z / len, tmp2.y / len, len);
-        if (t < len) d = Math.max(0.45, (t - 0.3) * dist / len);
+        if (t < len) d = Math.max(0.12, (t - 0.3) * dist / len); // mepet dinding/tangga: kamera boleh sangat dekat (karakter disembunyikan), tidak menembus ke balik dinding
       }
       st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (d < st.camD ? 30 : 5))) : d;
       camera.position.copy(pivot).addScaledVector(fwd, -st.camD).addScaledVector(right, hor ? 0.6 * st.camD / dist : 0);
@@ -1059,7 +1059,7 @@ export function createPlayer(ctx) {
       if (drv() && me.alive) seated(dt, now); // setelah kamera: sinar bidik memakai kamera frame ini
       // karakter orang ketiga / saat terjun
       const driving = !!drv();
-      const showChar = me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || (me.state === 'ground' && st.tpp) || (driving && !st.vfp);
+      const showChar = me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || (me.state === 'ground' && st.tpp && st.camD > 0.4) || (driving && !st.vfp);
       char.root.visible = showChar;
       if (showChar) {
         if (driving) { char.root.position.set(me.pos.x, me.sitY || 0, me.pos.z); char.root.rotation.set(0, me.yaw, me.sitRoll || 0); }

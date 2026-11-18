@@ -105,9 +105,10 @@ export function planHomes(D) {
     for (let j = 0; j < n; j++) pts.push([flat[2 * j] * M, flat[2 * j + 1] * M]);
     if (signedArea(pts) < 0) pts.reverse(); // sama dengan world.js (CCW)
     const area = Math.abs(signedArea(pts)), h = B.h[i] * M;
-    // rumah tapak; gedung jenis 0 > 700 m² (gudang, sekolah, kantor bertanda "yes") = aula; menara & gedung publik = lobi + lift
+    // rumah tapak (rumah besar dibagi banyak ruang); gedung jenis 0 > 1500 m² (gudang, podium, bertanda "yes") = aula;
+    // menara & gedung publik = lobi + lift
     const H = kind === 2 || kind === 3 ? planTower(i, pts, area, h, site, D.roofs && D.roofs.get(i))
-      : kind === 0 ? (area > 700 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site)
+      : kind === 0 ? (area > 1500 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site)
         : planShop(i, pts, area, h, site);
     if (H) { H.blind = (D.blind && D.blind.get(i)) || null; homes.set(i, H); } // sisi tanpa jendela (menempel gedung lain, world.js)
   }
