@@ -108,7 +108,26 @@ export function planHomes(D) {
     }
     return hm;
   };
-  const site = { roadDist, occupied, heightUnder };
+  // gedung lain yang kotak batasnya bersinggungan dengan gedung self → fungsi titik-di-dalam khusus mereka (null: tidak ada tetangga
+  // menempel; perencanaan tangga tidak perlu menguji tapak tetangga sama sekali)
+  const neighborOcc = (self) => {
+    const b = bbox[self], list = [];
+    for (let cx = Math.floor(b[0] / RC); cx <= Math.floor(b[2] / RC); cx++) for (let cy = Math.floor(b[1] / RC); cy <= Math.floor(b[3] / RC); cy++)
+      for (const i of BG.get(rk(cx, cy)) || []) { const o = bbox[i]; if (i !== self && !list.includes(i) && o[0] < b[2] + 0.5 && o[2] > b[0] - 0.5 && o[1] < b[3] + 0.5 && o[3] > b[1] - 0.5) list.push(i); }
+    if (!list.length) return null;
+    return (x, y) => {
+      for (const i of list) {
+        const o = bbox[i];
+        if (x < o[0] || x > o[2] || y < o[1] || y > o[3]) continue;
+        const r = B.r[i];
+        let ins = false;
+        for (let a = 0, c = r.length / 2 - 1; a < r.length / 2; c = a++) { const xi = r[2 * a] * M, yi = r[2 * a + 1] * M, xj = r[2 * c] * M, yj = r[2 * c + 1] * M; if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) ins = !ins; }
+        if (ins) return true;
+      }
+      return false;
+    };
+  };
+  const site = { roadDist, occupied, heightUnder, neighborOcc };
   for (let i = 0; i < B.r.length; i++) {
     const kind = B.k[i];
     if (kind > 3) continue; // 5 = kanopi terbuka (world.js canopyRoof): bisa dilewati, tanpa interior
@@ -122,6 +141,7 @@ export function planHomes(D) {
     // menara & gedung publik = lobi + lift
     // gaya fasad (= world.js): 2 menara, 4 mal (jenis 1 > 3000 m²), 0 rumah, 1 ruko & gedung publik — aturan jendela lantai atas
     const fst = kind === 2 ? 2 : kind === 1 && area > 3000 ? 4 : kind === 0 ? 0 : 1;
+    site.fst = fst;
     const H = kind === 2 || kind === 3 ? planTower(i, pts, area, h, site, D.roofs && D.roofs.get(i), kind)
       : kind === 0 ? (area > 1500 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site)
         : planShop(i, pts, area, h, site);
@@ -155,15 +175,17 @@ function plateMinusHole(pts, f, s0, s1, v0, v1) {
 }
 // tangga lurus setinggi rise sepanjang garis e (a, ux/uy, nx/ny ke dalam): anak tangga di v ∈ [T, T + sw], s ∈ [lo, hi],
 // naik ke arah dir. Data sama dengan tangga rumah (bots.js memakai ax/ay/ux/uy/len/ap/land; collide.js rect/dir).
-function mkStair(e, lo, hi, dir, rise, sw = HOUSE.stairW) {
+// ap/land = titik tunggu bot di kaki/puncak (jarak d sepanjang tangga, geser v ke sisi dalam): cukup lapang supaya sel grid
+// navigasi 1 m yang memuatnya bebas (kalau terblokir, A* bisa menempel ke sel di balik sekat).
+function mkStair(e, lo, hi, dir, rise, sw = HOUSE.stairW, apD = 0.9, apV = 0, landD = 0.9, landV = 0) {
   const T = HOUSE.wall, P = onEdge(e), VM = T + sw / 2, bot = dir > 0 ? lo : hi, top = dir > 0 ? hi : lo, bp = P(bot, VM);
-  return { rect: [P(lo, T), P(hi, T), P(hi, T + sw), P(lo, T + sw)], ax: bp[0], ay: bp[1], ux: e.ux * dir, uy: e.uy * dir, len: hi - lo, h1: rise, e, lo, hi, dir, sw, ap: P(bot - dir * 0.9, VM), land: P(top + dir * 0.9, VM) };
+  return { rect: [P(lo, T), P(hi, T), P(hi, T + sw), P(lo, T + sw)], ax: bp[0], ay: bp[1], ux: e.ux * dir, uy: e.uy * dir, len: hi - lo, h1: rise, e, lo, hi, dir, sw, ap: P(bot - dir * apD, VM + apV), land: P(top + dir * landD, VM + landV) };
 }
-// pagar lubang tangga di lantai atas: sisi dalam + ujung kaki tangga (ujung puncak terbuka = jalan keluar tangga)
+// pagar lubang tangga di lantai atas: sisi dalam + ujung kaki tangga dalam satu poligon L (ujung puncak terbuka = jalan keluar)
 function railOf(S) {
-  const P = onEdge(S.e), T = HOUSE.wall, SW = S.sw || HOUSE.stairW;
-  return [[P(S.lo, T + SW), P(S.hi, T + SW), P(S.hi, T + SW + 0.1), P(S.lo, T + SW + 0.1)],
-    S.dir > 0 ? [P(S.lo - 0.1, T), P(S.lo, T), P(S.lo, T + SW + 0.1), P(S.lo - 0.1, T + SW + 0.1)] : [P(S.hi, T), P(S.hi + 0.1, T), P(S.hi + 0.1, T + SW + 0.1), P(S.hi, T + SW + 0.1)]];
+  const P = onEdge(S.e), T = HOUSE.wall, SW = S.sw || HOUSE.stairW, v1 = T + SW, v2 = v1 + 0.1;
+  return [S.dir > 0 ? [P(S.lo - 0.1, T), P(S.lo, T), P(S.lo, v1), P(S.hi, v1), P(S.hi, v2), P(S.lo - 0.1, v2)]
+    : [P(S.lo, v1), P(S.hi, v1), P(S.hi, T), P(S.hi + 0.1, T), P(S.hi + 0.1, v2), P(S.lo, v2)]];
 }
 // jalur tangga (s ∈ [s0, s1], sisi dinding sampai sisi dalam) menyentuh tapak gedung lain?
 function clashes(P, s0, s1, T, SW, occ) {
@@ -222,7 +244,7 @@ function splitRooms(H, target) {
   rec(H.pts, 0, H.i * 0.37 + 1);
 }
 
-function planHouse(i, pts, area, h, { roadDist, occupied }) {
+function planHouse(i, pts, area, h, { roadDist, occupied, neighborOcc }) {
   if (area < 8 || h < 2.9) return null;
   const H = { i, pts, h, area, ceil: Math.min(3.0, h - 0.35), edges: edgesOf(pts), doors: [], parts: [], rooms: [], furn: [] };
   // sekat (rumah segi empat): potong sumbu panjang, rumah besar dibagi lagi; denah lain & rumah besar: pembagian umum
@@ -275,7 +297,7 @@ function planHouse(i, pts, area, h, { roadDist, occupied }) {
   const types = roomTypes(H);
   H.rooms.forEach((r, k) => { r.type = types[k]; });
   const li = types.indexOf('living');
-  for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, (x, y) => occupied(x, y, i)); } // tangga dulu (prioritas), kamar mandi menyesuaikan
+  if (h >= 6.2) { const occ = neighborOcc(i); for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, occ); } } // tangga dulu (prioritas), kamar mandi menyesuaikan
   planBath(H, types);
   planPorch(H, d1, roadDist, occupied);
   H.furn = furnish(H, H.rooms, types, H.avoid || [], 0);
@@ -406,13 +428,13 @@ function planUpper(H, li, occ = null) {
 }
 
 // ruko & aula: bukaan berkala di sisi depan (dekat jalan), lalu unit / isi aula
-function planShop(i, pts, area, h, { roadDist, occupied }, hallOnly = false) { // hallOnly: gedung jenis 0 yang besar (bukan deret ruko)
+function planShop(i, pts, area, h, { roadDist, occupied, fst, neighborOcc }, hallOnly = false) { // hallOnly: gedung jenis 0 yang besar (bukan deret ruko)
   if (area < 60 || pts.length > 160) return null;
   const edges = edgesOf(pts), longest = Math.max(...edges.map((e) => e.len));
   const ruko = !hallOnly && isRect(edges, 0.06) && area <= 3000 && Math.min(edges[0].len, edges[1].len) >= 6;
   const L = ruko ? SHOP : area > 3000 ? HALL_BIG : HALL_SMALL;
   if (h < L.ceil + 0.6) return null;
-  const H = { i, kind: ruko ? 'shop' : 'hall', pts, h, area, ceil: L.ceil, edges, doors: [], parts: [], rooms: [], furn: [], open: null };
+  const H = { i, kind: ruko ? 'shop' : 'hall', pts, h, area, ceil: L.ceil, edges, doors: [], parts: [], rooms: [], furn: [], open: null, fst };
   const ed = edges.map((e) => roadDist((e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2)), per = edges.reduce((s, e) => s + e.len, 0);
   const ranges = [], used = new Set();
   const opsIn = (U0, U1) => { const ops = []; for (let k = Math.floor(U0 / L.P); k * L.P < U1; k++) { const a = k * L.P + L.p, b = (k + 1) * L.P - L.p; if (a >= U0 && b <= U1) ops.push([a, b]); } return ops; };
@@ -450,7 +472,7 @@ function planShop(i, pts, area, h, { roadDist, occupied }, hallOnly = false) { /
   H.canopies = [];
   if (ruko) { const r = ranges[0], e = edges[r.k0]; H.canopies.push({ e, s0: Math.max(0.1, r.A - e.u0 - 0.4), s1: Math.min(e.len - 0.1, r.B - e.u0 + 0.4), d: 1.5, z: L.top + 0.12, cols: false }); }
   else for (const d of H.doors) if (d.s1 - d.s0 > 3) H.canopies.push({ e: d.e, s0: Math.max(0.1, d.s0 - 1.2), s1: Math.min(d.e.len - 0.1, d.s1 + 1.2), d: 3.0, z: L.top + 0.35, cols: true });
-  if (ruko) planUnits(H, ranges[0], (x, y) => occupied(x, y, i));
+  if (ruko) planUnits(H, ranges[0], h >= 6.4 ? neighborOcc(i) : null);
   else { planHall(H, L, (p) => occupied(p[0], p[1], i, h + 0.5)); if (h >= 8.4) planHallUpper(H, L, (p) => occupied(p[0], p[1], i, h + 0.5)); }
   return H;
 }
@@ -466,19 +488,24 @@ function planHallUpper(H, L, other) {
   const edgeD = (p) => { let m = Infinity; for (const e of H.edges) m = Math.min(m, segDist(p, e.a, e.b)); return m; };
   const ok = (p, m) => pip(p[0], p[1], H.pts) && edgeD(p) > m && !other(p);
   let aw = Math.min(30, Math.max(RUN + 4, (s1 - s0) * 0.32)), ad = Math.min(18, Math.max(SW + 5, (v1 - v0) * 0.32)), A = null;
+  const CORN = [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]];
   for (let t = 0; t < 7 && !A; t++, aw = Math.max(RUN + 3.2, aw * 0.85), ad = Math.max(SW + 4.4, ad * 0.85)) {
-    let best = -1;
-    for (let s = s0 + 2; s < s1; s += 1.5) for (let v = v0 + 2; v < v1; v += 1.5) {
-      const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1], [-1, 0], [1, 0], [0, 0]].map(([a, b]) => W(s + a * aw / 2, v + b * ad / 2));
-      if (!corners.every((q) => ok(q, 5))) continue;
-      const c = W(s, v), d = edgeD(c);
-      if (d > best) { best = d; A = { s, v, aw, ad }; }
+    let best = 5 + Math.min(aw, ad) / 2; // pusat atrium sejauh mungkin dari dinding; calon yang tidak lebih baik tidak diuji sudutnya
+    const ds = Math.max(1.5, (s1 - s0) / 50), dv = Math.max(1.5, (v1 - v0) / 50);
+    for (let s = s0 + 2; s < s1; s += ds) for (let v = v0 + 2; v < v1; v += dv) {
+      const c = W(s, v);
+      if (!pip(c[0], c[1], H.pts)) continue;
+      const d = edgeD(c);
+      if (d <= best || other(c)) continue;
+      let good = true;
+      for (const [a, b] of CORN) { const q = W(s + a * aw / 2, v + b * ad / 2); if (!ok(q, 5)) { good = false; break; } }
+      if (good) { best = d; A = { s, v, aw, ad }; }
     }
   }
   if (!A) return;
   // kerangka atrium: pangkal di pojok (s − aw/2, v − ad/2), u sepanjang sisi panjang, n ke dalam atrium
   const fa = { a: W(A.s - A.aw / 2, A.v - A.ad / 2), ux, uy, nx, ny, len: A.aw };
-  const Pa = onEdge(fa), S = mkStair(fa, A.aw - RUN, A.aw, 1, RISE, SW); // naik ke ujung atrium → mendarat di lantai 2 di luar tepinya
+  const Pa = onEdge(fa), S = mkStair(fa, A.aw - RUN, A.aw, 1, RISE, SW, 1.4, 0, 1.4, 0); // naik ke ujung atrium → mendarat di lantai 2 di luar tepinya
   const hole = [Pa(0, 0), Pa(A.aw, 0), Pa(A.aw, A.ad), Pa(0, A.ad)];
   const inA = (p, m = 0) => { const s = (p[0] - fa.a[0]) * ux + (p[1] - fa.a[1]) * uy, v = (p[0] - fa.a[0]) * nx + (p[1] - fa.a[1]) * ny; return s > -m && s < A.aw + m && v > -m && v < A.ad + m; };
   // pagar keliling atrium (0,1 m), terbuka di tempat tangga tiba (sisi ujung s = aw, v ∈ [T, T + SW])
@@ -491,6 +518,7 @@ function planHallUpper(H, L, other) {
   H.furn = H.furn.filter((f) => !inA([f.x, f.y], 1.4) && !(f.kind === 'column' && inA([f.x, f.y], 2.0)));
   H.lights = (H.lights || []).filter((m) => !inA(m, 0.8));
   H.ceil = 3.25;
+  for (const f of H.furn) if (f.kind === 'column') f.h = H.ceil;
   H.open.top = Math.min(H.open.top, 3.0);
   for (const d of H.doors) d.h = Math.min(d.h, 3.0);
   // lantai 2: kolom di titik grid yang sama dengan lantai dasar, kios/bangku/taman/kafe di cincin sekeliling atrium
@@ -547,33 +575,56 @@ function planUnits(H, r, occ = null) {
   }
   if (H.h >= 6.4 && Lv >= 9.9) planShopUpper(H, e, bounds, Lv, occ);
 }
-// Ruko lantai 2 (3,5 m): tangga lurus di tiap unit (menempel sekat kanan, naik ke belakang), ruang atas (kantor / gudang /
-// hunian) dengan jendela fasad yang berlubang; sekat unit di atas berambang 1,2 m dekat depan sehingga lantai atas tersambung
-// (bot memakai tangga unit pertama: H.up.stair).
+// Ruko lantai 2 (3,5 m): unit berpasangan (j−1, j) untuk j ganjil — tangga lurus di unit j menempel sekat kanannya (naik ke
+// belakang), lantai atas pasangan itu satu ruang (kantor / gudang / hunian); sekat antar-pasangan di atas berambang 1,6 m dekat
+// depan sehingga seluruh lantai atas tersambung; jendela fasad lantai 2 berlubang. Bot memakai tangga pertama (H.up.stair).
 function planShopUpper(H, e, bounds, Lv, occ) {
-  const T = HOUSE.wall, SW = 1.0, RISE = 3.5, RUN = 4.4, P = onEdge(e), vTop = Lv - T - 1.4, vFoot = vTop - RUN;
-  const stairs = [], plate = [], rail = [], avoid = [], keep = [];
-  for (let j = 0; j + 1 < bounds.length; j++) {
-    const sA = bounds[j], sB = bounds[j + 1], unit = [P(sA, 0), P(sB, 0), P(sB, Lv), P(sA, Lv)];
-    if (sB - sA < 3.6) { plate.push(unit); continue; } // unit sempit: naik lewat unit sebelah
+  const T = HOUSE.wall, SW = 1.0, RISE = 3.5, RUN = 4.4, P = onEdge(e), vTop = Lv - T - 1.8, vFoot = vTop - RUN, n = bounds.length - 1;
+  const tryStair = (j) => { // tangga di unit j (menempel sekat kanannya); null bila sempit / terhalang dinding tetangga
+    const sA = bounds[j], sB = bounds[j + 1];
+    if (sB - sA < 3.6) return null;
     const pe = { a: P(sB, 0), ux: e.nx, uy: e.ny, nx: -e.ux, ny: -e.uy, len: Lv }; // garis sepanjang sekat kanan, ke belakang
-    if (occ && clashes(onEdge(pe), vFoot - 1.1, Lv - T - 0.3, T, SW, occ)) { plate.push(unit); continue; } // dinding tetangga menjorok
-    const S = mkStair(pe, vFoot, vTop, 1, RISE, SW);
-    stairs.push(S);
-    plate.push(...plateMinusHole(unit, e, sB - T - SW, sB + 0.02, vFoot, vTop));
-    rail.push(...railOf(S));
-    avoid.push(...stairAvoid(S));
-    const Pe = onEdge(pe);
-    keep.push([Pe(vFoot - 1.1, 0), Pe(vTop + 0.2, 0), Pe(vTop + 0.2, T + SW + 0.35), Pe(vFoot - 1.1, T + SW + 0.35)]); // zona tangga di lantai dasar
+    if (occ && clashes(onEdge(pe), vFoot - 1.5, Lv - T - 0.3, T, SW, occ)) return null;
+    return { j, S: mkStair(pe, vFoot, vTop, 1, RISE, SW, 1.2, 0.5, 0.9, 0.5), pe, sB };
+  };
+  let pairs = true, got = [];
+  for (let j = n > 1 ? 1 : 0; j < n; j += 2) { const g = tryStair(j); if (g) got.push(g); }
+  if (!got.length) { pairs = false; for (let j = 0; j < n && !got.length; j++) { const g = tryStair(j); if (g) got.push(g); } } // cadangan: satu tangga di unit mana saja
+  if (!got.length) return;
+  const stairs = got.map((g) => g.S), rail = [], avoid = [], keep = [];
+  for (const g of got) {
+    rail.push(...railOf(g.S));
+    avoid.push(...stairAvoid(g.S));
+    const Pe = onEdge(g.pe);
+    const cw = T + SW + (g === got[0] ? 1.7 : 0.8); // lorong lurus dari bukaan depan ke kaki tangga (tangga utama/bot: lebih lebar, grid navigasi 1 m)
+    keep.push([Pe(0, 0), Pe(vTop + 0.2, 0), Pe(vTop + 0.2, T + SW + 0.35), Pe(vFoot - 1.7, T + SW + 0.35), Pe(vFoot - 1.7, cw), Pe(0, cw)]);
   }
-  if (!stairs.length) return;
+  // pelat lantai 2 (collider & gambar): jalur depan dan belakang selebar deretan + potongan tengah di antara lubang tangga
+  const R4 = (s0, s1, v0, v1) => [P(s0, v0), P(s1, v0), P(s1, v1), P(s0, v1)], plate = [R4(0, e.len, 0, vFoot), R4(0, e.len, vTop, Lv)];
+  let s = 0;
+  for (const g of got) { const h0 = g.sB - T - SW, h1 = Math.min(e.len, g.sB + 0.02); if (h0 - s > 0.05) plate.push(R4(s, h0, vFoot, vTop)); s = h1; }
+  if (e.len - s > 0.05) plate.push(R4(s, e.len, vFoot, vTop));
   // perabot lantai dasar yang menimpa tangga dibuang
-  H.furn = H.furn.filter((f) => !keep.some((K) => furnitureRect(f).some((q) => pip(q[0], q[1], K)) || K.some((q) => pip(q[0], q[1], furnitureRect(f))) || pip(f.x, f.y, K)));
+  const kb = keep.map((K) => [Math.min(...K.map((q) => q[0])), Math.min(...K.map((q) => q[1])), Math.max(...K.map((q) => q[0])), Math.max(...K.map((q) => q[1]))]);
+  H.furn = H.furn.filter((f) => {
+    const r = Math.hypot(f.w, f.d) / 2 + 0.6;
+    for (let k = 0; k < keep.length; k++) {
+      const K = keep[k], b = kb[k];
+      if (f.x < b[0] - r || f.x > b[2] + r || f.y < b[1] - r || f.y > b[3] + r) continue;
+      const fr = furnitureRect(f);
+      if (fr.some((q) => pip(q[0], q[1], K)) || K.some((q) => pip(q[0], q[1], fr)) || pip(f.x, f.y, K)) return false;
+    }
+    return true;
+  });
   H.ceil = 3.25;
-  const parts = H.parts.map((p) => ({ ...p, g0: 1.0, g1: 2.2 })); // sekat atas berambang
-  const types = H.rooms.map((r, j) => { const q = hash(H.i + j * 5.1, 2.7); return q < 0.4 ? 'office' : q < 0.7 ? 'storage' : 'bedroom'; });
-  H.up = { floor: RISE, ceil: Math.min(H.h - 0.4, 6.3), plate, rail, stair: stairs[0], stairs, types, avoid, parts, furn: [] };
-  H.up.furn = furnish(H, H.rooms, types, avoid, 1, parts);
+  // lantai atas: ruang per pasangan unit (sekat di dalam pasangan tidak ada), sekat antar-pasangan berambang
+  const keepPart = (j) => !pairs || j % 2 === 0; // sekat di bounds[j] (H.parts[j − 1])
+  const parts = H.parts.filter((p, k) => keepPart(k + 1)).map((p) => ({ ...p, g0: 0.8, g1: 2.4 }));
+  const rooms = [];
+  for (let j = 0; j < n; j += pairs ? 2 : 1) { const sA = bounds[j], sB = bounds[Math.min(n, j + (pairs ? 2 : 1))]; const r = [P(sA, 0), P(sB, 0), P(sB, Lv), P(sA, Lv)]; rooms.push(r); }
+  const types = rooms.map((r, j) => { const q = hash(H.i + j * 5.1, 2.7); return q < 0.4 ? 'office' : q < 0.7 ? 'storage' : 'bedroom'; });
+  H.up = { floor: RISE, ceil: Math.min(H.h - 0.4, 6.3), plate, rail, stair: stairs[0], stairs, types, avoid, parts, rooms, furn: [] };
+  H.up.furn = furnish(H, rooms, types, avoid, 1, parts, RISE);
 }
 function furnishUnit(H, e, sA, sB, Lv, j) {
   const T = HOUSE.wall, W = sB - sA, sm = (sA + sB) / 2, r = hash(H.i + j * 3.7, e.u0), P = onEdge(e);
@@ -779,7 +830,7 @@ const ITEMS = {
 };
 const LIST = { living: ['sofa', 'tv', 'coffee', 'shelf', 'plant'], bedroom: ['bed', 'wardrobe', 'side', 'desk'], kitchen: ['counter', 'fridge', 'table'], hall: ['shelf', 'plant', 'side'], office: ['desk', 'shelf', 'plant', 'side', 'desk'], storage: ['shelf', 'wardrobe', 'shelf', 'side'] };
 // avoid: lingkaran {x, y, r} yang harus kosong (tangga, pendekatan, pendaratan); seed: variasi per lantai
-function furnish(H, rooms, types, avoid, seed, parts = H.parts) { // parts: sekat lantai ini (ruko lantai 2: sekat berambang)
+function furnish(H, rooms, types, avoid, seed, parts = H.parts, zf = 0) { // parts: sekat lantai ini (ruko lantai 2: sekat berambang); zf: tinggi lantai
   const R = (k) => hash(H.i * 1.7 + k + seed * 101.3, H.pts[0][0]);
   const placed = [];
   // ambang sekat (termasuk pintu kamar mandi): perabot berjarak ≥ 0,9 m dari tiap titik ambang (dulu hanya titik tengahnya,
@@ -823,7 +874,13 @@ function furnish(H, rooms, types, avoid, seed, parts = H.parts) { // parts: seka
         // perabot tinggi tidak menutup jendela (dinding luar)
         if (h > 1.1) {
           const ext = H.edges.find((E) => Math.abs((bx - E.a[0]) * E.nx + (by - E.a[1]) * E.ny) < 0.3 && (bx - E.a[0]) * E.ux + (by - E.a[1]) * E.uy > -0.1 && (bx - E.a[0]) * E.ux + (by - E.a[1]) * E.uy < E.len + 0.1);
-          if (ext) { const u = ext.u0 + (bx - ext.a[0]) * ext.ux + (by - ext.a[1]) * ext.uy; let blockWin = false; for (let du = -w / 2; du <= w / 2; du += 0.25) if (houseWindow(u + du, 1.6)) blockWin = true; if (blockWin) continue; }
+          if (ext) {
+            const u = ext.u0 + (bx - ext.a[0]) * ext.ux + (by - ext.a[1]) * ext.uy, sm = u - ext.u0;
+            let blockWin = false;
+            if (H.kind) blockWin = !(H.blind && H.blind.has(ext.j)) && bandHoles(ext, H.fst | 0, zf + 0.5, zf + 2.2).some((q) => q[0] < sm + w / 2 + 0.1 && q[1] > sm - w / 2 - 0.1);
+            else for (let du = -w / 2; du <= w / 2; du += 0.25) if (houseWindow(u + du, 1.6)) blockWin = true;
+            if (blockWin) continue;
+          }
         }
         if (hits(x, y, Math.max(w, d) / 2 + 0.15)) continue;
         placed.push({ kind, x, y, rot: Math.atan2(e.uy, e.ux), w, d, h, room: ri, nx: e.nx, ny: e.ny });
