@@ -12,7 +12,7 @@ import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, apply
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
 import { tickSkins } from './skinfx.js';
-import { WEAPONS } from './weapons.js';
+import { WEAPONS, createSkinFlame, setVmGlow, muzzleLocal } from './weapons.js';
 import { createKillFx } from './killfx.js';
 import { createKillBanner } from './hud.js';
 import * as audio from './audio.js';
@@ -142,7 +142,7 @@ function createStage({ scene, camera, col, sunDir }) {
   // memakai material view-model (pola, pendar & animasi sama persis dengan di tangan); program shader dikompilasi dulu
   // (compileAsync) sebelum ditampilkan supaya lobi tidak tersendat
   const SHOW = new THREE.Vector3(S.x + ux * 1.9 - rx * 0.55, 1.25, S.z + uz * 1.9 - rz * 0.55);
-  const show = { root: new THREE.Group(), key: '', obj: null, t0: 0 };
+  const show = { root: new THREE.Group(), key: '', obj: null, t0: 0, flame: createSkinFlame(1.3), th: null };
   show.root.position.copy(SHOW);
   show.root.visible = false;
   g.add(show.root);
@@ -157,6 +157,12 @@ function createStage({ scene, camera, col, sunDir }) {
     hold.add(gun);
     const bb = new THREE.Box3().setFromObject(gun), c = bb.getCenter(new THREE.Vector3()), len = Math.max(0.2, bb.max.z - bb.min.z);
     gun.position.sub(c);
+    // nyala moncong beranimasi di ujung laras (skin epik & legendaris); ditempel sesudah kotak batas dihitung
+    const sk = skinById(id);
+    show.th = sk && sk.th && sk.th.glow ? sk.th : null;
+    show.flame.set(show.th && show.th.flame);
+    gun.add(show.flame.mesh);
+    show.flame.mesh.position.copy(muzzleLocal(kind));
     hold.scale.setScalar(Math.min(1.25, 0.82 / len)); // senapan panjang & pistol mengisi bingkai yang sama
     hold.rotation.set(0.08, 0, 0);
     show.obj = hold;
@@ -237,6 +243,14 @@ function createStage({ scene, camera, col, sunDir }) {
         show.obj.rotation.y = -1.2 + u * 0.5;
         show.root.position.y = SHOW.y + Math.sin(u * 1.3) * 0.015;
         show.root.updateMatrixWorld(true);
+        // peragaan efek skin (material view-model yang sama dengan di tangan): pendar berdenyut, panas naik-turun seperti
+        // menembak beruntun, sapuan cahaya dari popor ke moncong tiap 3,5 dtk; nyala moncong mengikuti panas
+        if (show.th) {
+          const heat = 0.5 + 0.5 * Math.sin(u * 0.9), cyc = (u % 3.5) / 1.2;
+          setVmGlow(0.25 + 0.25 * Math.sin(u * 2.2), heat, 0, cyc < 1 ? 0.5 - cyc * 1.6 : -99);
+          show.flame.mesh.visible = !!show.th.flame && show.obj.visible;
+          show.flame.update(heat, 0, 1, 1);
+        } else { setVmGlow(0, 0, 0, -99); show.flame.mesh.visible = false; }
       }
       if (kfx) kfx.update(dt);
     },
@@ -343,7 +357,7 @@ export function createLobby(o) {
     const tools = gun ? `<div class="lb-pv">
         <div class="lb-kinds" role="group" aria-label="Peragakan di senjata">${SHOW_KINDS.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === showKind}">${esc(WEAPONS[k].short)}</button>`).join('')}</div>
         <div class="lb-pv-a"><button type="button" class="lb-btn ghost" data-hear="${id}">${ic('sound', 'lb-i-s')}${th.voice ? 'Dengar tembakan' : 'Tembakan pabrik'}</button>
-        <button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Efek kill</button></div></div>` : '';
+        <button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Spanduk kill</button></div></div>` : '';
     return `<div class="lb-detail r-${s.rarity}" style="--rc:${r.color}"><div class="lb-detail-m"><span class="lb-rar">${esc(r.label)} · ${gun ? 'Skin senjata' : 'Skin karakter'} · ${esc(cl.name)}</span><h3>${esc(s.name)}</h3><p>${esc(s.desc || '')}</p>
       ${feats ? `<div class="lb-feats">${feats}</div>` : ''}${!has && lack > 0 && !gun ? '<p class="lb-hint">Selesaikan misi untuk mengumpulkan Koin Sutera.</p>' : ''}${tools}</div><div class="lb-detail-a">${act}</div></div>`;
   }
@@ -553,13 +567,10 @@ export function createLobby(o) {
     if (d.skin) { selSkin = d.skin; killN = 0; drawPanel(); preview(); return; }
     if (d.kind) { showKind = d.kind; for (const b of $$('[data-kind]')) b.setAttribute('aria-pressed', String(b.dataset.kind === showKind)); preview(); return; }
     if (d.hear) { const s = skinById(d.hear); audio.previewShot(showKind, s && s.th ? s.th.voice || null : null); return; }
-    if (d.killfx) { // pratinjau efek kill: hitungan beruntun naik tiap klik (1 → 5), kamera mundur sebentar lalu kembali ke etalase
+    if (d.killfx) { // pratinjau spanduk & denting kill: hitungan beruntun naik tiap klik (1 → 5); kamera tetap di etalase
       audio.unlockAudio();
       killN = killN % 5 + 1;
-      stage.aim('kill');
       stage.killPreview(d.killfx, killN, menu);
-      clearTimeout(killT);
-      killT = setTimeout(() => { if (panel === 'toko' || panel === 'koleksi') stage.aim(selSkin.startsWith('gun_') ? 'show' : 'member', 0); }, 2600);
       return;
     }
     if (d.claim) { const [scope, i] = d.claim.split(':'), got = claimQuest(scope, +i); if (got) toast(`${coin}<b>+${fmt(got)}</b> Koin Sutera`, 'gold'); refresh(); return; }

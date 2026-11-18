@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL, SF_U, tickSkins } from './skinfx.js';
+import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL, SF_U, tickSkins, FLAME_VS, FLAME_FS, FLAME_STYLE } from './skinfx.js';
 
 // ---------- Model senjata dari Blender (tools/blender/weapons.py), opsional ----------
 // weapons.glb: <jenis> (model orang pertama), <jenis>_mag, shotgun_pump, <jenis>_lod1 (warna verteks, untuk loot &
@@ -356,11 +356,36 @@ export function setVmArms(o = {}) {
   if (sl && (sl.defines.SF_CHARFX | 0) !== fx) { if (fx) sl.defines.SF_CHARFX = fx; else delete sl.defines.SF_CHARFX; sl.needsUpdate = true; }
 }
 // ---------- Efek skin senjata pemain (diisi game/skins.js applyEquipped) ----------
-// tracer / flash: warna HDR [r, g, b] pelacak & kilatan moncong; muzzle: partikel moncong ('ember' | 'frost' | 'spark' |
-// 'gold' | 'plasma' | 'peacock' | 'smoke' | 'petal'); glow: pakai pendar isi ulang/periksa/cabut; cue(ev): bunyi
-// 'equip' | 'inspect' | 'reload' (game/audio.js). null = tampilan pabrik.
-const SKIN = { v: 0, tracer: null, flash: null, muzzle: null, glow: false, cue: null };
-export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, muzzle: null, glow: false, cue: null }, o || {}); SKIN.v++; }
+// tracer / flash: warna HDR [r, g, b] pelacak & kilatan moncong; flame: nyala moncong beranimasi (createSkinFlame);
+// glow: pakai pendar isi ulang/periksa/cabut; cue(ev): bunyi 'equip' | 'inspect' | 'reload' (game/audio.js). null = pabrik.
+const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null };
+export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null }, o || {}); SKIN.v++; }
+// pendar view-model dari luar pertandingan (etalase lobi memakai material yang sama): glow, panas, kilat, posisi sapuan
+export function setVmGlow(x, y, z, w) { VM_G.value.set(x, y, z, w); }
+// titik moncong senjata `kind` di ruang senjata (untuk nyala moncong etalase lobi)
+export function muzzleLocal(kind, out = new THREE.Vector3()) { const m = nodeLocal(kind + '_muzzle', kind); return m ? out.copy(m) : out.set(0, 0.012, MUZZLE_Z[kind] || -0.6); }
+// nyala moncong beranimasi (billboard shader, skinfx.js FLAME_*): { mesh, set(flame), update(heat, kick, fade, scale) }.
+// flame = { style: 'fire' | 'plasma' | 'glint' | 'spirit' | 'arc' | 'frost' | 'glow', c1, c2 (hex), size? (m) } atau null
+const FLAME_K = { fire: 1.7, spirit: 2.2, plasma: 2.8, glint: 2.8, arc: 3.0, frost: 1.9, glow: 2.0 };
+export function createSkinFlame(sizeK = 1) {
+  const U = { uT: SF_U.uSfT, uHeat: { value: 0 }, uKick: { value: 0 }, uStyle: { value: 0 }, uFade: { value: 1 }, uC1: { value: new THREE.Color() }, uC2: { value: new THREE.Color() }, uSize: { value: 0.04 }, uLift: { value: 0 } };
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: U, vertexShader: FLAME_VS, fragmentShader: FLAME_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  mesh.frustumCulled = false; mesh.visible = false; mesh.renderOrder = 33;
+  let base = 0.04;
+  return {
+    mesh,
+    set(f) {
+      U.uStyle.value = f ? FLAME_STYLE[f.style] || 0 : 0;
+      if (!f) { mesh.visible = false; return; }
+      const k = FLAME_K[f.style] || 2.6; // kekuatan HDR per gaya: api tidak terlalu putih supaya tetap jingga-merah
+      U.uC1.value.set(f.c1).multiplyScalar(k); U.uC2.value.set(f.c2).multiplyScalar(k);
+      const up = f.style === 'fire' || f.style === 'spirit';
+      U.uLift.value = up ? 0.85 : 0;
+      base = (f.size || (up ? 0.052 : 0.036)) * sizeK;
+    },
+    update(heat, kick, fade = 1, scale = 1) { U.uHeat.value = heat; U.uKick.value = kick; U.uFade.value = fade; U.uSize.value = base * scale * (1 + 0.45 * Math.min(1.5, heat) + 0.5 * kick); },
+  };
+}
 // salinan model orang pertama satu senjata (badan + magasin/pompa/bolt …) dengan material orang pertama, untuk pratinjau
 export function gunPreview(kind) {
   if (!GLB) return null;
@@ -521,39 +546,25 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const puffs = pointPool(camera, 24, false, 0.0, 70, 30);
   const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0 };
   const v = new THREE.Vector3();
-  // ---------- efek skin senjata (setSkinFx): warna kilatan, partikel moncong, pendar isi ulang/periksa/cabut, panas ----------
-  // Hanya MEMBACA keadaan animasi (st.flashT, st.act, st.inspect, st.swap); dipanggil sekali per frame dari update().
-  const sfx = pointPool(camera, 72, true, 0.25, 40, 32), FLASH0 = flash.material.color.clone(), LIGHT0 = flashLight.color.clone();
+  // ---------- efek skin senjata (setSkinFx): warna kilatan, nyala moncong beranimasi, pendar isi ulang/periksa/cabut, panas ----------
+  // Hanya MEMBACA keadaan animasi (st.flashT, st.act, st.inspect, st.swap, st.ads); dipanggil sekali per frame dari update().
+  const FLASH0 = flash.material.color.clone(), LIGHT0 = flashLight.color.clone();
   const sk = { v: -1, fl: 0, act: null, insp: 0, swap: 0, heat: 0, kick: 0, glow: 0, sweep: -99, sweepV: 0 };
-  const rr = (a, b) => a + Math.random() * (b - a);
-  function skinMuzzle(kind, p) { // partikel moncong per tembakan (ruang kamera)
-    const big = FLASH_K[kind] > 1.3 ? 1.6 : 1;
-    switch (SKIN.muzzle) {
-      case 'ember': for (let i = 0; i < 4 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.15, 0.15), rr(0.15, 0.55), rr(-0.5, -0.2), 0.006, 0.002, rr(0.45, 0.85), 6, 2.1, 0.35, 1, -0.5, 1.6); break;
-      case 'frost': for (let i = 0; i < 5 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.25, 0.25), rr(-0.1, 0.25), rr(-0.45, -0.1), 0.007, 0.002, rr(0.4, 0.7), 3.2, 5, 7, 1, 0.25, 3); break;
-      case 'spark': for (let i = 0; i < 6 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-1.1, 1.1), rr(-0.6, 1.1), rr(-1.4, -0.3), 0.004, 0.001, rr(0.1, 0.22), 4, 4.5, 9, 1, 0, 5); break;
-      case 'gold': for (let i = 0; i < 5 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0.0, 0.5), rr(-0.6, -0.15), 0.006, 0.002, rr(0.35, 0.65), 7, 5, 1.6, 1, 1.4, 2); break;
-      case 'plasma': for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2; sfx.emit(p.x, p.y, p.z, Math.cos(a) * 0.5, Math.sin(a) * 0.5, -0.4, 0.006, 0.001, 0.22, 1.4, 6, 9, 1, 0, 6); } break;
-      case 'peacock': for (let i = 0; i < 5 * big; i++) { const t = i % 2; sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0.05, 0.45), rr(-0.6, -0.2), 0.006, 0.002, rr(0.35, 0.6), t ? 6 : 0.8, t ? 4 : 5, t ? 1 : 3.4, 1, -0.2, 2); } break;
-      case 'smoke': for (let i = 0; i < 2; i++) puffs.emit(p.x, p.y, p.z, rr(-0.06, 0.06), rr(0.06, 0.16), rr(-0.3, -0.15), 0.03, 0.12, rr(0.5, 0.8), 0.08, 0.16, 0.15, 0.35, -0.1, 1.4);
-        for (let i = 0; i < 3; i++) sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0, 0.4), rr(-0.6, -0.2), 0.005, 0.001, rr(0.3, 0.5), 1, 5, 4, 1, -0.3, 2); break;
-      case 'petal': for (let i = 0; i < 4 * big; i++) sfx.emit(p.x, p.y, p.z, rr(-0.3, 0.3), rr(0.0, 0.35), rr(-0.5, -0.15), 0.006, 0.003, rr(0.4, 0.7), 7, 4.4, 1.4, 1, 0.6, 2.2); break;
-      default:
-    }
-  }
+  const skinFlame = createSkinFlame(); // nyala moncong: billboard shader berbentuk api/plasma/kilau (bukan titik)
+  scene.add(skinFlame.mesh);
   function skinFxTick(dt, G, scoped) {
     tickSkins(); // waktu animasi skin (sekali per frame)
-    sfx.pts.visible = !scoped;
-    if (sk.v !== SKIN.v) { // tema berganti: warna kilatan & cahaya moncong
+    if (sk.v !== SKIN.v) { // tema berganti: warna kilatan & cahaya moncong, gaya nyala moncong
       sk.v = SKIN.v;
       if (SKIN.flash) { flash.material.color.setRGB(SKIN.flash[0], SKIN.flash[1], SKIN.flash[2]); const m = Math.max(...SKIN.flash); flashLight.color.setRGB(SKIN.flash[0] / m, SKIN.flash[1] / m, SKIN.flash[2] / m); }
       else { flash.material.color.copy(FLASH0); flashLight.color.copy(LIGHT0); }
+      skinFlame.set(SKIN.flame);
     }
     const shot = st.flashT > sk.fl + 1e-5 && !!G; // fire() baru mengisi ulang st.flashT
     sk.fl = st.flashT - dt;
-    if (shot) { sk.kick = 1; sk.heat = Math.min(1.5, sk.heat + (FLASH_K[st.kind] > 1.3 ? 0.22 : 0.07)); if (SKIN.muzzle && G.g.parent) { G.muzzle.getWorldPosition(v); skinMuzzle(st.kind, v); } }
-    sk.kick *= Math.exp(-dt * 14);
-    sk.heat = Math.max(0, sk.heat - dt * 0.35);
+    if (shot) { sk.kick = 1; sk.heat = Math.min(1.5, sk.heat + (FLASH_K[st.kind] > 1.3 ? 0.22 : 0.07)); }
+    sk.kick *= Math.exp(-dt * 10);
+    sk.heat = Math.max(0, sk.heat - dt * 0.3);
     // pendar: isi ulang (puncak saat magasin terpasang + denyut di akhir), periksa (sapuan cahaya dari popor ke moncong), cabut
     let glow = 0;
     const A = st.act;
@@ -566,7 +577,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (sk.sweepV > 0) { sk.sweepV = Math.max(0, sk.sweepV - dt * 1.8); sk.sweep = -0.95 + (1 - sk.sweepV) * 1.5; if (!sk.sweepV && !(st.inspect > 0)) sk.sweep = -99; }
     sk.glow = Math.max(0, sk.glow - dt * 1.6);
     VM_G.value.set(SKIN.glow ? Math.max(glow, sk.glow) : 0, sk.heat, sk.kick, SKIN.glow ? sk.sweep : -99);
-    sfx.update(dt);
+    // nyala moncong di titik moncong senjata yang dipegang: membesar saat menembak & panas, memudar saat membidik
+    const on = !!(SKIN.flame && G && G.g.parent && G.g.visible && !scoped);
+    skinFlame.mesh.visible = on;
+    if (on) { G.muzzle.getWorldPosition(v); skinFlame.mesh.position.copy(v); skinFlame.update(sk.heat, sk.kick, 1 - st.ads * 0.85, FLASH_K[st.kind] || 1); }
   }
   // ganti model prosedural dengan model Blender (laras −Z, asal di pegangan): titik bidik & moncong dari model;
   // magasin (<jenis>_mag) & pompa (shotgun_pump) adalah simpul terpisah di weapons.glb → dipasang ke senjata supaya bisa dianimasikan
