@@ -216,7 +216,38 @@
   background: #1e1a4c; box-shadow: 0 -1em 1.6em -.6em rgba(14, 12, 36, .9); }
 .lb-detail h3 { margin: .2em 0 .25em; font: 600 1.4em/1.1 var(--display); letter-spacing: .06em; }
 .lb-detail p { font-size: .86em; line-height: 1.45; color: var(--dim); }
-.lb-detail-a { flex: none; }
+.lb-detail-a { flex: none; align-self: flex-start; padding-top: .3em; }
+.lb-detail-m { min-width: 0; display: grid; gap: .1em; }
+.lb-detail.r-legendaris { background: linear-gradient(100deg, rgba(242, 178, 51, .16), rgba(30, 26, 76, 0) 45%), #1e1a4c; border-color: rgba(242, 178, 51, .45); }
+.lb-detail.r-epik { background: linear-gradient(100deg, rgba(180, 107, 255, .14), rgba(30, 26, 76, 0) 45%), #1e1a4c; }
+/* keistimewaan skin (animasi, suara, efek kill, aura) */
+.lb-feats { display: flex; flex-wrap: wrap; gap: .3em; margin-top: .45em; }
+.lb-chipf { display: inline-flex; align-items: center; gap: .3em; padding: .16em .55em; border-radius: 1em; font-size: .68em; font-weight: 800; letter-spacing: .03em; color: var(--ink); background: color-mix(in srgb, var(--rc) 22%, transparent); border: 1px solid color-mix(in srgb, var(--rc) 45%, transparent); }
+.lb-chipf .lb-i { width: 1.1em; height: 1.1em; color: var(--rc); }
+.lb-feat { position: absolute; top: .9em; right: .9em; display: flex; gap: .2em; }
+.lb-feat i { display: grid; place-items: center; width: 1.55em; height: 1.55em; border-radius: 50%; background: rgba(14, 11, 34, .82); color: var(--rc); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rc) 55%, transparent); }
+.lb-feat .lb-i { width: .95em; height: .95em; }
+/* alat pratinjau senjata: pilih jenis senjata, dengar tembakan, lihat efek kill */
+.lb-pv { display: grid; gap: .45em; margin-top: .5em; }
+.lb-pv .lb-pv-a { order: -1; }
+.lb-kinds { display: flex; flex-wrap: wrap; gap: .25em; }
+.lb-kinds button { height: 1.75em; padding: 0 .55em; border-radius: .5em; border: 1px solid var(--ln); background: rgba(255, 255, 255, .05); color: var(--dim); font-size: .72em; font-weight: 800; }
+.lb-kinds button:hover { color: var(--ink); background: rgba(255, 255, 255, .1); }
+.lb-kinds button[aria-pressed="true"] { color: #1d1a3c; border-color: transparent; background: linear-gradient(180deg, var(--gold2), var(--gold)); }
+.lb-pv-a { display: flex; flex-wrap: wrap; gap: .4em; }
+.lb-pv-a .lb-btn { height: 2.1em; font-size: .82em; padding: 0 .9em; }
+/* koleksi bertema */
+.lb-col { display: grid; gap: .45em; }
+.lb-col-h { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: .7em; margin-top: .4em; padding-bottom: .3em; border-bottom: 1px solid rgba(255, 255, 255, .08); }
+.lb-col-h h4 { margin: 0; font: 600 1.02em/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--gold2); }
+.lb-col-h span { font-size: .78em; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-col-h em { font-style: normal; font-size: .78em; font-weight: 800; color: var(--faint); font-variant-numeric: tabular-nums; }
+/* kartu menurut kelangkaan: epik bercahaya ungu, legendaris berbingkai emas berkilau */
+.lb-card.r-epik .lb-thumb { box-shadow: inset 0 0 0 1px rgba(180, 107, 255, .35); }
+.lb-card.r-legendaris { border-color: rgba(242, 178, 51, .45); background: linear-gradient(160deg, rgba(242, 178, 51, .12), rgba(255, 255, 255, .03) 55%); }
+.lb-card.r-legendaris .lb-thumb { box-shadow: inset 0 0 0 1px rgba(242, 178, 51, .55), inset 0 -2.5em 2.5em -2em rgba(242, 178, 51, .45); }
+.lb-card.r-legendaris .lb-thumb::before { content: ''; position: absolute; inset: -40%; background: linear-gradient(115deg, transparent 42%, rgba(255, 236, 170, .28) 50%, transparent 58%); animation: lbSheen 3.6s ease-in-out infinite; pointer-events: none; z-index: 1; }
+@keyframes lbSheen { 0% { transform: translateX(-45%); } 55%, 100% { transform: translateX(45%); } }
 /* regu */
 .lb-mates { display: grid; gap: .5em; }
 .lb-mate { display: grid; grid-template-columns: auto 1.2fr 1fr auto; align-items: center; gap: .9em; padding: .7em .9em; border-radius: var(--r); border: 1px solid var(--ln); background: rgba(255, 255, 255, .045); }

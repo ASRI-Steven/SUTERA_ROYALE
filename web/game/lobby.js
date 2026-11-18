@@ -8,9 +8,14 @@
 import * as THREE from 'three';
 import { buildCharacter, characterVariants } from '../map/rig.js';
 import { profile, saveProfile, owns, buy, equip, setName, ensureSquad, setMate, partySlots, setParty } from './profile.js';
-import { RARITY, CHAR_SKINS, GUN_SKINS, skinById, charOutfit, applyGunSkin, skinThumb } from './skins.js';
+import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, setCharAura, gunTheme, skinRenderer } from './skins.js';
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
+import { tickSkins } from './skinfx.js';
+import { WEAPONS } from './weapons.js';
+import { createKillFx } from './killfx.js';
+import { createKillBanner } from './hud.js';
+import * as audio from './audio.js';
 
 // ---------- ikon (garis, 24×24) ----------
 const IC = {
@@ -21,6 +26,11 @@ const IC = {
   regu: '<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19c.6-3.3 2.7-5 5.5-5s4.9 1.7 5.5 5"/><circle cx="17" cy="9.5" r="2.3"/><path d="M16 14.2c2.4.2 4 1.6 4.5 4.3"/>',
   setelan: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9"/>',
   pencil: '<path d="M4 20l1-4L16.5 4.5l3 3L8 19z"/><path d="M14.5 6.5l3 3"/>',
+  sound: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  spark: '<path d="M12 3.5l1.9 5.6 5.6 1.9-5.6 1.9L12 18.5l-1.9-5.6L4.5 11l5.6-1.9z"/><path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>',
+  anim: '<path d="M4 12c2-5 4-5 6 0s4 5 6 0 3-4 4-2"/><path d="M4 18h16" opacity=".5"/>',
+  aura: '<circle cx="12" cy="12" r="3"/><path d="M12 3.5v2.5M12 18v2.5M3.5 12H6M18 12h2.5M6 6l1.8 1.8M16.2 16.2 18 18M18 6l-1.8 1.8M7.8 16.2 6 18"/>',
+  tracer: '<path d="M3.5 17.5 17 6"/><path d="M14 4.5h4.5V9" /><path d="M5 12.5 9.5 8" opacity=".5"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   lock: '<rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
@@ -86,6 +96,7 @@ function createStage({ scene, camera, col, sunDir }) {
   const members = [null, null, null, null];
   const memberOf = (i) => (i === 0 ? { ...ME_LOOK, skin: profile.equipped.character } : ensureSquad()[i - 1]);
   function dispose(ch) {
+    if (ch.aura) { ch.aura.dispose(); ch.aura = null; }
     g.remove(ch.root);
     ch.root.traverse((o) => { if (o.geometry && o.geometry.isInstancedBufferGeometry) o.geometry.dispose(); if (o.isSkinnedMesh && o.skeleton && o.skeleton.dispose) o.skeleton.dispose(); });
   }
@@ -98,13 +109,16 @@ function createStage({ scene, camera, col, sunDir }) {
     const outfit = { ...BASE_OUTFIT, skin: m.tone, hair: m.hairC, ...(sk.outfit || {}) };
     const look = { variant: variants.includes(m.variant) ? m.variant : variants[0], hair: m.hair, ...(sk.look || {}) };
     const ch = buildCharacter(outfit, {}, look);
-    const gear = { pack: true, hair: sl2[5] === 0, vest: sl2[4], helmet: sl2[5], ...(sk.gear || {}) };
+    const gear = { pack: true, hair: sl2[5] === 0, vest: sl2[4], helmet: sl2[5], ...(sk.gear || {}), ...(skinId ? { pack: false, vest: 0, helmet: 0, hair: true } : {}) }; // pratinjau skin: jaket tidak tertutup rompi/ransel
     ch.setGear('hair', !!gear.hair); ch.setGear('pack', !!gear.pack); ch.setGear('vest', gear.vest); ch.setGear('helmet', gear.helmet);
     if (sl2[3]) { ch.setGear('gun_' + sl2[3], true); gunSkin(ch, sl2[3], profile.equipped.weapon); }
     ch.root.position.set(S.x + rx * sl2[0] - ux * sl2[1], 0, S.z + rz * sl2[0] - uz * sl2[1]);
     ch.root.rotation.y = yaw0 + sl2[2];
     g.add(ch.root);
-    members[i] = { ch, yaw: yaw0 + sl2[2], pose: { speed: 0, armed: !!sl2[3], aim: false, pitch: 0, moveYaw: 0 }, gun: sl2[3] };
+    ch.root.updateMatrixWorld(true);
+    const skn = skinById(skinId || m.skin);
+    setCharAura(ch, skn && skn.aura); // legendaris: serbuk cahaya mengitari badan
+    members[i] = { ch, yaw: yaw0 + sl2[2], pose: { speed: 0, armed: !!sl2[3], aim: false, pitch: 0, moveYaw: 0 }, gun: sl2[3], spin: 0 };
   }
   function gunSkin(ch, kind, id) { for (const o of ch.parts['gun_' + kind] || []) { try { applyGunSkin(o, id); } catch (e) { /* skin belum tersedia */ } } }
   for (let i = 0; i < 4; i++) build(i);
@@ -124,10 +138,57 @@ function createStage({ scene, camera, col, sunDir }) {
     out[0] = (_v.x + 1) * 0.5 * innerWidth; out[1] = (1 - _v.y) * 0.5 * innerHeight;
     return true;
   }
+  // ---------- etalase senjata (toko/koleksi): model senjata orang pertama ber-skin melayang & berputar di depan regu ----------
+  // memakai material view-model (pola, pendar & animasi sama persis dengan di tangan); program shader dikompilasi dulu
+  // (compileAsync) sebelum ditampilkan supaya lobi tidak tersendat
+  const SHOW = new THREE.Vector3(S.x + ux * 1.9 - rx * 0.55, 1.25, S.z + uz * 1.9 - rz * 0.55);
+  const show = { root: new THREE.Group(), key: '', obj: null, t0: 0 };
+  show.root.position.copy(SHOW);
+  show.root.visible = false;
+  g.add(show.root);
+  function gunShow(id, kind) {
+    const key = id + '|' + kind;
+    if (key === show.key) { show.root.visible = true; return; }
+    show.key = key;
+    const gun = previewWeapon(kind, id);
+    if (!gun) return;
+    if (show.obj) show.root.remove(show.obj);
+    const hold = new THREE.Group();
+    hold.add(gun);
+    const bb = new THREE.Box3().setFromObject(gun), c = bb.getCenter(new THREE.Vector3()), len = Math.max(0.2, bb.max.z - bb.min.z);
+    gun.position.sub(c);
+    hold.scale.setScalar(Math.min(1.25, 0.82 / len)); // senapan panjang & pistol mengisi bingkai yang sama
+    hold.rotation.set(0.08, 0, 0);
+    show.obj = hold;
+    show.t0 = performance.now() / 1000;
+    hold.visible = false;
+    show.root.add(hold);
+    show.root.visible = true;
+    const R = skinRenderer(), done = () => { if (show.obj === hold) hold.visible = true; };
+    if (R && R.compileAsync) R.compileAsync(hold, camera, scene).then(done, done); else done();
+  }
+  function gunHide() { show.root.visible = false; }
+  // efek kill (pratinjau): kolam partikel sendiri di adegan lobi + spanduk di DOM lobi
+  let kfx = null, banner = null;
+  const killAt = new THREE.Vector3(S.x - rx * 1.25 + ux * 0.2, 0, S.z - rz * 1.25 + uz * 0.2);
+  function killPreview(id, n, menuEl) {
+    if (!banner) banner = createKillBanner(menuEl);
+    if (!kfx) kfx = createKillFx({ scene: g, hud: { killBanner: (o) => banner.show(o) } });
+    kfx.preview(killAt, n, id);
+    banner.show({ n, knock: false, head: n === 2, name: 'Target latihan', theme: gunTheme(id) });
+  }
   let aimMode = 'squad';
   function aim(mode, i = 0) {
     if ((mode === 'member' || mode === 'gun') && !members[i]) mode = 'squad';
     aimMode = mode;
+    if (mode === 'show') { // etalase senjata: dekat, sedikit dari atas
+      Object.assign(tgt, { dist: 1.12, h: SHOW.y + 0.12, lookY: SHOW.y - 0.01, fx: SHOW.x - S.x, fz: SHOW.z - S.z, fov: 34 });
+      return;
+    }
+    if (mode === 'kill') { // pratinjau efek kill: mundur supaya ledakan & regu sama-sama terlihat
+      Object.assign(tgt, { dist: 5.6, h: 1.65, lookY: 1.0, fx: (killAt.x - S.x) * 0.5, fz: (killAt.z - S.z) * 0.5, fov: 36 });
+      return;
+    }
     if (mode === 'member' || mode === 'gun') { // 'gun': lebih dekat ke senjata di tangan (pratinjau skin senjata)
       const p = members[i].ch.root.position, gun = mode === 'gun';
       Object.assign(tgt, { dist: gun ? 2.7 : 4.0, h: gun ? 1.2 : 1.34, lookY: gun ? 1.0 : 1.0, fx: p.x - S.x, fz: p.z - S.z, fov: 34 });
@@ -145,8 +206,10 @@ function createStage({ scene, camera, col, sunDir }) {
     build, aim, headXY,
     refit() { if (aimMode === 'squad') aim('squad'); }, // anggota bertambah/berkurang: bingkai ulang kamera
     setOffset(v) { tgt.off = v; },
-    preview(skinId) { build(0, skinId); },
+    preview(skinId) { build(0, skinId); if (members[0]) members[0].spin = 1; }, // pratinjau skin karakter: berputar pelan
     gunPreview(id) { for (const m of members) if (m && m.gun) gunSkin(m.ch, m.gun, id); },
+    gunShow, gunHide, killPreview,
+    stopSpin() { for (const m of members) if (m) m.spin = 0; },
     frame(dt, t) {
       const k = 1 - Math.exp(-dt * 3.4);
       for (const key in cur) cur[key] += (tgt[key] - cur[key]) * k;
@@ -161,12 +224,21 @@ function createStage({ scene, camera, col, sunDir }) {
         if (cur.off > 0.001) camera.setViewOffset(W, H, Math.round(cur.off * W), 0, W, H); else if (camera.view) camera.clearViewOffset();
         camera.updateProjectionMatrix();
       }
-      for (let i = 0; i < 4; i++) { // napas & pergeseran berat badan
+      for (let i = 0; i < 4; i++) { // napas & pergeseran berat badan; pratinjau skin: berputar pelan (meja putar)
         const m = members[i];
         if (!m) continue;
-        m.ch.root.rotation.y = m.yaw + Math.sin(t * 0.43 + i * 1.7) * 0.035;
+        if (m.spin) m.spin += dt * 0.55;
+        m.ch.root.rotation.y = m.yaw + (m.spin ? m.spin - 1 : Math.sin(t * 0.43 + i * 1.7) * 0.035);
         m.ch.rig.pose(m.pose, dt);
+        if (m.spin) m.ch.root.updateMatrixWorld(true);
       }
+      if (show.root.visible && show.obj) { // etalase senjata: berputar & sedikit mengapung
+        const u = t - show.t0;
+        show.obj.rotation.y = -1.2 + u * 0.5;
+        show.root.position.y = SHOW.y + Math.sin(u * 1.3) * 0.015;
+        show.root.updateMatrixWorld(true);
+      }
+      if (kfx) kfx.update(dt);
     },
     hide() { // pertandingan mulai: regu lobi dilepas dari adegan (layar akhir memuat ulang halaman, jadi tidak dipakai lagi)
       if (camera.view) camera.clearViewOffset();
@@ -242,7 +314,8 @@ export function createLobby(o) {
         ${q.claimed ? `<span class="lb-tag ok">${ic('check')}Diklaim</span>` : q.complete ? `<button type="button" class="lb-btn gold" data-claim="${q.scope}:${q.index}">Klaim</button>` : `<span class="lb-tag">${pct}%</span>`}
       </div></div>`;
   }
-  function thumb(s) { return `<div class="lb-thumb" data-thumb="${s.id}" style="--rc:${rar(s).color}"><span class="lb-ph">${ic(s.id.startsWith('gun_') ? 'gun' : 'koleksi')}</span></div>`; }
+  function thumb(s) { return `<div class="lb-thumb r-${s.rarity}" data-thumb="${s.id}" style="--rc:${rar(s).color}"><span class="lb-ph">${ic(s.id.startsWith('gun_') ? 'gun' : 'koleksi')}</span></div>`; }
+  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura' };
   function fillThumbs(root) {
     for (const el of root.querySelectorAll('[data-thumb]')) {
       const id = el.dataset.thumb;
@@ -252,16 +325,36 @@ export function createLobby(o) {
   function skinCard(s, mode) { // mode: 'shop' | 'own'
     const slot = s.id.startsWith('gun_') ? 'weapon' : 'character', has = owns(s.id), on = profile.equipped[slot] === s.id, r = rar(s);
     const state = on ? `<span class="lb-tag ok">${ic('check')}Dipakai</span>` : has ? '<span class="lb-tag">Dimiliki</span>' : `<span class="lb-price${profile.coins < s.price ? ' no' : ''}">${coin}<b>${fmt(s.price)}</b></span>`;
-    return `<button type="button" class="lb-card${selSkin === s.id ? ' sel' : ''}${has ? '' : ' locked'}" data-skin="${s.id}" style="--rc:${r.color}" aria-pressed="${selSkin === s.id}">
-      ${thumb(s)}<span class="lb-rar">${esc(r.label)}</span><b>${esc(s.name)}</b>${mode === 'own' && !on ? '<span class="lb-tag">Dimiliki</span>' : state}</button>`;
+    const ft = skinFeatures(s).filter(([k]) => k === 'sound' || k === 'anim' || k === 'aura' || k === 'kill').map(([k, t]) => `<i title="${esc(t)}">${ic(FEAT_IC[k], 'lb-i-s')}</i>`).join('');
+    return `<button type="button" class="lb-card r-${s.rarity}${selSkin === s.id ? ' sel' : ''}${has ? '' : ' locked'}" data-skin="${s.id}" style="--rc:${r.color}" aria-pressed="${selSkin === s.id}">
+      ${thumb(s)}${ft ? `<span class="lb-feat">${ft}</span>` : ''}<span class="lb-rar">${esc(r.label)}</span><b>${esc(s.name)}</b>${mode === 'own' && !on ? '<span class="lb-tag">Dimiliki</span>' : state}</button>`;
   }
+  // pratinjau senjata di etalase: jenis senjata yang sedang diperagakan (bisa diganti di kartu detail)
+  const SHOW_KINDS = ['ar', 'smg', 'pistol', 'shotgun', 'sniper', 'lmg', 'dmr', 'burst', 'pdw', 'revolver', 'dbs'];
+  let showKind = 'ar', killN = 0;
   function skinDetail(id) {
     const s = skinById(id);
     if (!s) return '';
-    const slot = id.startsWith('gun_') ? 'weapon' : 'character', has = owns(id), on = profile.equipped[slot] === id, r = rar(s), lack = s.price - profile.coins;
+    const slot = id.startsWith('gun_') ? 'weapon' : 'character', has = owns(id), on = profile.equipped[slot] === id, r = rar(s), lack = s.price - profile.coins, cl = collectionOf(s);
     const act = on ? `<span class="lb-tag ok big">${ic('check')}Sedang dipakai</span>` : has ? `<button type="button" class="lb-btn gold" data-equip="${id}">Pakai</button>`
       : lack > 0 ? `<button type="button" class="lb-btn" disabled>${ic('lock')}Kurang ${fmt(lack)} koin</button>` : `<button type="button" class="lb-btn gold" data-buy="${id}">${coin}Beli · ${fmt(s.price)}</button>`;
-    return `<div class="lb-detail" style="--rc:${r.color}"><div><span class="lb-rar">${esc(r.label)} · ${slot === 'weapon' ? 'Skin senjata' : 'Skin karakter'}</span><h3>${esc(s.name)}</h3><p>${esc(s.desc || '')}</p>${!has && lack > 0 ? '<p class="lb-hint">Selesaikan misi untuk mengumpulkan Koin Sutera.</p>' : ''}</div><div class="lb-detail-a">${act}</div></div>`;
+    const feats = skinFeatures(s).map(([k, t]) => `<span class="lb-chipf">${ic(FEAT_IC[k], 'lb-i-s')}${esc(t)}</span>`).join('');
+    const gun = slot === 'weapon', th = s.th || {};
+    const tools = gun ? `<div class="lb-pv">
+        <div class="lb-kinds" role="group" aria-label="Peragakan di senjata">${SHOW_KINDS.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === showKind}">${esc(WEAPONS[k].short)}</button>`).join('')}</div>
+        <div class="lb-pv-a"><button type="button" class="lb-btn ghost" data-hear="${id}">${ic('sound', 'lb-i-s')}${th.voice ? 'Dengar tembakan' : 'Tembakan pabrik'}</button>
+        <button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Efek kill</button></div></div>` : '';
+    return `<div class="lb-detail r-${s.rarity}" style="--rc:${r.color}"><div class="lb-detail-m"><span class="lb-rar">${esc(r.label)} · ${gun ? 'Skin senjata' : 'Skin karakter'} · ${esc(cl.name)}</span><h3>${esc(s.name)}</h3><p>${esc(s.desc || '')}</p>
+      ${feats ? `<div class="lb-feats">${feats}</div>` : ''}${!has && lack > 0 && !gun ? '<p class="lb-hint">Selesaikan misi untuk mengumpulkan Koin Sutera.</p>' : ''}${tools}</div><div class="lb-detail-a">${act}</div></div>`;
+  }
+  // daftar skin per koleksi bertema (kepala bagian: nama koleksi, keterangan, jumlah dimiliki)
+  function byCollection(list, mode) {
+    return COLLECTIONS.map((c) => {
+      const L = list.filter((s) => s.col === c.id);
+      if (!L.length) return '';
+      const n = L.filter((s) => owns(s.id)).length;
+      return `<div class="lb-col"><div class="lb-col-h"><h4>${esc(c.name)}</h4><span>${esc(c.desc)}</span><em>${n}/${L.length}</em></div><div class="lb-grid">${L.map((s) => skinCard(s, mode)).join('')}</div></div>`;
+    }).join('');
   }
 
   // ---------- panel ----------
@@ -278,10 +371,10 @@ export function createLobby(o) {
     },
     toko() {
       const list = shopTab === 'gun' ? GUN_SKINS : CHAR_SKINS;
-      if (!list.some((s) => s.id === selSkin)) selSkin = (list.find((s) => !owns(s.id)) || list[0]).id;
-      return `<div class="lb-tabs" role="tablist"><button type="button" role="tab" data-tab="char" aria-selected="${shopTab === 'char'}">${ic('koleksi', 'lb-i-s')}Karakter</button><button type="button" role="tab" data-tab="gun" aria-selected="${shopTab === 'gun'}">${ic('gun', 'lb-i-s')}Senjata</button></div>
-        <div class="lb-grid">${list.map((s) => skinCard(s, 'shop')).join('')}</div>
-        ${list.length <= 1 ? '<p class="lb-foot">Skin baru sedang disiapkan dan akan muncul di sini.</p>' : ''}
+      if (!list.some((s) => s.id === selSkin)) selSkin = (list.find((s) => !owns(s.id) && s.rarity === 'legendaris') || list.find((s) => !owns(s.id)) || list[0]).id;
+      return `<div class="lb-tabs" role="tablist"><button type="button" role="tab" data-tab="char" aria-selected="${shopTab === 'char'}">${ic('koleksi', 'lb-i-s')}Karakter · ${CHAR_SKINS.length}</button><button type="button" role="tab" data-tab="gun" aria-selected="${shopTab === 'gun'}">${ic('gun', 'lb-i-s')}Senjata · ${GUN_SKINS.length}</button></div>
+        <p class="lb-foot">${shopTab === 'gun' ? 'Skin senjata berlaku untuk semua senjatamu. Epik & legendaris: animasi, suara tembakan sendiri, pelacak berwarna, dan efek kill.' : 'Skin karakter dipakai di lobi, pertandingan, dan lengan orang pertama. Epik & legendaris: pola beranimasi; legendaris dengan aura.'}</p>
+        ${byCollection(list, 'shop')}
         ${skinDetail(selSkin)}`;
     },
     koleksi() {
@@ -394,7 +487,7 @@ export function createLobby(o) {
     for (const b of $$('.lb-nav [data-go]')) { if (b.dataset.go === id) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }
     menu.classList.toggle('lb-open', !!id);
     elPanel.setAttribute('aria-hidden', String(!id));
-    if (was === 'toko' || was === 'koleksi') { stage.build(0); stage.gunPreview(profile.equipped.weapon); } // pratinjau dibatalkan
+    if (was === 'toko' || was === 'koleksi') { stage.build(0); stage.gunPreview(profile.equipped.weapon); stage.gunHide(); stage.stopSpin(); } // pratinjau dibatalkan
     if (id === 'toko') { shopTab = 'char'; selSkin = ''; }
     if (id === 'koleksi') selSkin = profile.equipped.character;
     stage.setOffset(id ? 0.2 : 0);
@@ -403,11 +496,16 @@ export function createLobby(o) {
     if (id) { elBody.scrollTop = 0; drawPanel(); preview(); }
     if (id) elPanel.querySelector('header button').focus({ preventScroll: true });
   }
-  function preview() { // skin yang dipilih di toko/koleksi langsung tampak di karakter 3D (tanpa disimpan)
+  // skin yang dipilih di toko/koleksi langsung tampak 3D (tanpa disimpan): karakter berputar di meja putar; senjata di
+  // etalase melayang (berputar) + di tangan regu
+  let killT = 0;
+  function preview() {
     if (panel !== 'toko' && panel !== 'koleksi') return;
     const s = skinById(selSkin);
     if (!s) return;
-    if (s.id.startsWith('gun_')) { stage.build(0); stage.gunPreview(s.id); stage.aim('gun', 0); } else { stage.preview(s.id); stage.gunPreview(profile.equipped.weapon); stage.aim('member', 0); }
+    clearTimeout(killT);
+    if (s.id.startsWith('gun_')) { stage.build(0); stage.gunPreview(s.id); stage.gunShow(s.id, showKind); stage.aim('show', 0); }
+    else { stage.gunHide(); stage.preview(s.id); stage.gunPreview(profile.equipped.weapon); stage.aim('member', 0); }
   }
   function career() { // ringkasan karier dari profile.stats (diisi quests.applyMatch tiap akhir pertandingan)
     const st = profile.stats || {};
@@ -452,10 +550,30 @@ export function createLobby(o) {
     if (d.diff) { setDiff(d.diff); return; }
     if (d.go !== undefined) { go(d.go === panel && d.go !== '' && t.closest('.lb-nav') ? '' : d.go); return; }
     if (d.tab) { shopTab = d.tab; selSkin = ''; drawPanel(); preview(); return; }
-    if (d.skin) { selSkin = d.skin; drawPanel(); preview(); return; }
+    if (d.skin) { selSkin = d.skin; killN = 0; drawPanel(); preview(); return; }
+    if (d.kind) { showKind = d.kind; for (const b of $$('[data-kind]')) b.setAttribute('aria-pressed', String(b.dataset.kind === showKind)); preview(); return; }
+    if (d.hear) { const s = skinById(d.hear); audio.previewShot(showKind, s && s.th ? s.th.voice || null : null); return; }
+    if (d.killfx) { // pratinjau efek kill: hitungan beruntun naik tiap klik (1 → 5), kamera mundur sebentar lalu kembali ke etalase
+      audio.unlockAudio();
+      killN = killN % 5 + 1;
+      stage.aim('kill');
+      stage.killPreview(d.killfx, killN, menu);
+      clearTimeout(killT);
+      killT = setTimeout(() => { if (panel === 'toko' || panel === 'koleksi') stage.aim(selSkin.startsWith('gun_') ? 'show' : 'member', 0); }, 2600);
+      return;
+    }
     if (d.claim) { const [scope, i] = d.claim.split(':'), got = claimQuest(scope, +i); if (got) toast(`${coin}<b>+${fmt(got)}</b> Koin Sutera`, 'gold'); refresh(); return; }
     if (d.buy) { confirmBuy(d.buy); return; }
-    if (d.equip) { const s = skinById(d.equip), slot = d.equip.startsWith('gun_') ? 'weapon' : 'character'; if (s && equip(slot, d.equip)) { toast(`${ic('check')}<b>${esc(s.name)}</b> dipakai`); stage.build(0); stage.gunPreview(profile.equipped.weapon); } refresh(); return; }
+    if (d.equip) {
+      const s = skinById(d.equip), slot = d.equip.startsWith('gun_') ? 'weapon' : 'character';
+      if (s && equip(slot, d.equip)) {
+        toast(`${ic('check')}<b>${esc(s.name)}</b> dipakai`);
+        stage.build(0); stage.gunPreview(profile.equipped.weapon);
+        if (slot === 'character') stage.preview(s.id);
+        if (s.th && s.th.voice) { audio.unlockAudio(); audio.skinCue('equip', s.th.voice); } // bunyi khas skin saat dipakai
+      }
+      refresh(); return;
+    }
     if (d.add !== undefined) { // slot kosong: pilih pengisi (bot sekarang; pemain online belum ada servernya)
       const i = +d.add;
       modal(`<h3>Tambah anggota</h3><p>Pilih siapa yang mengisi slot ${i + 1} regumu.</p>
@@ -562,6 +680,7 @@ export function createLobby(o) {
     focus: stage.focus,
     get diff() { return diff; },
     frame(dt, t) {
+      tickSkins(); // waktu animasi skin (pola beranimasi, aura) selama di lobi
       stage.frame(dt, t);
       for (let i = 0; i < 4; i++) { // label nama mengikuti kepala (ditulis hanya bila bergeser ≥ 0,5 px)
         const el = tagEls[i], ok = stage.headXY(i, tagXY), x = ok ? Math.round(tagXY[0] * 2) / 2 : -9999, y = ok ? Math.round(tagXY[1] * 2) / 2 : -9999;
