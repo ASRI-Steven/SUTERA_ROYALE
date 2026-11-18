@@ -60,7 +60,7 @@ export const attList = (inst) => { const L = []; if (inst.att) { if (inst.att.sc
 export const AMMO = { light: 'Peluru ringan', rifle: 'Peluru senapan', shell: 'Peluru shotgun', sniper: 'Peluru runduk', magnum: 'Peluru magnum' };
 export const AMMO_CAP = { light: 300, rifle: 300, shell: 90, sniper: 40, magnum: 120 };
 // granat (slot lempar, tombol G): fuse = detik sejak dilempar; frag meledak (r, dmg), asap jadi awan (r, dur)
-export const NADES = { frag: { name: 'Granat', short: 'Granat', fuse: 4, r: 7, dmg: 165 }, smoke: { name: 'Granat asap', short: 'Asap', fuse: 2, r: 8, dur: 20 } };
+export const NADES = { frag: { name: 'Granat', short: 'Granat', fuse: 5, r: 7, dmg: 165 }, smoke: { name: 'Granat asap', short: 'Asap', fuse: 2, r: 8, dur: 20 } };
 // jenis baru meminjam model prosedural cadangan dari jenis yang mirip (dipakai hanya bila weapons.glb gagal dimuat)
 const ALIAS = { sniper: 'dmr', lmg: 'ar', burst: 'ar', pdw: 'smg', revolver: 'pistol', dbs: 'shotgun' };
 export function falloff(w, d) { return d <= w.range ? 1 : Math.max(0.35, 1 - (d - w.range) / (w.range * 3)); }
@@ -544,7 +544,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const BRASS_T = new THREE.Color();
   // kepulan asap tipis dari moncong (ruang kamera): kolam titik 24 buah
   const puffs = pointPool(camera, 24, false, 0.0, 70, 30);
-  const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0 };
+  const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0, fistK: 0, guard: 0, guardT: 0, punch: null, punchSide: -1 };
   const v = new THREE.Vector3();
   // ---------- efek skin senjata (setSkinFx): warna kilatan, nyala moncong beranimasi, pendar isi ulang/periksa/cabut, panas ----------
   // Hanya MEMBACA keadaan animasi (st.flashT, st.act, st.inspect, st.swap, st.ads); dipanggil sekali per frame dari update().
@@ -833,8 +833,15 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     m.position.set(0, 0, 0); m.visible = false; m.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     nArm.add(m); nadeMesh[nk] = m;
   }
-  const pinRing = new THREE.Mesh(new THREE.TorusGeometry(0.009, 0.0016, 6, 16), brassM); // cincin pin yang dicabut tangan kiri
-  pinRing.frustumCulled = false; nArmL.add(pinRing);
+  // pose dasar lengan kiri disodorkan (ruang kamera): pergelangan W, siku E
+  const W0 = new THREE.Vector3(0.04, -0.165, -0.45), E0 = new THREE.Vector3(-0.4, -0.32, -0.25), ER = new THREE.Vector3(0.38, -0.47, -0.1);
+  const tA = new THREE.Vector3(), tB = new THREE.Vector3(), tC = new THREE.Vector3(), tD = new THREE.Vector3(), q0 = new THREE.Quaternion();
+  function placeLimb(m, a, b) { m.position.copy(a).add(b).multiplyScalar(0.5); m.scale.set(1, a.distanceTo(b), 1); m.quaternion.setFromUnitVectors(UPV, tD.copy(b).sub(a).normalize()); }
+  function placeHand(h, wrist, elbow, roll0) { // telapak di pergelangan, jari menunjuk menjauh dari siku
+    h.position.copy(wrist);
+    h.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), tD.copy(wrist).sub(elbow).normalize());
+    h.rotateZ(roll0);
+  }
 
   // ---------- scope terpasang (aksesori): tabung berongga di atas pisir; dibuat sekali per senjata & perbesaran ----------
   const SCOPE_DY = 0.043; // tinggi sumbu tabung di atas garis pisir (m)
@@ -1522,9 +1529,9 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     },
     heal(kind, sec) { fadeAct(); st.act = { type: 'heal', kind, t: 0, u: 0, dur: sec, cancel: 0 }; st.inspect = 0; },
     // granat: genggam (tahan G) → lempar (lepas G) → senjata kembali
-    nadeHold(kind) { st.nade = { kind, t: 0, phase: 'hold', quick: false }; st.inspect = 0; },
-    nadeThrow() { if (st.nade) { if (st.nade.t < 0.42) st.nade.quick = true; st.nade.phase = 'throw'; st.nade.t = 0; } },
-    nadeCancel() { if (st.nade) { st.nade = null; nadeRig.visible = false; st.swap = 1; } }, // senjata naik lagi dari bawah
+    nadeHold(kind) { st.nade = { kind, t: 0, phase: 'hold' }; st.inspect = 0; },
+    nadeThrow() { if (st.nade) { st.nade.phase = 'throw'; st.nade.t = 0; } },
+    nadeCancel() { if (st.nade) { st.nade = null; nadeRig.visible = false; st.swap = Math.max(st.swap, 0.6); } },
     inspect() { if (!st.act && st.kind && !st.prev) st.inspect = 1; },
     resize() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); },
     // o: { dt, ads 0/1, moving 0..1, sprint, mdx, mdy (gerak mouse frame ini), grounded, scoped, reloading, healing, mag }
@@ -1571,8 +1578,21 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       const hA = act && act.type === 'heal' ? act : F && F.type === 'heal' ? F : null;
       if (hA) lower = animHeal(hA.u, hA.kind, hA.cancel);
       else heal.visible = false;
-      if (st.nade) lower = Math.max(lower, animNade(st.nade, dt));
-      else nadeRig.visible = false;
+      if (st.nade) { // granat: senjata turun, lengan kanan menggenggam granat di kanan layar; lempar = ayun ke depan-atas
+        const N = st.nade;
+        N.t += dt;
+        const ka = N.phase === 'hold' ? ease(Math.min(1, N.t / 0.18)) : 1, sw = N.phase === 'throw' ? Math.min(1, N.t / 0.32) : 0;
+        lower = Math.max(lower, ka * (1 - ease((sw - 0.75) / 0.25)));
+        nadeRig.visible = true;
+        for (const nk in nadeMesh) nadeMesh[nk].visible = nk === N.kind && N.phase !== 'throw'; // dilepas: granat sudah di dunia
+        const wob = Math.sin(st.t * 3) * 0.004;
+        const hand = tA.set(0.2 - 0.1 * sw, -0.12 + 0.17 * Math.sin(sw * Math.PI) - 0.3 * (1 - ka) - (sw > 0.6 ? (sw - 0.6) * 0.9 : 0), -0.34 - 0.32 * Math.sin(Math.min(1, sw * 1.4) * Math.PI / 2) + wob);
+        const elbow = tB.set(0.36, -0.42 - 0.3 * (1 - ka), -0.05);
+        if (!nadeGlbHand) { placeLimb(nadeFore, elbow, hand); placeHand(nadeHand, hand, elbow, 1.4); }
+        nadeGrip.position.copy(hand).add(tmp.set(-0.02, 0.035, -0.03));
+        nadeGrip.rotation.set(-0.3 - sw * 2, 0.2, 0.15);
+        if (N.phase === 'throw' && N.t > 0.42) { st.nade = null; nadeRig.visible = false; st.swap = Math.max(st.swap, 0.7); }
+      } else nadeRig.visible = false;
       // ganti senjata: yang lama turun dulu
       if (st.prev) {
         st.prevT += dt / 0.2;
@@ -1646,6 +1666,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       // rig obat & granat hanya menempel selama dipakai (simpul tak terlihat pun ditelusuri three.js tiap frame)
       if (heal.visible !== (heal.parent === root)) { if (heal.visible) root.add(heal); else root.remove(heal); }
       if (nadeRig.visible !== (nadeRig.parent === root)) { if (nadeRig.visible) root.add(nadeRig); else root.remove(nadeRig); }
+      if (fistRig.visible !== (fistRig.parent === root)) { if (fistRig.visible) root.add(fistRig); else root.remove(fistRig); }
       root.visible = !o.scoped;
     },
     muzzleWorld(out) { // posisi moncong di ruang kamera (untuk pelacak peluru dari senjata)

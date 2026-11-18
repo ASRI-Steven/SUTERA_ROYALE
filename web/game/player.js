@@ -99,10 +99,14 @@ export function createPlayer(ctx) {
       if ((e.button === 0 || e.button === 2) && vehDraw()) { if (e.button === 0) { st.firing = true; st.trigger = true; } else st.ads = true; }
       return;
     }
+    if (st.nade) { // granat di tangan: klik kiri tahan = ancang-ancang (lepas = lempar), klik kanan = batal ancang-ancang
+      if (e.button === 0) nadeCharge(); else if (e.button === 2) st.nade.charging = false;
+      return;
+    }
     if (e.button === 0) { st.firing = true; st.trigger = true; }
     if (e.button === 2) st.ads = true;
   });
-  addEventListener('mouseup', (e) => { if (e.button === 0) st.firing = false; if (e.button === 2) st.ads = false; });
+  addEventListener('mouseup', (e) => { if (e.button === 0) { st.firing = false; if (st.nade && st.nade.charging) nadeRelease(); } if (e.button === 2) st.ads = false; });
   cvs.addEventListener('contextmenu', (e) => e.preventDefault());
   cvs.addEventListener('wheel', (e) => {
     if (!ctx.playing()) return;
@@ -176,7 +180,7 @@ export function createPlayer(ctx) {
       case 'Digit6': heal('drink'); break;
       case 'KeyV': st.tpp = !st.tpp; hud.flash(st.tpp ? 'Orang ketiga' : 'Orang pertama'); break;
       case 'KeyI': if (!st.reloadEnd && !st.healEnd) vm.inspect(); break; // periksa senjata
-      case 'KeyG': nadeStart(); break; // tahan = bidik (lintasan), lepas = lempar
+      case 'KeyG': if (!e.repeat) { if (st.nade) nadeAbort(); else nadeStart(); } break; // pegang / simpan granat (lempar: klik kiri)
       case 'KeyT': nadeCycle(); break; // ganti jenis granat
       case 'KeyM': ctx.toggleMap(); break;
       default:
@@ -190,18 +194,21 @@ export function createPlayer(ctx) {
     if (e.code === 'Space') { keys.hb = 0; keys.up = 0; }
     if (e.code === 'KeyC' || e.code === 'ControlLeft') keys.dn = 0;
     if (e.code === 'KeyF' || e.code === 'KeyE') st.revive = null; // lepas F: berhenti memulihkan rekan
-    if (e.code === 'KeyG') nadeRelease();
   });
-  addEventListener('blur', () => { keys.fwd = keys.back = keys.left = keys.right = keys.hb = 0; st.sprint = st.firing = st.ads = false; st.revive = null; });
+  addEventListener('blur', () => { keys.fwd = keys.back = keys.left = keys.right = keys.hb = 0; st.sprint = st.firing = st.ads = false; st.revive = null; if (st.nade) st.nade.charging = false; });
 
-  // ---------- Granat (G tahan → lintasan, lepas → lempar; makin lama ditahan makin jauh; T ganti jenis) ----------
+  // ---------- Granat: G = pegang / simpan granat (lintasan tampil); klik kiri tahan = ancang-ancang (makin lama makin jauh),
+  // lepas = lempar; klik kanan saat menahan = batal (sumbu kembali penuh); T ganti jenis. Sumbu mulai berjalan saat klik kiri
+  // ditekan (frag 5 dtk): ditahan sampai habis → meledak di tangan. ----------
   st.nadeSel = 'frag';
   function nadeStart() {
     if (me.state !== 'ground' || !me.alive || st.swim || st.healEnd || st.nade || st.vault || st.lift) return;
     if (!(me.nades[st.nadeSel] > 0)) { const o = Object.keys(NADES).find((k) => me.nades[k] > 0); if (!o) { hud.toast('Tidak punya granat'); return; } st.nadeSel = o; }
-    st.nade = { kind: st.nadeSel, t0: ctx.now() };
-    st.reloadEnd = 0; st.ads = false; st.firing = false;
+    st.nade = { kind: st.nadeSel, t0: 0, charging: false };
+    st.nadeNext = 0;
+    st.reloadEnd = 0; st.ads = false; st.firing = false; st.trigger = false;
     vm.nadeHold(st.nadeSel);
+    if (!st.nadeTip) { st.nadeTip = true; hud.toast('Klik kiri tahan = sumbu jalan, lepas = lempar · klik kanan batal · G simpan'); }
   }
   function nadeCycle() {
     const ks = Object.keys(NADES);
@@ -210,6 +217,7 @@ export function createPlayer(ctx) {
     st.nadeSel = [...ks.slice(i + 1), ...ks.slice(0, i + 1)].find((k) => me.nades[k] > 0);
     hud.flash(NADES[st.nadeSel].name + ' ×' + me.nades[st.nadeSel]);
     audio.click();
+    if (st.nade && st.nade.kind !== st.nadeSel) { st.nade.kind = st.nadeSel; st.nade.charging = false; vm.nadeHold(st.nadeSel); } // sedang dipegang: tukar granat di tangan
   }
   const nO = new THREE.Vector3(), nV = new THREE.Vector3(), nR = new THREE.Vector3(), nT = new THREE.Vector3();
   function nadeThrowVec(now) { // titik lepas (tangan kanan / depan kamera) & kecepatan dari arah bidik, 11–21 m/dtk
@@ -217,7 +225,7 @@ export function createPlayer(ctx) {
     nR.set(-nV.z, 0, nV.x).normalize();
     if (st.tpp) nO.set(me.pos.x, me.pos.y + 1.7, me.pos.z).addScaledVector(nR, 0.3).addScaledVector(nT.set(nV.x, 0, nV.z).normalize(), 0.3);
     else nO.copy(camera.position).addScaledVector(nV, 0.45).addScaledVector(nR, 0.18).add(nT.set(0, -0.12, 0));
-    const hold = Math.min(1, (now - st.nade.t0) / 0.9), sp = 11 + 10 * hold;
+    const hold = st.nade.charging ? Math.min(1, (now - st.nade.t0) / 1.1) : 0, sp = 10 + 12 * hold; // ancang-ancang 0–1,1 dtk → 10–22 m/dtk
     nV.y += 0.22; nV.normalize().multiplyScalar(sp);
     return [nO, nV];
   }
@@ -227,20 +235,26 @@ export function createPlayer(ctx) {
     if (ctx.nadeAim) ctx.nadeAim(null);
     if (me.state !== 'ground' || !me.alive || !(me.nades[N.kind] > 0)) { st.nade = null; vm.nadeCancel(); return; }
     const [o, v] = nadeThrowVec(now);
+    const cooked = N.charging ? Math.max(0, now - N.t0) : 0, late = cooked >= NADES[N.kind].fuse; // sumbu habis di tangan: jatuh di kaki
+    if (late) { o.set(me.pos.x, me.pos.y + 1.1, me.pos.z); v.set(0, 0, 0); }
     st.nade = null;
+    if (ctx.nadeCook) ctx.nadeCook(null);
     me.nades[N.kind]--;
-    ctx.throwNade(me, N.kind, o.clone(), v.clone());
+    ctx.throwNade(me, N.kind, o.clone(), v.clone(), cooked);
     vm.nadeThrow();
     me.pose.fire = 1;
     st.switchEnd = Math.max(st.switchEnd, now + 0.5);
+    st.nadeNext = me.nades[N.kind] > 0 ? now + 0.75 : 0; // masih punya: granat berikutnya langsung dipegang
   }
-  function nadeAbort() { if (st.nade) { st.nade = null; if (ctx.nadeAim) ctx.nadeAim(null); vm.nadeCancel(); } }
+  function nadeCharge() { if (st.nade && !st.nade.charging && me.state === 'ground' && !st.swim) { st.nade.charging = true; st.nade.t0 = ctx.now(); audio.click(); } }
+  function nadeAbort() { st.nadeNext = 0; if (ctx.nadeCook) ctx.nadeCook(null); if (st.nade) { st.nade = null; if (ctx.nadeAim) ctx.nadeAim(null); vm.nadeCancel(); } }
 
   // ---------- Senjata ----------
   function weapon() { const w = me.cur >= 0 ? me.weapons[me.cur] : null; return w ? { inst: w, def: WEAPONS[w.kind] } : null; }
   function select(i, quiet) {
     if (st.swim && !quiet) return; // senjata disimpan selama berenang
     if (i >= 0 && !me.weapons[i]) return;
+    if (st.nade || st.nadeNext) { nadeAbort(); if (i === me.cur) return; } // ganti ke senjata: granat disimpan
     if (i === me.cur) return;
     me.cur = i;
     st.reloadEnd = 0;
@@ -279,6 +293,7 @@ export function createPlayer(ctx) {
   function refuel() {
     const v = me.vehicle;
     if (!v || st.fuelEnd) return;
+    if (v.flooded) { hud.toast('Mesin rusak terendam air'); return; }
     if (!(me.fuel > 0)) { hud.toast('Tidak punya jeriken bensin'); return; }
     if (v.fuel >= 99.5) { hud.toast('Tangki sudah penuh'); return; }
     if (Math.abs(v.speed) > 1.5) { hud.toast('Berhenti dulu untuk mengisi bensin'); return; }
@@ -335,6 +350,20 @@ export function createPlayer(ctx) {
     const w = weapon(), t = combat.probe(me, tmp2, fwd, w ? w.def.maxRange : 500);
     tmp2.addScaledVector(fwd, Math.max(3, t));
     d.copy(tmp2).sub(o).normalize();
+  }
+  // tangan kosong: klik kiri = tinju (tahan = berulang, ±1,8 pukulan/dtk); tidak bisa saat tiarap, berenang, atau berobat
+  function punch(now) {
+    const tap = st.trigger; // klik singkat (tombol sudah dilepas sebelum frame ini) tetap dihitung
+    st.trigger = false;
+    if (st.swim || st.prone || st.healEnd || now < st.switchEnd || now < st.stanceT) return;
+    if (now < st.nextShot) { if (tap && st.nextShot - now < 0.25) st.trigger = true; return; } // klik sedikit terlalu cepat: antre
+    st.nextShot = now + 0.55;
+    camera.getWorldDirection(fwd);
+    org.set(me.pos.x, me.pos.y + (st.crouch ? EYE_CROUCH : EYE), me.pos.z); // dari mata pemain (kamera orang ketiga ada di belakang badan)
+    combat.melee(me, org, fwd);
+    vm.punch();
+    me.pose.punch = 1;
+    st.recoilP += 0.4 * D2R;
   }
   function fire(now) {
     const w = weapon();
@@ -905,7 +934,11 @@ export function createPlayer(ctx) {
       me.boost -= d;
       if (!me.down && me.hp < 100) me.hp = Math.min(100, me.hp + d);
     }
-    if ((st.firing || st.burstLeft > 0) && !st.sprinting && !st.nade && !me.down && !st.revive) fire(now);
+    if ((st.firing || st.trigger) && !weapon() && !st.nade && !me.down && !st.revive) punch(now); // tangan kosong (boleh sambil lari)
+    else if ((st.firing || st.burstLeft > 0) && !st.sprinting && !st.nade && !me.down && !st.revive) fire(now);
+    if (st.nadeNext && now >= st.nadeNext) { st.nadeNext = 0; nadeStart(); }
+    if (st.nade && st.nade.charging && now - st.nade.t0 >= NADES[st.nade.kind].fuse) nadeRelease(); // ditahan sampai sumbu habis
+    if (ctx.nadeCook) ctx.nadeCook(st.nade && st.nade.charging ? NADES[st.nade.kind].fuse - (now - st.nade.t0) : null);
     if (st.nade) { if (st.swim) nadeAbort(); else if (ctx.nadeAim) { const [o, v] = nadeThrowVec(now); ctx.nadeAim(o, v); } } // pratinjau lintasan granat
     // barang terdekat untuk prompt
     if (st.swim || me.down) { st.prompt = null; if (me.down && st.lootUI) closeLoot(false); return; }
@@ -981,7 +1014,7 @@ export function createPlayer(ctx) {
       else if (now >= st.fuelEnd) { st.fuelEnd = 0; if (me.fuel > 0) { me.fuel--; v.fuel = Math.min(100, v.fuel + 60); audio.pickup(); hud.toast('Bensin terisi'); } }
     }
     if (driver) { // peringatan bensin (sekali per keadaan)
-      const fs = v.fuel <= 0 ? 2 : v.fuel < 15 ? 1 : 0;
+      const fs = v.flooded ? 3 : v.fuel <= 0 ? 2 : v.fuel < 15 ? 1 : 0; // 3 = mesin mati terendam (pesannya dari onFlood)
       if (fs !== st.fuelWarn || st.fuelWarnV !== v) {
         if (fs === 2) hud.message('Bensin habis', me.fuel > 0 ? 'Tekan B untuk mengisi dari jeriken' : 'Cari jeriken bensin atau tinggalkan kendaraan', 'warn');
         else if (fs === 1 && (st.fuelWarnV !== v || st.fuelWarn === 0)) hud.flash('Bensin hampir habis');
@@ -1097,6 +1130,7 @@ export function createPlayer(ctx) {
         p.air = me.state === 'ground' && !me.grounded;
         p.armed = me.cur >= 0 && !!me.weapons[me.cur] && !me.down && !st.revive;
         p.aim = st.ads || st.firing;
+        p.guard = !p.armed && me.state === 'ground' && !st.swim && !me.down && ctx.now() - (me.lastPunch ?? -99) < 3; // habis meninju: kuda-kuda
         p.pitch = st.pitch;
         p.dead = !me.alive;
         p.freefall = me.state === 'fall';
@@ -1137,7 +1171,7 @@ export function createPlayer(ctx) {
       const fp = (me.state === 'ground' && !st.tpp && me.alive) || vfp;
       const w = weapon();
       const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
-      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1 });
+      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
       st.mdx = st.mdy = 0;
       const targetFov = fp && st.ads && w ? adsFov(w.inst) : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : 75; // kamera belakang: zoom bidik
       camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 14));

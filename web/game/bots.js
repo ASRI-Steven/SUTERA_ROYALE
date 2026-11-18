@@ -41,8 +41,8 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 
 // Tingkat kesulitan.
 // Dasar: react = jeda reaksi (dtk), err = sebaran bidik (°), range = jarak lihat (m), fov = setengah sudut pandang (rad),
-//   hear = jarak dengar tembakan, still/crouch = peluang diam/jongkok saat baku tembak, armed/vest/helmet = peluang
-//   bersenjata/berpelindung saat mendarat, dmgToPlayer = pengali kerusakan bot ke pemain.
+//   hear = jarak dengar tembakan, still/crouch = peluang diam/jongkok saat baku tembak,
+//   dmgToPlayer = pengali kerusakan bot ke pemain. Semua bot mendarat tangan kosong (senjata & pelindung dari jarahan).
 // Taktik: cover/peek/flank/push = peluang berlindung, mengintip, mengepung, mendesak; settle/settleK = bidikan awal melebar
 //   (×(1+settleK)) lalu mengunci dalam ±settle dtk; head = peluang membidik kepala per rentetan (langkah kaki terdengar
 //   menurut cara bergerak untuk semua tingkat, lihat stepNoise; reaksinya memakai react); sprint = kecepatan pindah posisi; turn = kecepatan memutar badan (rad/dtk); dodge = peluang menghindar
@@ -54,17 +54,14 @@ const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 //   baru terdengar di dekat sini.
 export const DIFFICULTY = {
   easy: { label: 'Mudah', note: 'Bot lambat bereaksi, sering meleset, dan jarang berlindung. Cocok untuk belajar.', react: [0.75, 1.35], err: 2.7, moveErr: 1.6, targetMoveErr: 1.2, range: 95, fov: 1.05, hear: 60,
-    burst: [3, 5], pause: [0.55, 1.15], still: 0.25, crouch: 0, armed: 0.7, weapons: ['pistol', 'pistol', 'smg', 'shotgun', 'ar', 'revolver', 'pdw'], vest: 0, helmet: 0, lvl2: 0, dmgToPlayer: 0.6,
-    cover: 0.3, peek: 0.35, flank: 0.05, push: 0.2, settle: 1.3, settleK: 1.7, head: 0, sprint: 5.2, turn: 4.2, dodge: 0.4, preaim: 0.85, strafeT: [0.8, 1.8], drive: 0.3, smartWeapon: 0.3, zoneEarly: false,
-    lootT: 70, third: 0, finish: 0.35, hold: 0.15, smoke: 0, early: 0, wary: 0 },
-  medium: { label: 'Sedang', note: 'Bot berlindung di balik gedung, mengintip, sesekali mengepung, dan sebagian berpelindung.', react: [0.45, 0.85], err: 1.8, moveErr: 1.1, targetMoveErr: 0.9, range: 130, fov: 1.3, hear: 95,
-    burst: [4, 6], pause: [0.4, 0.8], still: 0.18, crouch: 0.4, armed: 0.85, weapons: ['pistol', 'smg', 'smg', 'shotgun', 'ar', 'ar', 'burst', 'pdw', 'dbs', 'revolver', 'lmg'], vest: 0.35, helmet: 0.25, lvl2: 0.2, dmgToPlayer: 0.85,
-    cover: 0.7, peek: 0.75, flank: 0.35, push: 0.45, settle: 0.85, settleK: 1.3, head: 0.08, sprint: 5.9, turn: 5.6, dodge: 0.75, preaim: 0.55, strafeT: [0.5, 1.2], drive: 0.6, smartWeapon: 0.75, zoneEarly: true,
-    lootT: 55, third: 0.25, finish: 0.7, hold: 0.45, smoke: 0.4, early: 50, wary: 0.5 },
+    burst: [3, 5], pause: [0.55, 1.15], still: 0.25, crouch: 0, dmgToPlayer: 0.6,
+    cover: 0.3, peek: 0.35, flank: 0.05, push: 0.2, settle: 1.3, settleK: 1.7, head: 0, sprint: 5.2, turn: 4.2, dodge: 0.4, preaim: 0.85, strafeT: [0.8, 1.8], drive: 0.3, smartWeapon: 0.3, zoneEarly: false },
+  medium: { label: 'Sedang', note: 'Bot berlindung di balik gedung, mengintip, dan sesekali mengepung.', react: [0.45, 0.85], err: 1.8, moveErr: 1.1, targetMoveErr: 0.9, range: 130, fov: 1.3, hear: 95,
+    burst: [4, 6], pause: [0.4, 0.8], still: 0.18, crouch: 0.4, dmgToPlayer: 0.85,
+    cover: 0.7, peek: 0.75, flank: 0.35, push: 0.45, settle: 0.85, settleK: 1.3, head: 0.08, sprint: 5.9, turn: 5.6, dodge: 0.75, preaim: 0.55, strafeT: [0.5, 1.2], drive: 0.6, smartWeapon: 0.75, zoneEarly: true },
   hard: { label: 'Sulit', note: 'Bot sigap & akurat: berlindung, mengintip dengan bidikan siap, mengepung dari samping, mendesak saat kamu isi ulang, naik kendaraan ke zona.', react: [0.22, 0.45], err: 1.25, moveErr: 0.75, targetMoveErr: 0.6, range: 180, fov: 1.7, hear: 150,
-    burst: [4, 7], pause: [0.35, 0.65], still: 0.1, crouch: 0.75, armed: 1, weapons: ['smg', 'ar', 'ar', 'shotgun', 'dmr', 'burst', 'lmg', 'pdw', 'dbs', 'sniper'], vest: 0.65, helmet: 0.5, lvl2: 0.4, dmgToPlayer: 1,
-    cover: 0.92, peek: 1, flank: 0.65, push: 0.75, settle: 0.5, settleK: 1.0, head: 0.2, sprint: 6.4, turn: 7.5, dodge: 1, preaim: 0.35, strafeT: [0.28, 0.75], drive: 0.85, smartWeapon: 1, zoneEarly: true,
-    lootT: 45, third: 0.5, finish: 0.95, hold: 0.7, smoke: 0.8, early: 80, wary: 0.85 },
+    burst: [4, 7], pause: [0.35, 0.65], still: 0.1, crouch: 0.75, dmgToPlayer: 1,
+    cover: 0.92, peek: 1, flank: 0.65, push: 0.75, settle: 0.5, settleK: 1.0, head: 0.2, sprint: 6.4, turn: 7.5, dodge: 1, preaim: 0.35, strafeT: [0.28, 0.75], drive: 0.85, smartWeapon: 1, zoneEarly: true },
 };
 const SKILL = { ...DIFFICULTY.easy };
 const SKIP_N = 8; // barang yang diingat untuk dilewati (cincin; kedaluwarsa)
@@ -394,17 +391,8 @@ export function createBots(ctx, n = 50) {
       a.lootEnd = ctx.now() + SKILL.lootT;
       a.lootN = 0;
       a.next = 0;
-      if (Math.random() < SKILL.vest) b.vest = Math.random() < SKILL.lvl2 ? 2 : 1;
-      if (Math.random() < SKILL.helmet) b.helmet = Math.random() < SKILL.lvl2 ? 2 : 1;
-      if (Math.random() < SKILL.armed) {
-        const kind = pickA(SKILL.weapons), def = WEAPONS[kind];
-        b.weapons[def.slot] = { kind, mag: def.mag };
-        b.ammo[def.ammo] = (b.ammo[def.ammo] || 0) + def.mag * (1 + (Math.random() * 2 | 0));
-        b.cur = def.slot;
-      }
-      b.nades ||= { frag: 0, smoke: 0 };
-      if (Math.random() < SKILL.push * 0.4) b.nades.frag = 1; // sebagian bot membawa granat sejak awal
-      if (Math.random() < SKILL.smoke * 0.35) b.nades.smoke = 1;
+      a.lootN = 0;
+      b.nades ||= { frag: 0, smoke: 0 }; // mendarat tangan kosong seperti pemain: senjata, pelindung & granat harus dijarah
     }
   }
 
@@ -960,14 +948,19 @@ export function createBots(ctx, n = 50) {
     a.seenAt = now;
     a.lastSeen.copy(e.pos);
     a.losOk = true;
-    if (!b.weapons.some(Boolean)) { // tangan kosong → kabur (lagi, kalau pelarian sebelumnya sudah selesai/gagal tapi musuh masih terlihat)
-      if (a.mode !== 'flee' || (!a.nav && !a.route)) {
-        a.mode = 'flee';
-        const k = 45 / (d || 1), f = col.findFree(x + (x - ex) * k + rnd(-12, 12), y + (y - ey) * k + rnd(-12, 12), 10, 0.4) || [x + (x - ex) * k, y + (y - ey) * k];
-        go(b, f[0], f[1], SKILL.sprint);
+    if (!b.weapons.some(Boolean)) { // tangan kosong → tinju kalau lawan sudah menempel / sama-sama tangan kosong dan dekat; selain itu kabur
+      const eArmed = !!(e.weapons && e.weapons.some(Boolean));
+      const brawl = e.state === 'ground' && !e.swim && Math.abs(e.pos.y - b.pos.y) < 1.6 && (d < 3.5 || (a.tac === 'melee' && d < 7) || (!eArmed && d < 9 && b.trait.aggr > 0.3));
+      if (brawl) {
+        if (a.tac !== 'melee') { a.tac = 'melee'; a.cover = null; a.nextShot = Math.max(a.nextShot, now + 0.2); if (a.item) { if (a.item.claim === b) a.item.claim = null; a.item = null; } }
+        a.mode = 'fight'; b.healEnd = 0; b.crouch = false; b.prone = false;
+        return; // mengejar & memukul: lihat steer()
       }
+      a.tac = null;
+      if (a.mode !== 'flee') { a.mode = 'flee'; go(b, x + (x - ex) / (d || 1) * 60, y + (y - ey) / (d || 1) * 60, SKILL.sprint); }
       return;
     }
+    if (a.tac === 'melee') a.tac = null;
     if (b.healEnd) { if (d > 35 && a.cover) return; b.healEnd = 0; }
     a.mode = 'fight';
     pickWeapon(b, d, now);
@@ -1356,7 +1349,17 @@ export function createBots(ctx, n = 50) {
     if (a.mode === 'drive') { thinkDrive(b, now); return; }
     if (b.state === 'ground' && !nav.blockedAt(b.pos.x, -b.pos.z, lvOf(b))) { a.bcX = b.pos.x; a.bcY = -b.pos.z; a.bcH = b.pos.y; } // jejak titik bebas
     if (a.mode === 'ride') { thinkRide(b, now); return; }
-    const enemy = perceive(b, now);
+    let enemy = perceive(b, now);
+    const unarmed = !b.weapons.some(Boolean);
+    // tangan kosong dan dipukul/ditembak dari jarak sangat dekat oleh yang tidak terlihat → berbalik melawan
+    if (!enemy && unarmed && a.hurtBy && a.hurtBy.alive && now - a.hurtAt < 1.5 && a.hurtBy.state === 'ground' && a.hurtBy.team !== b.team && Math.hypot(a.hurtBy.pos.x - b.pos.x, a.hurtBy.pos.z - b.pos.z) < 4) enemy = a.hurtBy;
+    // tangan kosong: lawan yang juga tangan kosong bukan ancaman (kecuali sudah di jarak tinju), dan lawan bersenjata yang
+    // masih jauh & belum menembak dibiarkan → tetap menjarah, tidak kabur mondar-mandir
+    if (enemy && unarmed) {
+      const d = Math.hypot(enemy.pos.x - b.pos.x, enemy.pos.z - b.pos.z), eArmed = !!(enemy.weapons && enemy.weapons.some(Boolean));
+      const brawl = d < 3.5 || (a.tac === 'melee' && d < 7) || (!eArmed && d < 9 && b.trait.aggr > 0.3);
+      if (!brawl && (!eArmed || (d > 40 && now - a.hurtAt > 3))) enemy = null;
+    }
     // sedang memulihkan rekan dan sudah di dekatnya: selesaikan dulu selama musuh masih jauh & tidak sedang ditembaki
     const rt = a.mode === 'revive' ? a.revT : null;
     const busy = !!rt && rt.alive && rt.down && now - a.hurtAt > 2 && Math.hypot(rt.pos.x - b.pos.x, rt.pos.z - b.pos.z) < 7 && (!enemy || Math.hypot(enemy.pos.x - b.pos.x, enemy.pos.z - b.pos.z) > 28);
@@ -1371,7 +1374,10 @@ export function createBots(ctx, n = 50) {
     }
     const run = now < a.zoneRun;
     a.losOk = false;
-    if (now < a.escUntil && a.nav) return; // sedang melepaskan diri dari tempat macet (lihat unstick)
+    if (a.mode === 'fight' && a.tac === 'melee') { // lawan tinju lepas dari pandangan: kejar sebentar ke posisi terakhirnya, lalu kembali menjarah
+      if (a.target && a.target.alive && now - a.seenAt < 2) { if (!a.nav) go(b, a.lastSeen.x, -a.lastSeen.z, SKILL.sprint, a.lastSeen.y); return; }
+      endFight(b); a.mode = 'loot'; a.lootT = 0;
+    }
     // regu: sasaran yang sedang dilihat rekan → pemburu yang kehilangan jejak memakai posisi itu (maju ke tempat yang benar)
     if (a.mode === 'fight' && a.target && now - a.seenAt > 1.5 && b.sq) {
       const f = b.sq.focus;
@@ -1476,22 +1482,18 @@ export function createBots(ctx, n = 50) {
     const w = weapon(b);
     if (w && w.inst.mag < w.def.mag * 0.6 && b.ammo[w.def.ammo] > 0 && !b.reloadEnd) b.reloadEnd = now + w.def.reload;
     if (w && !usable(b, w.inst)) equipBest(b);
-    // jarah barang di sekitar. Pemimpin: satu sesi jarah dibatasi waktu (SKILL.lootT) — sesi berikutnya dimulai sendiri
-    // saat menemukan barang lagi di tempat lain; yang perlengkapannya sudah lengkap hanya mampir untuk barang bernilai tinggi.
-    // Barang yang tidak berguna (aturan applyItem) atau gagal dicapai tidak dipilih lagi (daftar lewati, lihat abandon).
-    // Sambil berjalan (roam) bot melirik tiap 1,5 dtk: barang yang jauh lebih baik (senjata saat tangan kosong, pelindung
-    // tinggi) di dekat jalur tetap diambil.
-    const peek = a.mode === 'roam' && !!a.nav && now > a.lootPeek && !L;
-    if (!guard && (a.mode === 'loot' || a.mode === 'flee' || (a.mode === 'roam' && !a.nav) || peek)) {
-      if (peek) a.lootPeek = now + 1.5;
-      if (a.mode === 'loot' && !L && (now > a.lootEnd || a.lootN >= 8)) { if (a.item && a.item.claim === b) a.item.claim = null; a.item = null; a.mode = 'roam'; a.nav = null; a.goal = null; a.lootEnd = 0; } // sesi habis: hanya barang yang berharga
-      {
+    // jarah barang di sekitar
+    // belum bersenjata: terus mencari (radius lebih luas, juga sambil berjalan) sampai dapat senjata
+    const seek = unarmed && a.mode === 'roam' && !!a.nav && now > (a.seekAt || 0);
+    if (seek) a.seekAt = now + 1.5;
+    if (!guard && (a.mode === 'loot' || a.mode === 'flee' || (a.mode === 'roam' && !a.nav) || seek)) {
+      if (a.mode === 'loot' && !L && !unarmed && (a.lootT > 32 || a.lootN >= 5)) { a.mode = 'roam'; a.nav = null; a.goal = null; } // pemimpin: sesi jarah dibatasi lalu jalan lagi; anggota menjarah selama pemimpin di dekatnya
+      else {
         let best = null, bs = -1;
-        const armed = b.weapons[0] || b.weapons[1], gear = geared(b), minV = peek ? 7.5 : a.mode === 'loot' ? 0 : gear ? 4.5 : now > a.lootEnd ? 2 : 0;
-        loot.near(x, y, L ? 30 : a.mode === 'loot' ? 70 : 30, (it) => {
-          if (it.claim && it.claim !== b && !(it.claim.roof && LIFTS.size)) return; // barang atap (loot.js menandainya 'atap'): bot kini bisa naik lift
-          const v = itemValue(b, it);
-          if (v <= minV || skipped(b, it, now)) return;
+        const armed = b.weapons[0] || b.weapons[1];
+        loot.near(x, y, L ? 30 : unarmed ? 110 : a.mode === 'loot' ? 70 : 30, (it) => {
+          const d = it.def, dist = Math.hypot(it.x - x, it.y - y) + Math.abs(it.z - b.pos.y) * 1.5; // lantai lain: lewat tangga (sedikit lebih jauh)
+          if (it === a.skip0 || it === a.skip1) return; // peti yang baru diperiksa (isinya tidak dibutuhkan)
           if (L) { // dekat pemimpin saja; barang di kaki pemain — dan senjata di sekitarnya selama pemain belum bersenjata — untuk pemain
             const dl = Math.hypot(it.x - L.pos.x, it.y + L.pos.z);
             if (dl > 32 || (L.isPlayer && (dl < 3.5 || (it.def.kind === 'weapon' && dl < 14 && !L.weapons[0] && !L.weapons[1])))) return;
@@ -1574,7 +1576,12 @@ export function createBots(ctx, n = 50) {
       }
     }
     const fighting = a.mode === 'fight' && a.target;
-    if (fighting && a.losOk && (a.tac === 'engage' || a.tac === 'push') && !a.nav) {
+    const melee = fighting && a.tac === 'melee';
+    if (melee && a.losOk) { // tinju: lari lurus ke lawan sampai jarak pukul
+      const t = a.target, d = Math.hypot(t.pos.x - x, -t.pos.z - y);
+      a.nav = null; a.route = null; a.goal = null;
+      if (d > 1.15) { tx = t.pos.x; ty = -t.pos.z; speed = SKILL.sprint; }
+    } else if (fighting && a.losOk && (a.tac === 'engage' || a.tac === 'push') && !a.nav) {
       const t = a.target, dx = t.pos.x - x, dy = -t.pos.z - y, d = Math.hypot(dx, dy) || 1;
       if (now > a.strafeT) {
         a.strafe = Math.random() < SKILL.still ? 0 : Math.random() < 0.5 ? -1 : 1;
@@ -1688,6 +1695,19 @@ export function createBots(ctx, n = 50) {
       if (kind && b.heals[kind] > 0) { b.heals[kind]--; b.hp = kind === 'kit' ? 100 : Math.min(75, b.hp + 15); }
       b.healEnd = 0;
       if (a.tac !== 'engage') b.prone = false;
+    }
+    // tinju: sudah menempel & menghadap lawan → pukul (jeda antar pukulan mengikuti tingkat kesulitan)
+    if (melee && !w && a.losOk && !b.healEnd && now >= a.reactAt && now >= a.nextShot) {
+      const t = a.target;
+      if (!t.alive) { endFight(b); return; }
+      const dx = t.pos.x - b.pos.x, dz = t.pos.z - b.pos.z;
+      if (Math.hypot(dx, dz) < 1.7 && Math.abs(t.pos.y - b.pos.y) < 1.4 && Math.abs(wrap(Math.atan2(dx, dz) - b.yaw)) < 0.5) {
+        eye.set(b.pos.x, b.pos.y + 1.5, b.pos.z);
+        dir.set(dx, t.pos.y + (t.prone ? 0.3 : t.crouch ? 0.8 : 1.2) - eye.y, dz).normalize();
+        combat.melee(b, eye, dir);
+        b.pose.punch = 1;
+        a.nextShot = now + rnd(0.6, 0.9) + SKILL.react[0] * 0.5;
+      }
     }
     // tembak: bidikan melebar saat baru melihat target lalu mengunci
     if (fighting && a.losOk) a.aimK *= Math.exp(-dt / SKILL.settle);
@@ -1846,6 +1866,7 @@ export function createBots(ctx, n = 50) {
           p.aim = (b.ai.mode === 'fight' && b.ai.losOk) || riderAim;
           p.twist = riderAim ? clamp(wrap(Math.atan2(b.ai.target.pos.x - b.pos.x, b.ai.target.pos.z - b.pos.z) - b.yaw), -2.6, 2.6) : 0;
           p.pass = driving && b.ai.mode === 'ride';
+          p.guard = !driving && !b.down && b.alive && ((b.ai.mode === 'fight' && b.ai.tac === 'melee') || now - (b.lastPunch ?? -99) < 3);
           p.pitch = 0;
           p.dead = !b.alive;
           p.freefall = b.state === 'fall';

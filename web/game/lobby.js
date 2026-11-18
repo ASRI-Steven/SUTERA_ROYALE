@@ -427,8 +427,8 @@ export function createLobby(o) {
         <div class="lb-sec"><h3>Kontrol</h3></div>
         <ul class="lb-keys">
           <li><span>Gerak</span><p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> jalan · <kbd>Shift</kbd> lari · <kbd>Spasi</kbd> lompat · <kbd>C</kbd> jongkok · <kbd>Z</kbd> tiarap</p></li>
-          <li><span>Tembak</span><p><kbd>Klik kiri</kbd> tembak · <kbd>Klik kanan</kbd> bidik · <kbd>R</kbd> isi ulang</p></li>
-          <li><span>Senjata</span><p><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> atau gulir · <kbd>G</kbd> granat (tahan = lebih jauh) · <kbd>T</kbd> ganti granat</p></li>
+          <li><span>Tembak</span><p><kbd>Klik kiri</kbd> tembak (tangan kosong: tinju) · <kbd>Klik kanan</kbd> bidik · <kbd>R</kbd> isi ulang</p></li>
+          <li><span>Senjata</span><p><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> atau gulir · <kbd>G</kbd> pegang / simpan granat · <kbd>Klik kiri</kbd> lempar (tahan = lebih jauh; sumbu 5 dtk jalan sejak ditekan) · <kbd>Klik kanan</kbd> batal · <kbd>T</kbd> ganti granat</p></li>
           <li><span>Obat</span><p><kbd>4</kbd> perban (sampai 75 HP) · <kbd>5</kbd> P3K · <kbd>6</kbd> minuman energi (darah naik pelan-pelan sampai 100)</p></li>
           <li><span>Aksi</span><p><kbd>F</kbd> ambil / naik kendaraan / terjun / buka payung · tahan <kbd>F</kbd> pulihkan rekan yang tumbang · <kbd>Tab</kbd> tas · <kbd>V</kbd> kamera 1/3 · <kbd>M</kbd> peta · <kbd>Esc</kbd> jeda / tutup tas &amp; peta</p></li>
           <li><span>Terjun</span><p><kbd>W</kbd> + kamera datar melayang jauh · <kbd>W</kbd> + kamera menunduk menukik · <kbd>A</kbd><kbd>D</kbd> geser · <kbd>S</kbd> mengerem (payung: turun lebih pelan)</p></li>
