@@ -216,7 +216,7 @@ export function createKillFx({ scene, hud }) {
       streak = clock - last <= STREAK_S ? streak + 1 : 1;
       last = clock;
       const th = gunTheme();
-      fx(victim, streak, false, th);
+      // efek partikel di tubuh korban dimatikan atas permintaan Steven (18 Nov: "efek kill gausah"); spanduk & denting tetap
       play(streak, false, th);
       if (hud && hud.killBanner) hud.killBanner({ n: streak, knock: false, head: !!head, name: victim.name || '', theme: th });
     },
@@ -224,12 +224,12 @@ export function createKillFx({ scene, hud }) {
     knock(victim, head) {
       if (!victim || !victim.pos) return;
       const th = gunTheme(), n = clock - last <= STREAK_S ? Math.max(1, streak) : 1;
-      fx(victim, n, true, th);
       play(n, true, th);
       if (hud && hud.killBanner) hud.killBanner({ n, knock: true, head: !!head, name: victim.name || '', theme: th });
     },
-    // pratinjau (lobi): efek kill bertema skin `id` di posisi p (Vector3, kaki), hitungan n
-    preview(p, n = 1, id) { const th = gunTheme(id); fx({ pos: p, state: 'ground' }, n, false, th); audio.killSting(n, th.voice, false); },
+    // pratinjau (lobi): denting kill bertema skin `id`, hitungan n (spanduk ditampilkan lobi sendiri). p tidak dipakai lagi
+    // sejak efek partikel dimatikan.
+    preview(p, n = 1, id) { const th = gunTheme(id); audio.killSting(n, th.voice, false); },
     update(dt) {
       clock += dt;
       if (sting && clock >= sting.due) { audio.killSting(sting.n, sting.voice, sting.knock); sting.due = Infinity; }
