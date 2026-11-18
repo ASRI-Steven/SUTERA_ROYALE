@@ -14,6 +14,7 @@
     ],
     "tris": 340
    },
+   "handL": "fp_hand_l_pistol",
    "lod1": "pistol_lod1",
    "lod1Tris": 72,
    "muzzle": [
@@ -27,9 +28,9 @@
     0.04
    ],
    "guard": [
-    -0.026,
-    -0.034,
-    -0.008
+    -0.0315,
+    -0.012,
+    0.0079
    ],
    "handR": [
     0.026,
@@ -51,6 +52,7 @@
     ],
     "tris": 340
    },
+   "handL": "fp_hand_l_smg",
    "lod1": "smg_lod1",
    "lod1Tris": 132,
    "muzzle": [
@@ -64,8 +66,8 @@
     0.055
    ],
    "guard": [
-    0,
-    0.054,
+    -0.03668,
+    0.08651,
     -0.258
    ],
    "handR": [
@@ -88,6 +90,7 @@
     ],
     "tris": 700
    },
+   "handL": "fp_hand_l_ar",
    "lod1": "ar_lod1",
    "lod1Tris": 264,
    "muzzle": [
@@ -101,8 +104,8 @@
     -0.036
    ],
    "guard": [
-    0,
-    0.044,
+    -0.03094,
+    0.06355,
     -0.33
    ],
    "handR": [
@@ -126,6 +129,7 @@
     "tris": 504,
     "travel": 0.06
    },
+   "handL": "fp_hand_l_shotgun",
    "lod1": "shotgun_lod1",
    "lod1Tris": 136,
    "muzzle": [
@@ -139,8 +143,8 @@
     0.045
    ],
    "guard": [
-    0,
-    0.023,
+    -0.02942,
+    0.04397,
     -0.335
    ],
    "handR": [
@@ -163,6 +167,7 @@
     ],
     "tris": 348
    },
+   "handL": "fp_hand_l_dmr",
    "lod1": "dmr_lod1",
    "lod1Tris": 264,
    "muzzle": [
@@ -176,8 +181,8 @@
     0.104
    ],
    "guard": [
-    0,
-    0.046,
+    -0.02944,
+    0.06253,
     -0.39
    ],
    "handR": [
@@ -211,6 +216,7 @@
      "tris": 448
     }
    ],
+   "handL": "fp_hand_l_sniper",
    "lod1": "sniper_lod1",
    "lod1Tris": 244,
    "muzzle": [
@@ -224,8 +230,8 @@
     0.15
    ],
    "guard": [
-    0,
-    0.042,
+    -0.02794,
+    0.05803,
     -0.37
    ],
    "handR": [
@@ -248,6 +254,7 @@
     ],
     "tris": 880
    },
+   "handL": "fp_hand_l_lmg",
    "lod1": "lmg_lod1",
    "lod1Tris": 152,
    "muzzle": [
@@ -261,8 +268,8 @@
     0.06
    ],
    "guard": [
-    0,
-    0.033,
+    -0.02504,
+    0.03731,
     -0.265
    ],
    "handR": [
@@ -287,6 +294,7 @@
      "tris": 1844
     }
    ],
+   "handL": "fp_hand_l_pistol",
    "lod1": "revolver_lod1",
    "lod1Tris": 96,
    "muzzle": [
@@ -300,9 +308,9 @@
     0.03
    ],
    "guard": [
-    -0.026,
-    -0.034,
-    -0.008
+    -0.0315,
+    -0.012,
+    0.0079
    ],
    "handR": [
     0.026,
@@ -324,6 +332,7 @@
     ],
     "tris": 384
    },
+   "handL": "fp_hand_l_burst",
    "lod1": "burst_lod1",
    "lod1Tris": 152,
    "muzzle": [
@@ -337,8 +346,8 @@
     -0.042
    ],
    "guard": [
-    0,
-    0.042,
+    -0.0394,
+    0.07311,
     -0.31
    ],
    "handR": [
@@ -361,6 +370,7 @@
     ],
     "tris": 296
    },
+   "handL": "fp_hand_l_pdw",
    "lod1": "pdw_lod1",
    "lod1Tris": 112,
    "muzzle": [
@@ -374,8 +384,8 @@
     -0.012
    ],
    "guard": [
-    0,
-    0.054,
+    -0.03829,
+    0.08779,
     -0.2
    ],
    "handR": [
@@ -400,6 +410,7 @@
      "tris": 1240
     }
    ],
+   "handL": "fp_hand_l_dbs",
    "lod1": "dbs_lod1",
    "lod1Tris": 88,
    "muzzle": [
@@ -413,8 +424,8 @@
     0.02
    ],
    "guard": [
-    0,
-    0.027,
+    -0.02525,
+    0.03863,
     -0.23
    ],
    "handR": [
@@ -425,6 +436,46 @@
   }
  ],
  "hands": {
+  "fp_hand_l_pistol": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam gagang (dua tangan); letakkan di <kind>_guard"
+  },
+  "fp_hand_l_smg": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_ar": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_shotgun": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_dmr": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_sniper": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_lmg": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_burst": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_pdw": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
+  "fp_hand_l_dbs": {
+   "tris": 2834,
+   "note": "tangan kiri menggenggam pelindung tangan; letakkan di <kind>_guard"
+  },
   "fp_hand_r": {
    "tris": 6380,
    "pos": [
@@ -436,7 +487,7 @@
   },
   "fp_hand_l": {
    "tris": 6372,
-   "note": "letakkan di <kind>_guard (pusat telapak)"
+   "note": "genggaman umum (rig obat & granat); senjata memakai fp_hand_l_<kind> (weapons[].handL)"
   },
   "fp_hand_nade": {
    "tris": 6868,
