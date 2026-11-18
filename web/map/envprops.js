@@ -18,6 +18,7 @@ const ASSET = 'game/assets/env/';
 const M = 0.1;
 const UP = new THREE.Vector3(0, 1, 0);
 // jarak LOD per jenis (m, sebelum dikali zoom): [lod0, lod1, (lod2)]; di luar yang terakhir tidak digambar
+const STATIC_R = 450; // jarak gambar benda statis per petak (m, × zoom)
 const RANGE = {
   lamp: [70, 650], lamp2: [70, 650], pole: [60, 450], pole_t: [60, 450], sutet: [200, 750, 6500], bts: [160, 650, 6500],
   btsr: [160, 1500], guard: [70, 500], boom: [220], pillar: [240], namesign: [230], halte: [70, 500],
@@ -37,14 +38,16 @@ const COMBOS = [ // [model, LOD yang digabung (null = semua)]
 // kode efek per verteks (atribut fx)
 const FX = { none: 0, blink: 1, sig_r: 2, sig_y: 3, sig_g: 4, screen: 5, ad: 6, name: 7, night: 8, glow: 9 };
 // ---------- atlas kanvas: iklan fiktif, nama cluster, papan tanda (semua merek fiktif)
-const AW = 2048, AH = 1280;
+const AW = 2048, AH = 1536;
 const AD = { x: 0, y: 0, w: 512, h: 256, cols: 4, n: 8 };      // 8 iklan 2:1
-const NM = { x: 0, y: 512, w: 256, h: 64, cols: 8, n: 40 };    // nama cluster
+const NM = { x: 0, y: 512, w: 512, h: 51, cols: 4, n: 40 };    // nama cluster (balok gapura ±10:1)
 const CELL = {
-  satpam: [0, 832, 512, 80], loop: [512, 832, 160, 210], fuel: [672, 832, 192, 165], price: [864, 832, 176, 286],
-  sutet: [1040, 832, 160, 115], bts: [1200, 832, 192, 120], crane: [1392, 832, 640, 120], land: [0, 912, 512, 96],
-  timer: [512, 1042, 96, 80], media: [608, 1042, 256, 54], bin_o: [864, 1118, 128, 96], bin_a: [992, 1118, 128, 96],
-  pump: [1120, 1118, 160, 120], hoard: [1280, 952, 768, 154], zinc: [1280, 1118, 256, 96], white: [0, 1256, 16, 16],
+  satpam: [0, 1024, 512, 80], land: [0, 1104, 512, 96], loop: [512, 1024, 160, 210], fuel: [672, 1024, 192, 165],
+  price: [864, 1024, 176, 286], sutet: [1040, 1024, 160, 115], bts: [1200, 1024, 192, 120], crane: [1392, 1024, 640, 120],
+  timer: [512, 1234, 96, 80], media: [608, 1234, 256, 54], bin_o: [864, 1310, 128, 96], bin_a: [992, 1310, 128, 96],
+  pump: [1120, 1310, 160, 120], hoard: [1280, 1144, 768, 154], zinc: [1280, 1298, 256, 96], zinc2: [256, 1200, 256, 96],
+  hoard2: [1536, 1298, 512, 102], hoard3: [1536, 1400, 512, 102], hoard4: [1024, 1430, 512, 102], stone: [0, 1200, 256, 128],
+  white: [0, 1512, 16, 16],
 };
 
 // tata letak atlas (juga dibaca tools/blender/envprops.py --atlas untuk render pratinjau)
@@ -94,9 +97,13 @@ function drawAtlas(names) {
   // --- nama cluster: batu gelap, huruf emas
   for (let i = 0; i < NM.n; i++) {
     const x = NM.x + (i % NM.cols) * NM.w, y = NM.y + Math.floor(i / NM.cols) * NM.h;
-    grad(x, y, NM.w, NM.h, '#3a3833', '#24231f', true);
-    g.fillStyle = 'rgba(210,159,82,.55)'; g.fillRect(x + 6, y + NM.h - 9, NM.w - 12, 2);
-    if (names[i]) text(names[i].toUpperCase(), x + NM.w / 2, y + NM.h * 0.45, 30, '#e2b974', '800', 'center', NM.w - 20);
+    grad(x, y, NM.w, NM.h, '#2c2a27', '#1b1a18', true);
+    g.fillStyle = 'rgba(210,159,82,.7)'; g.fillRect(x + 8, y + 4, NM.w - 16, 1.5); g.fillRect(x + 8, y + NM.h - 6, NM.w - 16, 1.5);
+    if (!names[i]) continue;
+    const t = names[i].toUpperCase().split('').join(String.fromCharCode(8202)); // huruf sedikit renggang (gaya papan nama)
+    g.save(); g.shadowColor = 'rgba(255,200,120,.55)'; g.shadowBlur = 6;
+    text(t, x + NM.w / 2, y + NM.h * 0.52, 34, '#f0c987', '800', 'center', NM.w - 36);
+    g.restore();
   }
   // --- papan tanda
   const C = (k) => CELL[k];
@@ -129,6 +136,20 @@ function drawAtlas(names) {
     g.fillStyle = '#ffd400'; g.fillRect(x + w * 0.62, y + 26, w * 0.34, h - 52); text('AREA PROYEK', x + w * 0.79, y + h * 0.42, 34, '#111', '900', 'center', w * 0.3); text('Wajib APD · Dilarang masuk', x + w * 0.79, y + h * 0.66, 18, '#111', '800', 'center', w * 0.3); }
   { const [x, y, w, h] = C('zinc'); grad(x, y, w, h, '#b9bdc0', '#9fa4a8', true); for (let k = 0; k < 24; k++) { const xx = x + k * w / 24; const gr = g.createLinearGradient(xx, 0, xx + w / 24, 0); gr.addColorStop(0, 'rgba(255,255,255,.22)'); gr.addColorStop(0.5, 'rgba(0,0,0,.18)'); gr.addColorStop(1, 'rgba(255,255,255,.22)'); g.fillStyle = gr; g.fillRect(xx, y, w / 24, h); }
     g.fillStyle = 'rgba(120,80,40,.25)'; g.fillRect(x, y + h - 10, w, 10); }
+  { const [x, y, w, h] = C('zinc2'); grad(x, y, w, h, '#2f63a6', '#264f86', true); for (let k = 0; k < 24; k++) { const xx = x + k * w / 24, gr = g.createLinearGradient(xx, 0, xx + w / 24, 0); gr.addColorStop(0, 'rgba(255,255,255,.18)'); gr.addColorStop(0.5, 'rgba(0,0,0,.2)'); gr.addColorStop(1, 'rgba(255,255,255,.18)'); g.fillStyle = gr; g.fillRect(xx, y, w / 24, h); }
+    g.fillStyle = '#e8e6df'; g.fillRect(x, y, w, 9); g.fillStyle = 'rgba(110,70,30,.3)'; g.fillRect(x, y + h - 12, w, 12); }
+  // spanduk proyek bervariasi (pengembang fiktif)
+  { const [x, y, w, h] = C('hoard2'); g.fillStyle = '#ffd400'; g.fillRect(x, y, w, h); g.fillStyle = '#111'; for (let k = 0; k < 16; k++) { g.beginPath(); g.moveTo(x + k * 34, y); g.lineTo(x + k * 34 + 17, y); g.lineTo(x + k * 34 - 3, y + 12); g.lineTo(x + k * 34 - 20, y + 12); g.fill(); g.beginPath(); g.moveTo(x + k * 34, y + h - 12); g.lineTo(x + k * 34 + 17, y + h - 12); g.lineTo(x + k * 34 - 3, y + h); g.lineTo(x + k * 34 - 20, y + h); g.fill(); }
+    g.fillStyle = '#1d4f91'; g.beginPath(); g.arc(x + 58, y + h / 2, 30, Math.PI, 0); g.fill(); g.fillRect(x + 22, y + h / 2, 72, 9);
+    text('UTAMAKAN KESELAMATAN', x + w * 0.58, y + h * 0.42, 30, '#111', '900', 'center', w * 0.72); text('Area proyek · Wajib helm & sepatu', x + w * 0.58, y + h * 0.7, 17, '#111', '800', 'center', w * 0.72); }
+  { const [x, y, w, h] = C('hoard3'); grad(x, y, w, h, '#f4f1ea', '#ddd8cc', true); g.fillStyle = '#1d4f91'; g.fillRect(x, y, w * 0.36, h);
+    for (let k = 0; k < 7; k++) { const bw = 18 + (k * 7) % 14, bh = 30 + (k * 13) % 44; g.fillStyle = k % 2 ? '#9fb7d6' : '#c9d6e6'; g.fillRect(x + 14 + k * 24, y + h - 12 - bh, bw, bh); }
+    text('SEGERA HADIR', x + w * 0.68, y + h * 0.32, 30, '#1d4f91', '900', 'center', w * 0.6); text('Apartemen & ruko · Sutera Land', x + w * 0.68, y + h * 0.62, 17, '#555', '800', 'center', w * 0.6); g.fillStyle = '#d29f52'; g.fillRect(x + w * 0.42, y + h - 14, w * 0.5, 4); }
+  { const [x, y, w, h] = C('hoard4'); grad(x, y, w, h, '#16325c', '#0d2242'); g.fillStyle = '#d29f52'; g.fillRect(x, y + h - 8, w, 8);
+    text('★', x + 46, y + h / 2, 54, '#d29f52', '900'); text('SUTERA LAND', x + w * 0.5, y + h * 0.4, 38, '#ffffff', '900', 'center', w * 0.62); text('Membangun kawasan sejak 1994', x + w * 0.5, y + h * 0.7, 16, '#c9d6e6', '700', 'center', w * 0.62); }
+  // kulit batu alam (tembok & pilar gapura)
+  { const [x, y, w, h] = C('stone'); g.fillStyle = '#4b4741'; g.fillRect(x, y, w, h); let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    for (let row = 0, yy = y + 2; yy < y + h - 4; row++) { const rh = 14 + rnd() * 14; let xx = x + (row % 2 ? -10 : 0); while (xx < x + w) { const rw = 26 + rnd() * 38, c = 92 + rnd() * 70; g.fillStyle = `rgb(${c},${c * 0.93},${c * 0.84})`; g.fillRect(Math.max(x, xx + 1.5), yy + 1.5, Math.min(rw - 3, x + w - xx - 1.5), rh - 3); xx += rw; } yy += rh; } }
   g.fillStyle = '#ffffff';
   g.fillRect(...CELL.white);
   const tex = new THREE.CanvasTexture(cv);
@@ -168,7 +189,15 @@ function cellUV(key) { // [u0, v0, u1, v1] (v dari bawah: CanvasTexture flipY)
   const pad = key === 'white' ? 4 : 1;
   return [(x + pad) / AW, 1 - (y + h - pad) / AH, (x + w - pad) / AW, 1 - (y + pad) / AH];
 }
-// satu primitif GLB → geometri berisi atribut standar + pbr (AO, kasar, logam, pijar) + fx
+// jenis permukaan untuk tekstur detail foto di shader (fx bit 4–6): 1 beton, 2 plester/cat, 3 logam, 4 batu, 5 kayu,
+// 6 plastik/karet (0 = mulus: kaca, lensa, layar, tulisan)
+const SURF = {
+  concrete: 1, concrete_pole: 1, gravel: 1, soil: 1, plaster: 2, paint_cream: 2, paint_white: 2, tile_roof: 2, paint_red: 2,
+  paint_orange: 2, paint_yellow: 2, paint_green: 2, paint_blue: 2, paint_purple: 2, paint_black: 2, galv: 3, galv_old: 3,
+  steel: 3, steel_dark: 3, grate: 3, alu: 3, housing: 3, paint_grey: 3, paint_gold: 3, stone: 4, stone_dark: 4, wood: 5,
+  wood_dark: 5, plastic_green: 6, plastic_yellow: 6, plastic_blue: 6, plastic_red: 6, rubber: 6,
+};
+// satu primitif GLB → geometri berisi atribut standar + pbr (AO, kasar, logam, pijar) + fx (kode efek | permukaan << 4)
 function packPrim(mesh, rel) {
   const src = mesh.geometry, mat = mesh.material, name = (mat.name || '').replace(/\.\d+$/, ''), n = src.attributes.position.count;
   const g = new THREE.BufferGeometry();
@@ -189,7 +218,7 @@ function packPrim(mesh, rel) {
   for (let i = 0; i < n; i++) {
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
     pbr[i * 4] = ao ? U8(ao.getX(i)) : 255; pbr[i * 4 + 1] = U8(mat.roughness ?? 0.6); pbr[i * 4 + 2] = U8(mat.metalness ?? 0); pbr[i * 4 + 3] = U8(Math.min(1, em / 4));
-    fx[i] = code;
+    fx[i] = code | ((SURF[name] || 0) << 4);
     if (key && su) { uv[i * 2] = cu[0] + (cu[2] - cu[0]) * su.getX(i); uv[i * 2 + 1] = cu[1] + (cu[3] - cu[1]) * (1 - su.getY(i)); }
     else { uv[i * 2] = (cu[0] + cu[2]) / 2; uv[i * 2 + 1] = (cu[1] + cu[3]) / 2; }
   }
@@ -231,15 +260,37 @@ attribute float aPart;
 uniform float uTime;
 varying vec4 vPbr;
 varying float vFx;
+varying float vSurf;
 varying float vVar;
 varying float vH;
+varying float vRnd;
+varying vec3 vWPos;
+varying vec3 vWNrm;
 `;
 const SHADER_FS = `
 uniform float uTime, uNight;
 varying vec4 vPbr;
 varying float vFx;
+varying float vSurf;
 varying float vVar;
 varying float vH;
+varying float vRnd;
+varying vec3 vWPos;
+varying vec3 vWNrm;
+#ifdef ENV_DETAIL
+uniform sampler2D tDetA, tDetN, tDetR, tPlA, tPlN;
+uniform vec4 uDet; // ubin beton, ubin plester (m), rata-rata hijau beton, plester
+// normal detail dari turunan layar (tanpa tangen): uv = koordinat dunia terproyeksi
+vec3 detailNormal(vec3 n, vec3 p, vec2 uv, vec3 nm) {
+  vec3 q0 = dFdx(p), q1 = dFdy(p);
+  vec2 st0 = dFdx(uv), st1 = dFdy(uv);
+  vec3 q1p = cross(q1, n), q0p = cross(n, q0);
+  vec3 T = q1p * st0.x + q0p * st1.x, B = q1p * st0.y + q0p * st1.y;
+  float det = max(dot(T, T), dot(B, B));
+  float sc = det == 0.0 ? 0.0 : inversesqrt(det);
+  return normalize(T * (nm.x * sc) + B * (nm.y * sc) + n * nm.z);
+}
+#endif
 float envOn() { // lampu lalu lintas: siklus 40 dtk, dua kelompok arah bergantian; fase tiap simpang beda
   float t = mod(uTime + floor(vVar / 2.0) * 7.3 + mod(vVar, 2.0) * 20.0, 40.0);
   if (vFx > 1.5 && vFx < 2.5) return step(20.0, t);
@@ -250,11 +301,19 @@ float envOn() { // lampu lalu lintas: siklus 40 dtk, dua kelompok arah bergantia
 function makeUni(R, atlas, U) {
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, map: atlas, roughness: 1, metalness: 1, envMap: R ? R.env : null, envMapIntensity: 1.0 });
   m.name = 'envprops';
+  const det = R && R.sets.slab && R.sets.plaster ? R.sets : null;
+  if (det) { // tekstur foto yang sudah dimuat mode realistis (map/realism.js), tanpa unduhan tambahan
+    m.defines = { ENV_DETAIL: '' };
+    const mean = (t) => { try { const c = document.createElement('canvas'); c.width = c.height = 4; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(t.image, 0, 0, 4, 4); const d = x.getImageData(0, 0, 4, 4).data; let sum = 0; for (let i = 1; i < d.length; i += 4) sum += d[i]; return Math.max(0.05, Math.pow(sum / 16 / 255, 2.2)); } catch (e) { return 0.4; } };
+    U.det = { tDetA: { value: det.slab.map }, tDetN: { value: det.slab.normalMap }, tDetR: { value: det.slab.roughnessMap || det.slab.map }, tPlA: { value: det.plaster.map }, tPlN: { value: det.plaster.normalMap },
+      uDet: { value: new THREE.Vector4(det.slab.tile, det.plaster.tile, mean(det.slab.map), mean(det.plaster.map)) } };
+  }
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = U.time; sh.uniforms.uNight = U.night;
+    if (U.det) Object.assign(sh.uniforms, U.det);
     sh.vertexShader = SHADER_VS + sh.vertexShader
       .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-  vPbr = pbr; vFx = fx; vVar = aVar;
+  vPbr = pbr; vFx = mod(fx, 16.0); vSurf = floor(fx / 16.0 + 0.01); vVar = aVar;
   mat2 slew = mat2(1.0, 0.0, 0.0, 1.0);
   #ifdef USE_INSTANCING
     if (aVar < -0.5) { // bagian berputar (crane): putar di sumbu Y model, kecepatan & fase per instans
@@ -271,26 +330,57 @@ function makeUni(R, atlas, U) {
       .replace('#include <uv_vertex>', `#include <uv_vertex>
   #ifdef USE_MAP
   { // iklan / nama cluster / layar videotron: geser ke sel atlas milik instans
-    float cell = -1.0, cols = 1.0; vec2 pitch = vec2(0.0);
-    if (fx > 4.5 && fx < 5.5) { cell = mod(floor(uTime / 6.5 + aVar * 3.0), ${AD.n}.0); cols = ${AD.cols}.0; pitch = vec2(${AD.w / AW}, ${-AD.h / AH}); }
-    else if (fx > 5.5 && fx < 6.5) { cell = mod(aVar, ${AD.n}.0); cols = ${AD.cols}.0; pitch = vec2(${AD.w / AW}, ${-AD.h / AH}); }
-    else if (fx > 6.5 && fx < 7.5) { cell = mod(aVar, ${NM.n}.0); cols = ${NM.cols}.0; pitch = vec2(${NM.w / AW}, ${-NM.h / AH}); }
+    float cell = -1.0, cols = 1.0, fxc = mod(fx, 16.0); vec2 pitch = vec2(0.0);
+    if (fxc > 4.5 && fxc < 5.5) { cell = mod(floor(uTime / 6.5 + aVar * 3.0), ${AD.n}.0); cols = ${AD.cols}.0; pitch = vec2(${AD.w / AW}, ${-AD.h / AH}); }
+    else if (fxc > 5.5 && fxc < 6.5) { cell = mod(aVar, ${AD.n}.0); cols = ${AD.cols}.0; pitch = vec2(${AD.w / AW}, ${-AD.h / AH}); }
+    else if (fxc > 6.5 && fxc < 7.5) { cell = mod(aVar, ${NM.n}.0); cols = ${NM.cols}.0; pitch = vec2(${NM.w / AW}, ${-NM.h / AH}); }
     if (cell >= 0.0) vMapUv += vec2(mod(cell, cols), floor(cell / cols)) * pitch;
   }
   #endif`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
   {
     vec4 wp = vec4(transformed, 1.0);
+    vec3 wn = objectNormal;
+    vec2 ip = vec2(0.0);
     #ifdef USE_INSTANCING
       wp = instanceMatrix * wp;
+      wn = mat3(instanceMatrix) * wn;
+      ip = vec2(instanceMatrix[3][0], instanceMatrix[3][2]);
     #endif
-    vH = (modelMatrix * wp).y;
+    wp = modelMatrix * wp;
+    vWPos = wp.xyz;
+    vWNrm = normalize(mat3(modelMatrix) * wn);
+    vH = wp.y;
+    vRnd = fract(sin(dot(ip, vec2(12.9898, 78.233))) * 43758.5453); // variasi warna per instans
   }`);
     sh.fragmentShader = SHADER_FS + sh.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
-  // kotor & kusam di dekat tanah (cipratan, debu)
-  if (vFx < 0.5) diffuseColor.rgb *= mix(0.74, 1.0, smoothstep(0.02, 0.9, vH));`)
-      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp(vPbr.y + (1.0 - smoothstep(0.02, 0.9, vH)) * 0.15, 0.04, 1.0);')
+  // permukaan nyata: tekstur foto (beton / plester) diproyeksikan di koordinat dunia, kotor di dekat tanah, karat di logam,
+  // variasi kecil per instans; kode efek (lampu, layar, tulisan) tidak disentuh
+  float wDirt = 0.0, dRough = 0.0, nz = 0.0;
+  vec2 dUv = vec2(0.0);
+  float wP = 0.0, kN = 0.0;
+  if (vFx < 0.5) {
+    #ifdef ENV_DETAIL
+      vec3 an = abs(vWNrm);
+      dUv = an.y > max(an.x, an.z) ? vWPos.xz : (an.x > an.z ? vWPos.zy : vWPos.xy);
+      vec3 cA = texture2D(tDetA, dUv / uDet.x).rgb, pA = texture2D(tPlA, dUv / uDet.y).rgb;
+      float cR = texture2D(tDetR, dUv / uDet.x).g;
+      nz = cA.g / uDet.z - 1.0;
+      wP = (vSurf > 1.5 && vSurf < 2.5) || vSurf > 4.5 ? 1.0 : 0.0;
+      float k = vSurf < 0.5 ? 0.0 : vSurf < 1.5 ? 0.62 : vSurf < 2.5 ? 0.3 : vSurf < 3.5 ? 0.18 : vSurf < 4.5 ? 0.55 : 0.2;
+      vec3 det = mix(cA / uDet.z, pA / uDet.w, wP);
+      diffuseColor.rgb *= mix(vec3(1.0), clamp(det, 0.35, 1.9), k);
+      kN = vSurf < 0.5 ? 0.0 : vSurf < 1.5 ? 0.9 : vSurf < 2.5 ? 0.45 : vSurf < 3.5 ? 0.25 : vSurf < 4.5 ? 1.1 : 0.3;
+      dRough = vSurf > 0.5 && vSurf < 4.5 && wP < 0.5 ? (cR - 0.5) * (vSurf > 2.5 && vSurf < 3.5 ? 0.45 : 0.3) : 0.0;
+    #endif
+    float hz = 0.9 + 0.45 * nz;
+    wDirt = 1.0 - smoothstep(0.02, hz, vH);
+    diffuseColor.rgb *= mix(1.0, 0.7 + 0.08 * nz, wDirt);
+    if (vSurf > 2.5 && vSurf < 3.5) diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.32, 0.19, 0.11) * (0.8 + 0.4 * nz), clamp(wDirt * (0.25 + 0.5 * nz), 0.0, 0.45)); // karat di kaki
+    diffuseColor.rgb *= 0.95 + 0.1 * vRnd;
+  }`)
+      .replace('#include <roughnessmap_fragment>', 'float roughnessFactor = clamp(vPbr.y + dRough + wDirt * 0.15, 0.04, 1.0);')
       .replace('#include <metalnessmap_fragment>', 'float metalnessFactor = vPbr.z;')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
   {
@@ -309,10 +399,18 @@ function makeUni(R, atlas, U) {
       diffuseColor.rgb *= 0.15;
     }
   }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+  #ifdef ENV_DETAIL
+    if (kN > 0.0) {
+      vec3 nm = mix(texture2D(tDetN, dUv / uDet.x).xyz, texture2D(tPlN, dUv / uDet.y).xyz, wP) * 2.0 - 1.0;
+      nm.xy *= kN;
+      normal = detailNormal(normal, -vViewPosition, dUv, normalize(nm));
+    }
+  #endif`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
   { float ao = vPbr.x; reflectedLight.indirectDiffuse *= ao; reflectedLight.indirectSpecular *= mix(1.0, ao, 0.85); reflectedLight.directDiffuse *= mix(1.0, ao, 0.4); reflectedLight.directSpecular *= mix(1.0, ao, 0.4); }`);
   };
-  m.customProgramCacheKey = () => 'envprops1';
+  m.customProgramCacheKey = () => 'envprops2' + (det ? 'D' : '');
   if (R) R.patch(m, { dyn: true });
   return m;
 }
@@ -426,7 +524,16 @@ export function createEnvProps(W, A, col, homes) {
       if (z > 0.5 && !col.blocked(x, y, 1.4, z)) { o.x = x; o.y = y; o.z = z; break; }
     }
   }
+  // audit akhir terhadap dunia yang sebenarnya (sebelum rintangan modul ini didaftarkan): benda darat dibuang bila
+  // tubuhnya menumpuk pohon/gedung/dinding/air (benda padat menembus benda padat), menutup pintu, atau berdiri di lajur
+  // jalan (> 0,25 m masuk aspal). SUTET dikecualikan dari gedung (kaki lebar, dicek di ekstraktor).
+  const onLane = (x, y, pad) => {
+    let hit = false;
+    col.near(x, y, 12, (c) => { if (hit) return; for (const si of c.s) { const s = col.segs[si]; if (s.w < 3) continue; const dx = s.bx - s.ax, dy = s.by - s.ay, L = dx * dx + dy * dy, t = L > 0 ? Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / L)) : 0; if (Math.hypot(x - s.ax - dx * t, y - s.ay - dy * t) < s.w / 2 - pad) { hit = true; return; } } });
+    return hit;
+  };
   let dropped = 0;
+  const dropBy = {};
   for (const o of inst) {
     if (o.top || o.z > 0.5) continue;
     const C = MAN[o.m] && MAN[o.m].col;
@@ -434,11 +541,15 @@ export function createEnvProps(W, A, col, homes) {
     let bad = false;
     for (const c of C) {
       if (c.z0 > 1.9) continue;
-      if (c.c) { const [x, y] = P(o, c.c[0], c.c[1]); if (nearTree(x, y, c.c[2] + 0.05) || (o.k !== 'sutet' && col.inBuilding(x, y) >= 0) || nearDoor(x, y, c.c[2] + 0.7)) bad = true; }
-      else if (c.b) { const [x, y] = P(o, c.b[0], c.b[1]), r = Math.min(c.b[2], c.b[3]) / 2; if (nearTree(x, y, r) || (o.k !== 'sutet' && col.inBuilding(x, y) >= 0) || nearDoor(x, y, Math.max(c.b[2], c.b[3]) / 2 + 0.7)) bad = true; }
+      let x, y, r, rd;
+      if (c.c) { [x, y] = P(o, c.c[0], c.c[1]); r = c.c[2]; rd = r; }
+      else if (c.b) { [x, y] = P(o, c.b[0], c.b[1]); r = Math.min(c.b[2], c.b[3]) / 2; rd = Math.max(c.b[2], c.b[3]) / 2; }
+      else continue;
+      if (nearTree(x, y, r + 0.05) || nearDoor(x, y, rd + 0.7) || col.waterAt(x, y) || onLane(x, y, 0.25)) bad = true;
+      else if (o.k !== 'sutet' && (col.inBuilding(x, y) >= 0 || col.blocked(x, y, Math.min(r, 0.2)))) bad = true;
       if (bad) break;
     }
-    if (bad) { o.ok = false; dropped++; }
+    if (bad) { o.ok = false; dropped++; dropBy[o.k] = (dropBy[o.k] || 0) + 1; }
   }
   for (const o of inst) if (o.top) o.ok = byKey.get('crane:' + o.i).ok;
 
@@ -455,6 +566,11 @@ export function createEnvProps(W, A, col, homes) {
         for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) pts.push(...P(o, cx + sx * w / 2, cy + sy * d / 2));
         obstacles.push({ pts, h, z0, floor: !!c.floor });
       }
+    }
+    if (o.k === 'net') { // net lapangan (lebar diskala per lapangan): tiang + jaring menahan pejalan (peluru tembus via h rendah)
+      const hw = 6.4 * o.s, pts = [];
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) pts.push(...P(o, sx * (hw + 0.05), sy * 0.06));
+      obstacles.push({ pts, h: 1.07, z0: 0 });
     }
   }
 
@@ -600,7 +716,11 @@ export function createEnvProps(W, A, col, homes) {
   // ---------- pagar kawat (lapangan, BTS) + pagar seng proyek: semua rangka satu mesh, semua jaring satu mesh
   const white = cellUV('white'), wu = (white[0] + white[2]) / 2, wv = (white[1] + white[3]) / 2;
   const newBuf = (pbr) => ({ pos: [], nor: [], col: [], uv: [], pbr: pbr ? [] : null, fx: pbr ? [] : null });
-  const fr = newBuf(true), nt = newBuf(false);
+  // benda statis (pagar, pagar seng, gapura, tembok) dikumpulkan per petak 320 m: petak jauh (> 450 m) & di luar
+  // pandang tidak digambar; 'use(x, y)' memilih penampung petak untuk benda berikutnya
+  let fr = null, nt = null;
+  const SCH = 320, chunks = new Map();
+  const use = (x, y) => { const k = Math.floor(x / SCH) * 4096 + Math.floor(y / SCH); let c = chunks.get(k); if (!c) chunks.set(k, (c = { fr: newBuf(true), nt: newBuf(false) })); fr = c.fr; nt = c.nt; };
   const quadTo = (B, a, b, c, d, n, colr, uvs, pb, f) => {
     for (const k of [0, 1, 2, 0, 2, 3]) {
       const p = [a, b, c, d][k];
@@ -610,10 +730,17 @@ export function createEnvProps(W, A, col, homes) {
     }
   };
   const W4 = [[wu, wv], [wu, wv], [wu, wv], [wu, wv]];
-  const boxTo = (B, cx, cy, z0, z1, ux, uy, hl, hw, colr, pb) => { // kotak sejajar (ux, uy), panjang 2hl, lebar 2hw
+  // kotak sejajar (ux, uy), panjang 2hl, lebar 2hw; f = kode fx; tex = sel atlas untuk sisi tegak (dipotong sebanding
+  // ukuran nyata 'cm' m per sel supaya tekstur tidak melar)
+  const boxTo = (B, cx, cy, z0, z1, ux, uy, hl, hw, colr, pb, f = 0, tex = null, cm = 1.6) => {
     const vx = -uy, vy = ux, C4 = [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([a, b]) => [cx + ux * a + vx * b, cy + uy * a + vy * b]);
-    for (let j = 0; j < 4; j++) { const p = C4[j], q2 = C4[(j + 1) % 4], ex = q2[0] - p[0], ey = q2[1] - p[1], l = Math.hypot(ex, ey) || 1; quadTo(B, [p[0], p[1], z0], [q2[0], q2[1], z0], [q2[0], q2[1], z1], [p[0], p[1], z1], [ey / l, -ex / l, 0], colr, W4, pb, 0); }
-    quadTo(B, [C4[0][0], C4[0][1], z1], [C4[1][0], C4[1][1], z1], [C4[2][0], C4[2][1], z1], [C4[3][0], C4[3][1], z1], [0, 0, 1], colr, W4, pb, 0);
+    for (let j = 0; j < 4; j++) {
+      const p = C4[j], q2 = C4[(j + 1) % 4], ex = q2[0] - p[0], ey = q2[1] - p[1], l = Math.hypot(ex, ey) || 1;
+      let U = W4;
+      if (tex) { const fu = Math.min(1, l / cm), fv = Math.min(1, (z1 - z0) / (cm / 2)), o = (j * 0.37) % (1 - fu || 1); U = [[tex[0] + (tex[2] - tex[0]) * o, tex[1]], [tex[0] + (tex[2] - tex[0]) * (o + fu), tex[1]], [tex[0] + (tex[2] - tex[0]) * (o + fu), tex[1] + (tex[3] - tex[1]) * fv], [tex[0] + (tex[2] - tex[0]) * o, tex[1] + (tex[3] - tex[1]) * fv]]; }
+      quadTo(B, [p[0], p[1], z0], [q2[0], q2[1], z0], [q2[0], q2[1], z1], [p[0], p[1], z1], [ey / l, -ex / l, 0], colr, U, pb, f);
+    }
+    quadTo(B, [C4[0][0], C4[0][1], z1], [C4[1][0], C4[1][1], z1], [C4[2][0], C4[2][1], z1], [C4[3][0], C4[3][1], z1], [0, 0, 1], colr, W4, pb, f);
   };
   const mkStatic = (B, mat, withPbr, name) => {
     if (!B.pos.length) return;
@@ -634,13 +761,17 @@ export function createEnvProps(W, A, col, homes) {
     mesh.castShadow = withPbr;
     mesh.receiveShadow = true;
     addStatic(mesh);
+    return mesh;
   };
   const GALV = [0.42, 0.44, 0.46], PB_GALV = [255, 115, 200, 0], ZINC = [0.62, 0.64, 0.66], PB_ZINC = [255, 110, 170, 0];
+  const S_METAL = 3 << 4, S_PLASTER = 2 << 4, S_STONE = 4 << 4; // kode permukaan (fx bit 4–6) untuk tekstur detail
   const roadNear = (x, y, pad) => { let hit = false; col.near(x, y, 14, (c) => { if (hit) return; for (const si of c.s) { const s = col.segs[si], dx = s.bx - s.ax, dy = s.by - s.ay, L = dx * dx + dy * dy, t = L > 0 ? Math.max(0, Math.min(1, ((x - s.ax) * dx + (y - s.ay) * dy) / L)) : 0; if (Math.hypot(x - s.ax - dx * t, y - s.ay - dy * t) < s.w / 2 + pad) { hit = true; return; } } }); return hit; };
   const freeAt = (x, y) => inArea(x, y) && !roadNear(x, y, 0.4) && col.inBuilding(x, y) < 0 && !col.waterAt(x, y) && !nearDoor(x, y, 1.6);
   let fenceM = 0, hoardM = 0;
   (D.fences || []).forEach((F) => {
-    const p = F.p, n = p.length / 2, H = F.h * M, wire = !!F.wire, gate = F.gate;
+    const p = F.p, n = p.length / 2, H = F.h * M, wire = !!F.wire, gate = F.gate, PH = H + (wire ? 0.45 : 0.05);
+    let prev = null, pu = null, first = null;
+    const endPost = () => { if (prev) boxTo(fr, prev[0], prev[1], 0, PH, pu[0], pu[1], 0.03, 0.03, GALV, PB_GALV, S_METAL); prev = null; }; // tiang ujung deret
     for (let e = 0; e < n; e++) {
       const ax = p[e * 2] * M, ay = p[e * 2 + 1] * M, bx = p[((e + 1) % n) * 2] * M, by = p[((e + 1) % n) * 2 + 1] * M, L = Math.hypot(bx - ax, by - ay);
       if (L < 0.5) continue;
@@ -648,52 +779,188 @@ export function createEnvProps(W, A, col, homes) {
       const g0 = gate && gate[0] === e ? L * gate[1] - gate[2] / 2 : -1, g1 = gate && gate[0] === e ? L * gate[1] + gate[2] / 2 : -1;
       for (let j = 0; j < k; j++) {
         const s0 = j * seg, s1 = s0 + seg, mx = ax + ux * (s0 + s1) / 2, my = ay + uy * (s0 + s1) / 2;
-        if (!freeAt(mx, my)) continue;
+        if (!freeAt(mx, my)) { endPost(); continue; }
+        use(mx, my);
         const px0 = ax + ux * s0, py0 = ay + uy * s0;
-        boxTo(fr, px0, py0, 0, H + (wire ? 0.45 : 0.05), ux, uy, 0.03, 0.03, GALV, PB_GALV); // tiang
+        if (prev && Math.hypot(prev[0] - px0, prev[1] - py0) > 0.05) endPost();
+        boxTo(fr, px0, py0, 0, PH, ux, uy, 0.03, 0.03, GALV, PB_GALV, S_METAL); // tiang
+        if (!first) first = [px0, py0];
+        prev = [ax + ux * s1, ay + uy * s1]; pu = [ux, uy];
         if (s1 > g0 && s0 < g1) continue; // pintu
         const q0 = [px0, py0], q1 = [ax + ux * s1, ay + uy * s1], nn = [uy, -ux, 0];
         const uvs = [[0, 0.05 / 0.07], [seg / 0.07, 0.05 / 0.07], [seg / 0.07, (H - 0.05) / 0.07], [0, (H - 0.05) / 0.07]];
         quadTo(nt, [q0[0], q0[1], 0.05], [q1[0], q1[1], 0.05], [q1[0], q1[1], H - 0.05], [q0[0], q0[1], H - 0.05], nn, GALV, uvs);
-        boxTo(fr, (q0[0] + q1[0]) / 2, (q0[1] + q1[1]) / 2, H - 0.06, H, ux, uy, seg / 2, 0.025, GALV, PB_GALV); // pipa atas
+        boxTo(fr, (q0[0] + q1[0]) / 2, (q0[1] + q1[1]) / 2, H - 0.06, H, ux, uy, seg / 2, 0.025, GALV, PB_GALV, S_METAL); // pipa atas
         if (wire) for (let w = 0; w < 3; w++) boxTo(fr, (q0[0] + q1[0]) / 2, (q0[1] + q1[1]) / 2, H + 0.12 + w * 0.13, H + 0.13 + w * 0.13, ux, uy, seg / 2, 0.006, [0.3, 0.3, 0.3], PB_GALV); // kawat duri
         obstacles.push({ pts: [q0[0] - uy * 0.05, q0[1] + ux * 0.05, q1[0] - uy * 0.05, q1[1] + ux * 0.05, q1[0] + uy * 0.05, q1[1] - ux * 0.05, q0[0] + uy * 0.05, q0[1] - ux * 0.05], h: H, z0: 0 });
         fenceM += seg;
       }
     }
+    if (prev && !(first && Math.hypot(prev[0] - first[0], prev[1] - first[1]) < 0.05)) endPost();
   });
-  // pagar seng proyek: panel 2,4 m (seng bergelombang dari atlas) + spanduk pengembang tiap 12 m, celah 7 m di sisi terdekat jalan
-  const hoardUV = cellUV('hoard'), zincUV = cellUV('zinc');
+  // pagar seng proyek: panel seng 2,4 m (polos / biru, dari atlas) dengan sesekali spanduk pengembang fiktif (4 desain,
+  // 2–3 panel); tidak menembus jalan, gedung, halaman rumah warga (≤ 2,5 m dari rumah), air, pohon; celah 7 m di sisi
+  // terdekat jalan; tabrakan menerus (kotak per panel + tiang di tiap sambungan)
+  const hsh = (x, y, k) => { const t = Math.sin(x * 12.9898 + y * 78.233 + k * 37.719) * 43758.5453; return t - Math.floor(t); };
+  const BAN = [['hoard', 3], ['hoard2', 2], ['hoard3', 2], ['hoard4', 2]].map(([k, n]) => ({ uv: cellUV(k), n }));
+  const zincUV = cellUV('zinc'), zinc2UV = cellUV('zinc2');
   const uvSpan = (cu, a, b) => [[cu[0] + (cu[2] - cu[0]) * a, cu[1]], [cu[0] + (cu[2] - cu[0]) * b, cu[1]], [cu[0] + (cu[2] - cu[0]) * b, cu[3]], [cu[0] + (cu[2] - cu[0]) * a, cu[3]]];
+  const BK = W.B && W.B.k;
+  const nearHouse = (x, y, r) => {
+    let hit = false;
+    col.near(x, y, r + 1, (c) => {
+      if (hit) return;
+      for (const pi of c.p) {
+        const G = col.polys[pi];
+        if (G.b < 0 || !BK || BK[G.b] !== 0 || x < G.x0 - r || x > G.x1 + r || y < G.y0 - r || y > G.y1 + r) continue;
+        const a = G.pts;
+        for (let i = 0, j = a.length / 2 - 1; i < a.length / 2; j = i++) {
+          const ax = a[2 * j], ay = a[2 * j + 1], ex = a[2 * i] - ax, ey = a[2 * i + 1] - ay, L = ex * ex + ey * ey, t = L > 0 ? Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / L)) : 0;
+          if (Math.hypot(x - ax - ex * t, y - ay - ey * t) < r) { hit = true; return; }
+        }
+      }
+    });
+    return hit;
+  };
   (D.hoards || []).forEach((Hd) => {
     const p = Hd.p, n = p.length / 2, H = 2.4;
     let gateE = -1, gd = Infinity;
     for (let e = 0; e < n; e++) { const mx = (p[e * 2] + p[((e + 1) % n) * 2]) / 2 * M, my = (p[e * 2 + 1] + p[((e + 1) % n) * 2 + 1]) / 2 * M; let d = 99; col.near(mx, my, 30, (c) => { for (const si of c.s) { const s = col.segs[si]; d = Math.min(d, Math.hypot((s.ax + s.bx) / 2 - mx, (s.ay + s.by) / 2 - my)); } }); if (d < gd) { gd = d; gateE = e; } }
-    let run = 0;
+    let ban = null, bi = 0, prev = null, pu = null, first = null;
+    const POSTC = [0.2, 0.22, 0.25], PB_POST = [255, 140, 120, 0];
+    const endPost = () => { if (prev) boxTo(fr, prev[0], prev[1], 0, H + 0.05, pu[0], pu[1], 0.05, 0.07, POSTC, PB_POST, S_METAL); prev = null; }; // tiang ujung deret
     for (let e = 0; e < n; e++) {
       const ax = p[e * 2] * M, ay = p[e * 2 + 1] * M, bx = p[((e + 1) % n) * 2] * M, by = p[((e + 1) % n) * 2 + 1] * M, L = Math.hypot(bx - ax, by - ay);
       if (L < 0.5) continue;
       const ux = (bx - ax) / L, uy = (by - ay) / L, k = Math.max(1, Math.ceil(L / 4.0)), seg = L / k;
       for (let j = 0; j < k; j++) {
         const s0 = j * seg, s1 = s0 + seg, mx = ax + ux * (s0 + s1) / 2, my = ay + uy * (s0 + s1) / 2;
-        if (e === gateE && Math.abs((s0 + s1) / 2 - L / 2) < 3.5) continue;
-        if (!freeAt(mx, my) || nearTree(mx, my, 0.1)) { run = 0; continue; }
         const q0 = [ax + ux * s0, ay + uy * s0], q1 = [ax + ux * s1, ay + uy * s1];
-        const banner = Math.floor(run / 3) % 2 === 1, sp = (run % 3) / 3, nn = [uy, -ux, 0];
-        for (const sd of [1, -1]) { // muka luar (berspanduk) & dalam (seng polos)
+        const skip = (e === gateE && Math.abs((s0 + s1) / 2 - L / 2) < 3.5) || !freeAt(mx, my) || !freeAt(q0[0], q0[1]) || !freeAt(q1[0], q1[1]) || nearTree(mx, my, 0.15) || nearHouse(mx, my, 2.5);
+        if (skip) { ban = null; if (prev) use(prev[0], prev[1]); endPost(); continue; }
+        if (prev && Math.hypot(prev[0] - q0[0], prev[1] - q0[1]) > 0.05) { use(prev[0], prev[1]); endPost(); }
+        use(mx, my);
+        if (!ban && hsh(mx, my, 1) < 0.14) { ban = BAN[Math.floor(hsh(mx, my, 2) * BAN.length) % BAN.length]; bi = 0; }
+        const nn = [uy, -ux, 0], blue = hsh(Math.round(mx / 12), Math.round(my / 12), 3) < 0.3, plain = blue ? zinc2UV : zincUV;
+        for (const sd of [1, -1]) { // muka luar (kadang berspanduk) & dalam (seng polos)
           const o = 0.02 * sd, a0 = [q0[0] + uy * o, q0[1] - ux * o], a1 = [q1[0] + uy * o, q1[1] - ux * o];
-          if (sd > 0) quadTo(fr, [a0[0], a0[1], 0], [a1[0], a1[1], 0], [a1[0], a1[1], H], [a0[0], a0[1], H], nn, banner ? [1, 1, 1] : ZINC, banner ? uvSpan(hoardUV, sp, sp + 1 / 3) : uvSpan(zincUV, 0, 1), banner ? [255, 120, 0, 0] : PB_ZINC, 0);
-          else quadTo(fr, [a1[0], a1[1], 0], [a0[0], a0[1], 0], [a0[0], a0[1], H], [a1[0], a1[1], H], [-uy, ux, 0], ZINC, uvSpan(zincUV, 0, 1), PB_ZINC, 0);
+          if (sd > 0) quadTo(fr, [a0[0], a0[1], 0], [a1[0], a1[1], 0], [a1[0], a1[1], H], [a0[0], a0[1], H], nn, ban ? [1, 1, 1] : ZINC, ban ? uvSpan(ban.uv, bi / ban.n, (bi + 1) / ban.n) : uvSpan(plain, 0, 1), ban ? [255, 120, 0, 0] : PB_ZINC, ban ? 0 : S_METAL);
+          else quadTo(fr, [a1[0], a1[1], 0], [a0[0], a0[1], 0], [a0[0], a0[1], H], [a1[0], a1[1], H], [-uy, ux, 0], ZINC, uvSpan(zincUV, 0, 1), PB_ZINC, S_METAL);
         }
-        boxTo(fr, q0[0], q0[1], 0, H + 0.05, ux, uy, 0.04, 0.06, [0.2, 0.22, 0.25], [255, 140, 120, 0]);
-        obstacles.push({ pts: [q0[0] - uy * 0.06, q0[1] + ux * 0.06, q1[0] - uy * 0.06, q1[1] + ux * 0.06, q1[0] + uy * 0.06, q1[1] - ux * 0.06, q0[0] + uy * 0.06, q0[1] - ux * 0.06], h: H, z0: 0 });
-        run++;
+        if (ban && ++bi >= ban.n) ban = null;
+        // tiang di awal tiap panel (juga sambungan sudut) + tiang penutup di ujung deret: tidak ada tepi seng terbuka
+        boxTo(fr, q0[0], q0[1], 0, H + 0.05, ux, uy, 0.05, 0.07, POSTC, PB_POST, S_METAL);
+        if (!first) first = q0;
+        obstacles.push({ pts: [q0[0] - uy * 0.07, q0[1] + ux * 0.07, q1[0] - uy * 0.07, q1[1] + ux * 0.07, q1[0] + uy * 0.07, q1[1] - ux * 0.07, q0[0] + uy * 0.07, q0[1] - ux * 0.07], h: H, z0: 0 });
+        obstacles.push({ x: q0[0], y: q0[1], r: 0.09, h: H, z0: 0 });
+        prev = q1; pu = [ux, uy];
         hoardM += seg;
       }
     }
+    if (prev && !(first && Math.hypot(prev[0] - first[0], prev[1] - first[1]) < 0.05)) { use(prev[0], prev[1]); endPost(); }
   });
-  mkStatic(fr, uni, true, 'fences');
-  mkStatic(nt, netMat, false, 'fencenets');
+  // gapura pintu masuk cluster: dua pilar berkulit batu di kedua tepi jalan, balok melintang bernama (huruf emas
+  // berpendar, dua muka), tembok sayap mengikuti batas cluster dengan pilaster tiap ±3 m. Semua padat & menahan peluru;
+  // ruang di antara pilar (jalan masuk) tetap lapang, balok di atas kepala (5,5 m).
+  const PLASTER = [0.6, 0.55, 0.46], WALLC = [0.66, 0.62, 0.54], TRIM = [0.075, 0.075, 0.08], WHITE = [0.8, 0.79, 0.76], GOLD = [0.78, 0.58, 0.27], STONE = [0.62, 0.6, 0.57];
+  const PB_PL = [255, 230, 0, 0], PB_TRIM = [255, 120, 90, 0], PB_ST = [255, 215, 0, 0], PB_GOLD = [255, 80, 210, 0];
+  const stoneUV = cellUV('stone');
+  const nameRect = (i) => { const c = cellUV('name'), col_ = i % NM.cols, row = Math.floor(i / NM.cols), du = NM.w / AW, dv = NM.h / AH; return [c[0] + col_ * du, c[1] - row * dv, c[2] + col_ * du, c[3] - row * dv]; };
+  let gates = 0, wallM = 0;
+  const wallSeg = (ax, ay, bx, by) => {
+    const L = Math.hypot(bx - ax, by - ay);
+    if (L < 0.05) return;
+    const ux = (bx - ax) / L, uy = (by - ay) / L, cx = (ax + bx) / 2, cy = (ay + by) / 2;
+    for (let s0 = 0; s0 < L - 0.01; s0 += 1.5) { // kaki batu per potong ≤ 1,5 m (tekstur tidak melar)
+      const s1 = Math.min(L, s0 + 1.5), mx = ax + ux * (s0 + s1) / 2, my = ay + uy * (s0 + s1) / 2;
+      boxTo(fr, mx, my, 0, 0.5, ux, uy, (s1 - s0) / 2, 0.17, STONE, PB_ST, S_STONE, stoneUV);
+    }
+    boxTo(fr, cx, cy, 0.5, 2.2, ux, uy, L / 2, 0.12, WALLC, PB_PL, S_PLASTER);
+    boxTo(fr, cx, cy, 1.55, 1.6, ux, uy, L / 2, 0.125, TRIM, PB_TRIM); // nat horizontal
+    boxTo(fr, cx, cy, 2.2, 2.32, ux, uy, L / 2 + 0.02, 0.18, WHITE, PB_PL, S_PLASTER);
+    obstacles.push({ pts: [ax - uy * 0.17, ay + ux * 0.17, bx - uy * 0.17, by + ux * 0.17, bx + uy * 0.17, by - ux * 0.17, ax + uy * 0.17, ay - ux * 0.17], h: 2.32, z0: 0 });
+    wallM += L;
+  };
+  const pilaster = (x, y, ux, uy) => {
+    boxTo(fr, x, y, 0, 2.45, ux, uy, 0.24, 0.24, STONE, PB_ST, S_STONE, stoneUV, 1.2);
+    boxTo(fr, x, y, 2.45, 2.56, ux, uy, 0.28, 0.28, WHITE, PB_PL, S_PLASTER);
+    obstacles.push({ x, y, r: 0.3, h: 2.56, z0: 0 });
+  };
+  // tembok sayap berhenti ≥ 1,5 m sebelum titik pintu gedung (pintu rumah di samping gapura tetap bisa dimasuki)
+  const clipWall = (P) => {
+    const out = [P[0]];
+    let len = 0;
+    for (let i = 0; i + 1 < P.length; i++) {
+      const [ax, ay] = P[i], [bx, by] = P[i + 1], L = Math.hypot(bx - ax, by - ay) || 1e-6;
+      for (let d = 0; d <= L + 1e-6; d += 0.25) {
+        const t = Math.min(d, L) / L, x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+        if (nearDoor(x, y, 1.5) || !inArea(x, y)) {
+          const t2 = Math.max(0, d - 0.5) / L;
+          if (len + t2 * L < 2) return [];
+          out.push([ax + (bx - ax) * t2, ay + (by - ay) * t2]);
+          return out;
+        }
+      }
+      out.push(P[i + 1]); len += L;
+    }
+    return len < 2 ? [] : out;
+  };
+  for (const g of D.gates || []) {
+    const gx = g.x * M, gy = g.y * M, ga = g.a / 10 * Math.PI / 180, ux = Math.cos(ga), uy = Math.sin(ga), nx = -uy, ny = ux, half = g.h * M;
+    if (!inArea(gx, gy)) continue;
+    use(gx, gy);
+    const PW = 1.3, PH = 6.8, BZ0 = 5.5, BZ1 = 6.7;
+    for (const sd of [1, -1]) {
+      const px = gx + nx * sd * half, py = gy + ny * sd * half;
+      boxTo(fr, px, py, 0, 1.0, ux, uy, 0.76, 0.76, STONE, PB_ST, S_STONE, stoneUV, 1.5);
+      boxTo(fr, px, py, 1.0, 1.08, ux, uy, 0.7, 0.7, TRIM, PB_TRIM);
+      boxTo(fr, px, py, 1.08, PH - 0.3, ux, uy, PW / 2, PW / 2, PLASTER, PB_PL, S_PLASTER);
+      for (const z of [2.4, 3.8]) boxTo(fr, px, py, z, z + 0.05, ux, uy, PW / 2 + 0.02, PW / 2 + 0.02, TRIM, PB_TRIM); // nat dekoratif
+      boxTo(fr, px, py, PH - 0.3, PH, ux, uy, PW / 2 + 0.04, PW / 2 + 0.04, TRIM, PB_TRIM);
+      boxTo(fr, px, py, PH, PH + 0.16, ux, uy, 0.82, 0.82, WHITE, PB_PL, S_PLASTER);
+      boxTo(fr, px, py, PH + 0.16, PH + 0.62, ux, uy, 0.2, 0.2, TRIM, PB_TRIM); // lentera
+      boxTo(fr, px, py, PH + 0.24, PH + 0.54, ux, uy, 0.215, 0.13, [1, 0.86, 0.6], [255, 60, 0, 40], FX.glow);
+      boxTo(fr, px, py, PH + 0.24, PH + 0.54, ux, uy, 0.13, 0.215, [1, 0.86, 0.6], [255, 60, 0, 40], FX.glow);
+      obstacles.push({ pts: [px - ux * 0.76 - nx * 0.76, py - uy * 0.76 - ny * 0.76, px + ux * 0.76 - nx * 0.76, py + uy * 0.76 - ny * 0.76, px + ux * 0.76 + nx * 0.76, py + uy * 0.76 + ny * 0.76, px - ux * 0.76 + nx * 0.76, py - uy * 0.76 + ny * 0.76], h: PH + 0.2, z0: 0 });
+      const wl = sd > 0 ? g.wl : g.wr; // tembok sayap (mulai dari muka luar pilar)
+      if (wl && wl.length >= 4) {
+        const P0 = []; for (let i = 0; i + 1 < wl.length; i += 2) P0.push([wl[i] * M, wl[i + 1] * M]);
+        const P = clipWall(P0);
+        if (P.length < 2) continue;
+        let acc = 0;
+        for (let i = 0; i + 1 < P.length; i++) {
+          const [ax, ay] = P[i], [bx, by] = P[i + 1], L = Math.hypot(bx - ax, by - ay);
+          if (L < 0.05) continue;
+          const tx = (bx - ax) / L, ty = (by - ay) / L;
+          wallSeg(ax, ay, bx, by);
+          if (i > 0) pilaster(ax, ay, tx, ty); // sambungan berbelok: pilaster menutup celah
+          for (let d = 3 - (acc % 3); d < L - 0.4; d += 3) pilaster(ax + tx * d, ay + ty * d, tx, ty);
+          acc += L;
+        }
+        const [ex, ey] = P[P.length - 1], [fx0, fy0] = P[P.length - 2], el = Math.hypot(ex - fx0, ey - fy0) || 1;
+        pilaster(ex, ey, (ex - fx0) / el, (ey - fy0) / el);
+      }
+    }
+    // balok nama melintang (atas kepala) + atap tipis
+    const span = half - PW / 2 + 0.25;
+    boxTo(fr, gx, gy, BZ0, BZ1, nx, ny, span, 0.5, TRIM, PB_TRIM, S_STONE);
+    boxTo(fr, gx, gy, BZ1, BZ1 + 0.14, nx, ny, half + 0.75, 0.72, WHITE, PB_PL, S_PLASTER);
+    boxTo(fr, gx, gy, BZ0 - 0.1, BZ0, nx, ny, span - 0.1, 0.42, WHITE, PB_PL, S_PLASTER);
+    obstacles.push({ pts: [gx - nx * span - ux * 0.5, gy - ny * span - uy * 0.5, gx + nx * span - ux * 0.5, gy + ny * span - uy * 0.5, gx + nx * span + ux * 0.5, gy + ny * span + uy * 0.5, gx - nx * span + ux * 0.5, gy - ny * span + uy * 0.5], h: BZ1 + 0.14, z0: BZ0 - 0.1 });
+    if (g.n >= 0) {
+      const pw = Math.min((half - PW / 2) * 2 * 0.86, 9.5), ph = Math.max(0.45, Math.min(0.8, pw / 9.6)), zc = (BZ0 + BZ1) / 2, r = nameRect(g.n);
+      for (const sd of [-1, 1]) { // muka luar (−u, dibaca pengunjung) & dalam (+u)
+        const off = sd * 0.515, cx = gx + ux * off, cy = gy + uy * off, rx = sd * nx, ry = sd * ny; // (rx, ry): arah kanan penonton
+        const A = [cx - rx * pw / 2, cy - ry * pw / 2], Bp = [cx + rx * pw / 2, cy + ry * pw / 2];
+        quadTo(fr, [A[0], A[1], zc - ph / 2], [Bp[0], Bp[1], zc - ph / 2], [Bp[0], Bp[1], zc + ph / 2], [A[0], A[1], zc + ph / 2], [ux * sd, uy * sd, 0], [1, 1, 1], [[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]]], [255, 90, 0, 38], FX.glow);
+        for (const [hl, hw2, dz] of [[pw / 2 + 0.06, 0.03, ph / 2 + 0.03], [pw / 2 + 0.06, 0.03, -ph / 2 - 0.03]]) boxTo(fr, cx, cy, zc + dz - 0.03, zc + dz + 0.03, nx, ny, hl, hw2 + 0.01, GOLD, PB_GOLD);
+        for (const e of [-1, 1]) boxTo(fr, cx + nx * e * (pw / 2 + 0.06), cy + ny * e * (pw / 2 + 0.06), zc - ph / 2 - 0.06, zc + ph / 2 + 0.06, nx, ny, 0.03, 0.04, GOLD, PB_GOLD);
+      }
+    }
+    gates++;
+  }
+  const statics = [];
+  for (const c of chunks.values()) for (const m of [mkStatic(c.fr, uni, true, 'fences'), mkStatic(c.nt, netMat, false, 'fencenets')]) if (m) statics.push({ m, c: m.boundingSphere.center, r: m.boundingSphere.radius });
 
   // lampu jalan lama (tiang polos world.js) diganti lampu LED baru
   if (types.has('lamp') && W.lamps) W.lamps.visible = false;
@@ -707,6 +974,7 @@ export function createEnvProps(W, A, col, homes) {
   // cone: kamera diperbesar (FOV sempit: lobi, teropong) → hanya benda di dalam kerucut pandang (+ yang sangat dekat)
   function repartition(cx, cy, cz, k, wide, cone) {
     for (const C of combos) { C.nS = 0; C.nN = 0; }
+    for (const S of statics) { const d = Math.max(0, Math.hypot(S.c.x - cx, (S.c.y - cy) * 0.7, S.c.z - cz) - S.r); S.m.visible = d < STATIC_R * k || (wide && d < 380); }
     for (const T of types.values()) {
       const R0 = T.range, nr = R0.length, n = T.list.length, has = T.has, ML = models[T.name];
       const lim = R0.map((r) => { const rr = r * k; return rr * rr; });
@@ -734,7 +1002,7 @@ export function createEnvProps(W, A, col, homes) {
       }
     }
   }
-  const stats = { instances: inst.filter((o) => o.ok).length, dropped, obstacles: obstacles.length, meshes: drawMeshes, cables: cables.spans, fenceM: Math.round(fenceM), hoardM: Math.round(hoardM), types: types.size, combos: combos.length };
+  const stats = { instances: inst.filter((o) => o.ok).length, dropped, dropBy, obstacles: obstacles.length, meshes: drawMeshes, cables: cables.spans, fenceM: Math.round(fenceM), hoardM: Math.round(hoardM), gates, wallM: Math.round(wallM), types: types.size, combos: combos.length };
   return {
     obstacles, group, stats, atlas: atlas.canvas, types,
     // tiap frame sebelum scene.updateMatrixWorld() (main.js): waktu efek, lebar kabel, pemilahan jarak
