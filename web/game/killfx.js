@@ -12,10 +12,13 @@ import * as audio from './audio.js';
 
 const STREAK_S = 12; // jeda maks antar-kill supaya masih dihitung beruntun (dtk permainan)
 // bentuk partikel (shp.x): 0 pijar · 1 serpih · 2 bulu · 3 kelopak · 4 piksel · 5 cincin kejut · 6 pilar cahaya · 7 bulu merak · 8 kilat · 9 asap
+// partikel yang terlalu dekat kamera (< ±1,5 m) atau terlalu besar di layar (> ±30 % tinggi layar) memudar: kill dari jarak
+// sangat dekat / kamera menonton yang berada di tengah awan efek tidak tertutup sprite raksasa
 const VS = `attribute vec4 col; attribute vec3 shp; uniform float uH, uMax; varying vec4 vC; varying vec2 vS;
 void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
-  gl_PointSize = min(uMax, shp.z * uH * projectionMatrix[1][1] * 0.5 / max(0.05, -mv.z));
-  vC = col; vC.a *= smoothstep(0.2, 0.9, -mv.z); vS = shp.xy; }`;
+  float px = shp.z * uH * projectionMatrix[1][1] * 0.5 / max(0.05, -mv.z);
+  gl_PointSize = min(uMax, px);
+  vC = col; vC.a *= smoothstep(0.45, 1.6, -mv.z) * (1.0 - smoothstep(0.3 * uH, 0.7 * uH, px)); vS = shp.xy; }`;
 const FS = `uniform float uAdd; varying vec4 vC; varying vec2 vS;
 void main() {
   vec2 c = gl_PointCoord - 0.5; c.y = -c.y;

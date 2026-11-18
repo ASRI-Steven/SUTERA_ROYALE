@@ -894,6 +894,7 @@ function start(D, realAssets) {
       if (!big.el.hidden && t - hudT > 50) { big.draw(); hudT = t; }
     }
     const postOn = !!post && post.tier.post;
+    if (R) R.uPost.value = postOn ? 1 : 0; // daun/rumput: alfa = topeng AO hanya untuk post; tanpa post (Hemat) alfa harus utuh, kalau tidak kanvas tembus ke latar halaman (rumput tampak putih)
     const alt = Math.max(0, camera.position.y), under = camera.position.y < 0.06 && phase === 'play' && col.waterAt(camera.position.x, -camera.position.z);
     if (under) { // di bawah air: kabut hijau-toska yang makin gelap & pendek seiring kedalaman (pandang ±25 → 17 m), tanpa langit
       const k = Math.min(1, Math.max(0, -camera.position.y / 8));
