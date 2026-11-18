@@ -918,7 +918,6 @@ class Builder:
                         qy = py + dy / dl * back + (by - ay) / L * sd
                         if self.ok(qx, qy, 0.6, road=1.0, bld=0.6, tree=0.6, prop=0.6):
                             self.put('fuelsign', qx, qy, ang(-dx, -dy), 0, r=1.0)
-                            n = n
                             break
                     else:
                         continue

@@ -1811,7 +1811,9 @@ def make_obj(name, m, ao_dist):
 
 
 def bake_ao(ob, bm, maxd):
-    """Oklusi ambien per sudut face (sinar ke mesh sendiri + tanah) → atribut warna 'Col' (R = AO)."""
+    """Oklusi ambien per sudut face (sinar ke mesh sendiri + tanah) → atribut warna 'Col' (R = AO).
+    Titik asal sinar digeser 30 % ke tengah face (sudut di lekukan tidak langsung hitam), lalu dirata-rata per
+    (verteks, normal) supaya permukaan halus tetap mulus."""
     me = ob.data
     verts = [v.co.copy() for v in bm.verts]
     polys = [[v.index for v in f.verts] for f in bm.faces if not BMAT_NAME(f.material_index).startswith('net')]
@@ -1823,26 +1825,34 @@ def bake_ao(ob, bm, maxd):
     rays = 6 if FAST else 14
     dirs = ao_dirs(rays)
     attr = me.color_attributes.new('Col', 'FLOAT_COLOR', 'CORNER')
-    me.calc_loop_triangles() if hasattr(me, 'calc_loop_triangles') else None
     cn = me.corner_normals
-    cache = {}
+    loop_poly = [0] * len(me.loops)
+    for p in me.polygons:
+        for li in p.loop_indices:
+            loop_poly[li] = p.index
+    centers = [p.center.copy() for p in me.polygons]
+    acc, keys = {}, []
     for li, l in enumerate(me.loops):
         vi = l.vertex_index
         n = cn[li].vector
         key = (vi, round(n.x * 5), round(n.y * 5), round(n.z * 5))
-        ao = cache.get(key)
-        if ao is None:
-            p = me.vertices[vi].co + n * 0.004
-            t = n.orthogonal().normalized()
-            b = n.cross(t)
-            occ = 0.0
-            for d in dirs:
-                dw = t * d.x + b * d.y + n * d.z
-                hit = bvh.ray_cast(p, dw, maxd)
-                if hit[0] is not None:
-                    occ += 1.0 - (hit[3] / maxd) ** 2
-            ao = max(0.08, 1.0 - occ / rays)
-            cache[key] = ao
+        keys.append(key)
+        v = me.vertices[vi].co
+        p = v + (centers[loop_poly[li]] - v) * 0.3 + n * 0.004
+        t = n.orthogonal().normalized()
+        b = n.cross(t)
+        occ = 0.0
+        for d in dirs:
+            dw = t * d.x + b * d.y + n * d.z
+            hit = bvh.ray_cast(p, dw, maxd)
+            if hit[0] is not None:
+                occ += 1.0 - (hit[3] / maxd) ** 2
+        a = acc.setdefault(key, [0.0, 0])
+        a[0] += max(0.3, 1.0 - 0.85 * occ / rays)
+        a[1] += 1
+    for li, key in enumerate(keys):
+        a = acc[key]
+        ao = a[0] / a[1]
         attr.data[li].color = (ao, ao, ao, 1.0)
     me.color_attributes.active_color = attr
     try:
@@ -1969,7 +1979,7 @@ def ground(size=6000):
     except Exception:
         pass
     b = mat.node_tree.nodes.get('Principled BSDF')
-    b.inputs['Base Color'].default_value = (*srgb('#8d8a80'), 1)
+    b.inputs['Base Color'].default_value = (*srgb('#6c7258'), 1)
     b.inputs['Roughness'].default_value = 0.95
     me.materials.append(mat)
     return link(bpy.data.objects.new('ground', me))
@@ -2055,7 +2065,6 @@ def shots(objs, man):
     ground(6000)
     world_hdr()
     samples = 24 if FAST else 40
-    hf = 2 * math.atan(18 / 50)  # FOV mendatar lensa 50 mm (sensor 36 mm)
 
     def place(names, gap, y=0.0):
         x = 0.0
@@ -2071,40 +2080,40 @@ def shots(objs, man):
             o.hide_render = False
             o.location = (cx - off, y, 0)  # model sudah menghadap −Y Blender (kamera di −Y)
         return x - gap
+
+    def frame(name, w, h, lens, el=8.0):
+        """Kamera di −Y yang memuat semua objek terlihat (kotak batas dunia), sedikit dari atas."""
+        bpy.context.view_layer.update()
+        pts = [o.matrix_world @ Vector(c) for o in bpy.context.scene.objects if o.type == 'MESH' and not o.hide_render and o.name != 'ground' for c in o.bound_box]
+        mn = Vector((min(p.x for p in pts), min(p.y for p in pts), 0.0))
+        mx = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+        cx, cz = (mn.x + mx.x) / 2, mx.z * 0.45
+        hfov = 2 * math.atan(18 / lens)
+        vfov = 2 * math.atan(math.tan(hfov / 2) * h / w)
+        d = max((mx.x - mn.x) / 2 / math.tan(hfov / 2), mx.z * 0.62 / math.tan(vfov / 2)) * 1.08 + (mx.y - mn.y) / 2
+        render_setup(w, h, samples)
+        cam_look((cx, mn.y - d + (mx.y - mn.y) / 2, cz + d * math.tan(el * D2R)), (cx, (mn.y + mx.y) / 2, cz), lens)
+        bpy.context.scene.render.filepath = os.path.join(PREV, name)
+        bpy.ops.render.render(write_still=True)
+        log('pratinjau', bpy.context.scene.render.filepath)
+    W0, H0 = (1920, 1080) if not FAST else (1280, 720)
     # dua baris: perabot kecil di depan, benda tinggi tepi jalan di belakang
-    w1 = place(['hydrant', 'bin', 'bench', 'boom', 'pillar', 'namesign', 'pump', 'goal', 'hoop'], 0.8, -3.5)
-    w2 = place(['lamp', 'halte', 'guard', 'pole_t', 'signal', 'fuelsign', 'lamp2', 'pole'], 1.6, 3.5)
-    W_ = max(w1, w2)
-    d = W_ * 0.5 / math.tan(hf / 2) * 1.04
-    render_setup(1920 if not FAST else 1280, 800 if not FAST else 534, samples)
-    cam_look((0, -d - 3.5, 6.5), (0, 0, 2.6), 50)
-    bpy.context.scene.render.filepath = os.path.join(PREV, 'lineup.png')
-    bpy.ops.render.render(write_still=True)
-    log('pratinjau', bpy.context.scene.render.filepath)
+    place(['hydrant', 'bin', 'bench', 'boom', 'pillar', 'namesign', 'pump', 'goal', 'hoop'], 0.8, -3.5)
+    place(['lamp', 'halte', 'guard', 'pole_t', 'signal', 'fuelsign', 'lamp2', 'pole'], 1.6, 3.5)
+    frame('lineup.png', W0, H0, 50, 9.0)
     for o in objs:
         o.hide_render = True
-    wsum = place(['board', 'video', 'btsr', 'cabin', 'gazebo', 'playset'], 3.0)
-    d = wsum * 0.5 / math.tan(hf / 2) * 1.04
-    render_setup(1920 if not FAST else 1280, 800 if not FAST else 534, samples)
-    cam_look((0, -d, 5.0), (0, 0, 7.0), 50)
-    bpy.context.scene.render.filepath = os.path.join(PREV, 'lineup_mid.png')
-    bpy.ops.render.render(write_still=True)
-    log('pratinjau', bpy.context.scene.render.filepath)
+    place(['board', 'video', 'btsr', 'cabin', 'gazebo', 'playset'], 3.0)
+    frame('lineup_mid.png', W0, H0, 50, 7.0)
     for o in objs:
         o.hide_render = True
-    wsum = place(['bts', 'sutet', 'crane', 'wtower'], 14.0)
+    place(['bts', 'sutet', 'crane', 'wtower'], 14.0)
     if 'crane' in lod0 and 'crane_top' in lod0:
         ct = lod0['crane_top']
         ct.hide_render = False
         ct.location = lod0['crane'].location.copy()
         ct.rotation_euler = (0, 0, 215 * D2R)
-    hf2 = 2 * math.atan(18 / 35)
-    d = max(wsum * 0.5 / math.tan(hf2 / 2) * 1.1, 95)
-    render_setup(1920 if not FAST else 1280, 1000 if not FAST else 667, samples)
-    cam_look((0, -d, 10.0), (0, 0, 30.0), 35)
-    bpy.context.scene.render.filepath = os.path.join(PREV, 'lineup_towers.png')
-    bpy.ops.render.render(write_still=True)
-    log('pratinjau', bpy.context.scene.render.filepath)
+    frame('lineup_towers.png', W0, H0, 35, 5.0)
 
 
 def main():
