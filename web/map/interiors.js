@@ -83,9 +83,9 @@ export function planHomes(D) {
     bbox[i] = [x0, y0, x1, y1];
     for (let cx = Math.floor(x0 / RC); cx <= Math.floor(x1 / RC); cx++) for (let cy = Math.floor(y0 / RC); cy <= Math.floor(y1 / RC); cy++) { const k = rk(cx, cy); (BG.get(k) || BG.set(k, []).get(k)).push(i); }
   }
-  const occupied = (x, y, self) => {
+  const occupied = (x, y, self, minH = 0) => { // minH: hanya gedung yang lebih tinggi dari ini (menara yang berdiri di atas podium)
     for (const i of BG.get(rk(Math.floor(x / RC), Math.floor(y / RC))) || []) {
-      if (i === self) continue;
+      if (i === self || B.h[i] * M < minH) continue;
       const b = bbox[i];
       if (x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
       const r = B.r[i];
@@ -111,6 +111,12 @@ export function planHomes(D) {
       : kind === 0 ? (area > 1500 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site)
         : planShop(i, pts, area, h, site);
     if (H) { H.blind = (D.blind && D.blind.get(i)) || null; homes.set(i, H); } // sisi tanpa jendela (menempel gedung lain, world.js)
+  }
+  // menara di atas podium: pintu lobinya membuka ke dalam podium → kosongkan perabot podium di depan pintu itu
+  for (const T of homes.values()) for (const d of T.kind === 'tower' ? T.doors : []) {
+    if (!d.inner) continue;
+    const px = d.x - d.e.nx * 2.5, py = d.y - d.e.ny * 2.5;
+    for (const P of homes.values()) if (P !== T && P.kind && pip(px, py, P.pts)) P.furn = P.furn.filter((f) => Math.hypot(f.x - px, f.y - py) > 3.6);
   }
   return homes;
 }
@@ -374,7 +380,7 @@ function planShop(i, pts, area, h, { roadDist, occupied }, hallOnly = false) { /
   H.canopies = [];
   if (ruko) { const r = ranges[0], e = edges[r.k0]; H.canopies.push({ e, s0: Math.max(0.1, r.A - e.u0 - 0.4), s1: Math.min(e.len - 0.1, r.B - e.u0 + 0.4), d: 1.5, z: L.top + 0.12, cols: false }); }
   else for (const d of H.doors) if (d.s1 - d.s0 > 3) H.canopies.push({ e: d.e, s0: Math.max(0.1, d.s0 - 1.2), s1: Math.min(d.e.len - 0.1, d.s1 + 1.2), d: 3.0, z: L.top + 0.35, cols: true });
-  if (ruko) planUnits(H, ranges[0]); else planHall(H, L, (p) => occupied(p[0], p[1], i));
+  if (ruko) planUnits(H, ranges[0]); else planHall(H, L, (p) => occupied(p[0], p[1], i, h + 0.5));
   return H;
 }
 function planUnits(H, r) {
@@ -468,6 +474,7 @@ function planTower(i, pts, area, h, { roadDist, occupied }, roof) {
       if (s0 < 1 || s1 > e.len - 1) continue;
       const px = e.a[0] + e.ux * s, py = e.a[1] + e.uy * s;
       if (!lax && (occupied(px - e.nx * 1.5, py - e.ny * 1.5, i) || occupied(px - e.nx * 3.5, py - e.ny * 3.5, i))) continue;
+      if (lax && !(occupied(px - e.nx * 1.5, py - e.ny * 1.5, i) && occupied(px - e.nx * 4.5, py - e.ny * 4.5, i))) continue; // podium: menghadap ruang dalam podium (≥ 4,5 m), bukan dinding luarnya
       return { e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, h: TOWER.top, x: px, y: py, inner: lax };
     }
     return null;
@@ -486,7 +493,8 @@ function planTower(i, pts, area, h, { roadDist, occupied }, roof) {
   }
   H.open = { A: [H.doors[0].u0, H.doors[0].u1], B: H.doors[1] ? [H.doors[1].u0, H.doors[1].u1] : [-9, -9], P: TOWER.P, p: 0, top: TOWER.top };
   const edgeD = (p) => { let m = Infinity; for (const e of edges) m = Math.min(m, segDist(p, e.a, e.b)); return m; };
-  const inside = (p, m) => pip(p[0], p[1], pts) && edgeD(p) > m;
+  const other = (x, y) => occupied(x, y, i, h + 0.5); // menara lain yang menjulang dari lobi ini (gedung ini podiumnya)
+  const inside = (p, m) => pip(p[0], p[1], pts) && edgeD(p) > m && !other(p[0], p[1]) && !other(p[0] + m, p[1]) && !other(p[0] - m, p[1]) && !other(p[0], p[1] + m) && !other(p[0], p[1] - m);
   const add = (kind, x, y, rot, w, d, hh) => { const f = { kind, x, y, rot, w, d, h: hh, room: 0 }; H.furn.push(f); return f; };
   for (const d of H.doors) { // kanopi bertiang di luar pintu; daun pintu kaca geser terbuka di kiri-kanan bukaan
     const e = d.e, rot = Math.atan2(e.uy, e.ux), W = d.s1 - d.s0;

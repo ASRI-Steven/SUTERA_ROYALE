@@ -1282,7 +1282,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
   // Sisi rumah yang menempel gedung lain (rumah gandeng, jarak < 1,2 m): tidak diberi jendela.
   let BG = null;
   const BGC = 40, bgk = (x, y) => Math.floor(x / BGC) * 100003 + Math.floor(y / BGC);
-  function insideOther(x, y, self) {
+  function insideOther(x, y, self, minH = 0) { // minH: hanya gedung yang lebih tinggi dari ini (m)
     if (!BG) {
       BG = { cells: new Map(), box: [] };
       for (let k = 0; k < B.r.length; k++) {
@@ -1294,7 +1294,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       }
     }
     for (const k of BG.cells.get(bgk(x, y)) || []) {
-      if (k === self || B.k[k] === 5) continue;
+      if (k === self || B.k[k] === 5 || B.h[k] * M < minH) continue;
       const bb = BG.box[k];
       if (x < bb[0] || x > bb[2] || y < bb[1] || y > bb[3]) continue;
       const r = B.r[k], n = r.length >> 1;
@@ -1366,7 +1366,13 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     for (const p of inset) { const s = p.x * ux + p.y * uy, v = p.x * vx + p.y * vy; s0 = Math.min(s0, s); s1 = Math.max(s1, s); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
     const S = s1 - s0, Vv = v1 - v0, at = (s, v) => [ux * s + vx * v, uy * s + vy * v];
     const rectPts = (cx, cy, w, d) => { const r = []; for (const [a, b] of [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) r.push([cx + ux * a * w / 2 + vx * b * d / 2, cy + uy * a * w / 2 + vy * b * d / 2]); return r; };
-    const clear = (x, y) => (pip(x, y, inset) ? edgeDist(x, y, inset) : -1);
+    // ruang bebas di titik atap: jarak ke tepi atap; −1 di luar atap atau di dalam gedung lain (menara yang berdiri di atas podium ini)
+    const clear = (x, y) => {
+      if (!pip(x, y, inset) || insideOther(x, y, i, z)) return -1;
+      let c = edgeDist(x, y, inset);
+      for (const [ox, oy] of [[1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6]]) if (insideOther(x + ox, y + oy, i, z)) c = Math.min(c, 0.8);
+      return c;
+    };
     // helipad (menara tertinggi): lingkaran di titik terjauh dari tepi atap
     let heli = null;
     const step = Math.max(0.75, Math.min(S, Vv) / 36);
