@@ -243,6 +243,11 @@ export function createLoot(scene, { D, col }) {
           const nr = Math.round((1.4 + Math.min(1.6, H.h / 60)) * mult * (0.7 + Math.random() * 0.6));
           for (let j = 0; j < nr; j++) { const sp = roofSpot(H.roof); if (sp) drop(pick(TABLE), sp, () => roofSpot(H.roof)); }
         }
+        const S = H.fl && H.fl.spots; // lantai kantor (lift): 1–2 barang per lantai di titik lapang denahnya
+        if (S && S.length) for (const z of H.floors) {
+          const at = () => { const p = S[Math.random() * S.length | 0]; return [p[0] + (Math.random() - 0.5) * 0.8, p[1] + (Math.random() - 0.5) * 0.8, z]; };
+          for (let j = 0, n = Math.random() < 0.3 * mult ? 2 : 1; j < n; j++) drop(pick(TABLE), at(), at);
+        }
         continue;
       }
       const base = H ? (H.kind === 'hall' ? Math.min(130, H.area / 190) : H.kind === 'shop' ? 1.2 + H.rooms.length * 0.9 : 0.75 + Math.min(1.5, H.area / 160) + (H.up ? 0.8 : 0)) * mult : k === 0 ? 0.32 * mult : (k === 2 ? 2 + (Math.random() * 3 | 0) : k === 4 ? 1 + (Math.random() * 2 | 0) : 1 + (Math.random() * 3 | 0)) * mult;

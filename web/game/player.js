@@ -94,7 +94,7 @@ export function createPlayer(ctx) {
     if (st.wantLock && !locked()) softLockAt = performance.now();
     if (!locked() && !lockFailed) { ctx.lock(); if (!st.wantLock) return; } // menunggu kunci setelah Esc: klik ini tetap dihitung (menembak)
     if (!me.alive) { if (ctx.specNext && (e.button === 0 || e.button === 2)) ctx.specNext(e.button === 0 ? 1 : -1); return; } // menonton: klik kiri = berikutnya, kanan = sebelumnya
-    if (me.down) return; // tumbang: tidak bisa menembak
+    if (me.down || st.liftPick) return; // tumbang / memilih lantai lift: tidak menembak
     if (drv()) { // kendaraan: klik kiri tembak, klik kanan bidik (cabut senjata yang boleh dipakai di kursi ini dulu)
       if ((e.button === 0 || e.button === 2) && vehDraw()) { if (e.button === 0) { st.firing = true; st.trigger = true; } else st.ads = true; }
       return;
@@ -107,6 +107,7 @@ export function createPlayer(ctx) {
   cvs.addEventListener('wheel', (e) => {
     if (!ctx.playing()) return;
     if (drv()) st.vzoom = clamp(st.vzoom * (e.deltaY > 0 ? 1.1 : 0.9), 0.6, 1.8);
+    else if (st.liftPick) { const P = st.liftPick; P.sel = Math.max(0, Math.min(P.L.floors.length + 1, P.sel + (e.deltaY < 0 ? 1 : -1))); drawPick(); }
     else if (me.state === 'ground' && me.alive && !me.down) {
       const w = weapon();
       if (st.ads && w && w.inst.att && w.inst.att.scope === 8) { // scope 8×: gulir = atur perbesaran 4×–8× (bukan ganti senjata)
@@ -130,6 +131,7 @@ export function createPlayer(ctx) {
       else if (e.code === 'KeyM') ctx.toggleMap();
       return;
     }
+    if (st.liftPick) { liftPickKey(e); return; } // panel lift terbuka: tombol untuk memilih lantai
     const k = KM[e.code];
     if (k) { keys[k] = 1; e.preventDefault(); return; }
     if (me.down) { if (e.code === 'KeyM' && !e.repeat) ctx.toggleMap(); else if (e.code === 'KeyV' && !e.repeat) st.tpp = !st.tpp; return; } // tumbang: hanya merangkak, kamera & peta
@@ -390,7 +392,7 @@ export function createPlayer(ctx) {
     const it = nearestItem(), v = nearVehicle();
     if (st.lootUI) { closeLoot(true); return; }
     if (v && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { ctx.enterVehicle(v); return; }
-    { const lf = !v && col.liftAt ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null; if (lf && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { startLift(lf); return; } }
+    { const lf = !v && col.liftAt ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null; if (lf && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { openLiftPick(lf); return; } }
     if (!v && !it && ctx.vehicles && ctx.vehicles.fullNear(me)) { hud.toast('Kendaraan penuh'); return; }
     if (!it) { startVault(); return; } // F juga untuk melompati jendela
     if (it.def.kind === 'crate') { openLoot(it); return; } // buka peti: panel inventaris (kiri) + isi peti (kanan)
@@ -669,10 +671,48 @@ export function createPlayer(ctx) {
     fadeEl.style.display = k > 0.001 ? 'flex' : 'none';
     if (text !== undefined && fadeEl.textContent !== text) fadeEl.textContent = text;
   }
-  function startLift(lf) {
+  // Panel pilih lantai (F di pintu lift): W/S atau gulir = pilih, F/Spasi/Enter = berangkat, Esc/Q = batal.
+  // Tingkat: 0 lobi, 1..n lantai (L.floors), n + 1 atap. Nomor lantai Indonesia: lobi = lantai 1.
+  let pickEl = null;
+  const levelName = (L, lv) => (lv <= 0 ? 'Lobi' : lv > L.floors.length ? 'Atap' : 'Lantai ' + (Math.round(L.floors[lv - 1] / (L.fh || 3.7)) + 1));
+  function drawPick() {
+    const P = st.liftPick;
+    if (!pickEl) {
+      pickEl = document.createElement('div');
+      pickEl.style.cssText = 'position:fixed;right:6%;top:50%;transform:translateY(-50%);z-index:25;min-width:13rem;padding:.8rem 1rem;border-radius:.6rem;background:rgba(14,16,24,.86);border:1px solid rgba(210,159,82,.55);color:#e9e4da;font:500 .95rem/1.5 system-ui,sans-serif;pointer-events:none';
+      document.body.appendChild(pickEl);
+    }
+    if (!P) { pickEl.style.display = 'none'; return; }
+    const n = P.L.floors.length + 1, lo = Math.max(0, Math.min(n - 8, P.sel - 4)), hi = Math.min(n, lo + 8);
+    let h = '<div style="font-weight:700;letter-spacing:.12em;color:#D29F52;margin-bottom:.35rem">LIFT</div>';
+    if (hi < n) h += '<div style="opacity:.45">⋮</div>';
+    for (let lv = hi; lv >= lo; lv--) h += `<div style="padding:.05rem .45rem;border-radius:.3rem;${lv === P.sel ? 'background:#D29F52;color:#14161e;font-weight:700' : ''}">${lv === P.sel ? '▸ ' : ''}${levelName(P.L, lv)}${lv === P.cur ? ' · di sini' : ''}</div>`;
+    if (lo > 0) h += '<div style="opacity:.45">⋮</div>';
+    h += '<div style="margin-top:.45rem;font-size:.78rem;opacity:.7">W/S pilih · F naik · Esc batal</div>';
+    pickEl.innerHTML = h;
+    pickEl.style.display = 'block';
+  }
+  function openLiftPick(lf) {
     if (st.lift || me.down) return;
-    const L = lf.L, ride = Math.min(2.6, 0.9 + L.z / 70); // lama perjalanan (dtk), naik/turun sama
-    st.lift = { L, up: lf.up, t: 0, ride, moved: false };
+    const n = lf.L.floors.length + 1;
+    st.liftPick = { L: lf.L, cur: lf.level, sel: lf.level === 0 ? n : 0, x: me.pos.x, y: -me.pos.z }; // dari lobi: atap dulu; dari atas: lobi
+    keys.fwd = keys.back = keys.left = keys.right = 0;
+    Object.assign(st, { ads: false, firing: false, sprint: false });
+    audio.click();
+    drawPick();
+  }
+  function closeLiftPick() { st.liftPick = null; drawPick(); }
+  function liftPickKey(e) {
+    const P = st.liftPick, n = P.L.floors.length + 1;
+    if (e.code === 'KeyW' || e.code === 'ArrowUp') { e.preventDefault(); P.sel = Math.min(n, P.sel + 1); drawPick(); }
+    else if (e.code === 'KeyS' || e.code === 'ArrowDown') { e.preventDefault(); P.sel = Math.max(0, P.sel - 1); drawPick(); }
+    else if (!e.repeat && (e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); if (P.sel === P.cur) closeLiftPick(); else { const to = P.sel; closeLiftPick(); startLift(P.L, P.cur, to); } }
+    else if (e.code === 'Escape' || e.code === 'KeyQ' || e.code === 'Backspace') { e.preventDefault(); closeLiftPick(); if (e.code === 'Escape') { escRelock = true; st.wantLock = true; st.escAt = performance.now(); relockLoop(); } }
+  }
+  function startLift(L, from, to) {
+    if (st.lift || me.down) return;
+    const z0 = col.liftSpot(L, from).z, z1 = col.liftSpot(L, to).z, ride = Math.min(2.6, 0.9 + Math.abs(z1 - z0) / 70); // lama perjalanan (dtk)
+    st.lift = { L, to, up: z1 > z0, t: 0, ride, moved: false };
     Object.assign(st, { ads: false, firing: false, sprint: false, crouch: false, prone: false });
     nadeAbort();
     audio.door();
@@ -682,13 +722,13 @@ export function createPlayer(ctx) {
     R.t += dt;
     me.vel.set(0, 0); me.moveSpeed = 0; st.prompt = null; me.vy = 0; me.grounded = true;
     if (R.t >= FO && !R.moved) {
-      const to = R.up ? R.L.hi : R.L.lo;
+      const to = col.liftSpot(R.L, R.to);
       me.pos.set(to.x, to.z, -to.y);
       st.yaw = to.yaw; st.pitch = -0.05; st.floorY = to.z; st.camD = 0;
       R.moved = true;
     }
     const k = R.t < FO ? R.t / FO : R.t < FO + R.ride ? 1 : 1 - (R.t - FO - R.ride) / FI;
-    fade(Math.max(0, Math.min(1, k)), R.up ? '▲  ATAP' : '▼  LOBI');
+    fade(Math.max(0, Math.min(1, k)), (R.up ? '▲  ' : '▼  ') + levelName(R.L, R.to).toUpperCase());
     if (!R.ding && R.t >= FO + R.ride) { R.ding = true; audio.pickup(); }
     if (R.t >= FO + R.ride + FI) { st.lift = null; fade(0); }
   }
@@ -915,7 +955,8 @@ export function createPlayer(ctx) {
     if (cr && (!cr.alive || Math.hypot(cr.x - me.pos.x, cr.y + me.pos.z) > 2.8 || Math.abs(cr.z - me.pos.y) > 1.3)) { st.crate = null; if (st.lootUI) closeLoot(false); }
     if (st.lootUI) hud.lootPanel(lootModel(), lootH);
     const lf = !nv && col.liftAt && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3) ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null;
-    st.prompt = st.lootUI ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? (lf.up ? 'Naik lift ke atap' : 'Turun lift ke lobi') : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
+    if (st.liftPick && (!lf || lf.L !== st.liftPick.L || Math.hypot(me.pos.x - st.liftPick.x, -me.pos.z - st.liftPick.y) > 2.2)) closeLiftPick(); // menjauh dari pintu lift
+    st.prompt = st.lootUI || st.liftPick ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? 'Lift · pilih lantai' : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
   }
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
@@ -1011,8 +1052,9 @@ export function createPlayer(ctx) {
   return {
     st, vm,
     reset() {
-      Object.assign(st, { yaw: 0, pitch: -0.25, tpp: false, ads: false, firing: false, crouch: false, prone: false, sprint: false, nextShot: 0, reloadEnd: 0, switchEnd: 0, healEnd: 0, recoilP: 0, recoilY: 0, camD: 0, prompt: null, spec: null, revive: null, revOn: false, lift: null });
+      Object.assign(st, { yaw: 0, pitch: -0.25, tpp: false, ads: false, firing: false, crouch: false, prone: false, sprint: false, nextShot: 0, reloadEnd: 0, switchEnd: 0, healEnd: 0, recoilP: 0, recoilY: 0, camD: 0, prompt: null, spec: null, revive: null, revOn: false, lift: null, liftPick: null });
       if (fadeEl) fade(0);
+      if (pickEl) drawPick();
       vm.show(null);
       chute.visible = false;
       applyEquipped(char, vm, OUTFIT); // skin karakter & senjata yang sedang dipakai (game/skins.js, profile.equipped)
@@ -1046,6 +1088,7 @@ export function createPlayer(ctx) {
     shake(k) { st.shake = Math.max(st.shake, k); },
     // regu: pemain tumbang (merangkak, kamera orang ketiga) / dipulihkan / tersingkir lalu menonton rekan
     onDown() {
+      if (st.liftPick) closeLiftPick();
       st.tppWas = st.tpp;
       Object.assign(st, { prone: true, crouch: false, ads: false, firing: false, sprint: false, reloadEnd: 0, healEnd: 0, revive: null, revOn: false, tpp: true, camD: 0 });
       nadeAbort();
@@ -1059,7 +1102,7 @@ export function createPlayer(ctx) {
       vm.show(w ? w.inst.kind : null);
       st.switchEnd = ctx.now() + 0.6;
     },
-    onDead() { Object.assign(st, { ads: false, firing: false, revive: null, camD: 0 }); if (st.lift) { st.lift = null; fade(0); } vm.show(null); },
+    onDead() { Object.assign(st, { ads: false, firing: false, revive: null, camD: 0 }); if (st.lift) { st.lift = null; fade(0); } if (st.liftPick) closeLiftPick(); vm.show(null); },
     spectate(a) { st.spec = a || null; st.camD = 0; if (a) { st.yaw = a.yaw || st.yaw; st.pitch = -0.22; } },
     update(dt, now) {
       if (me.state === 'ground' && me.alive) ground(dt, now);

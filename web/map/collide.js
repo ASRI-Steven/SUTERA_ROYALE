@@ -10,6 +10,15 @@ const houseWindow = (u, v) => { if (v <= 0.8) return false; const fx = fract(u /
 // jendela sah: sel jendela utuh di dalam sisi dinding (≥ 0,3 m dari sudut) dan, di lantai dasar, tidak menumpuk pintu
 // (± 0,2 m) — aturan yang sama dipakai shader world.js (tampilan) dan interiors.js (lubang dinding dalam, kusen, gorden)
 const winOk = (W, u, v) => { const w0 = Math.floor(u / 3.6) * 3.6 + 1.08, w1 = w0 + 1.44; if (w0 < W.u0 + 0.3 || w1 > W.u1 - 0.3) return false; if (v < 3.3) for (const d of W.doors) if (w0 < d[1] + 0.2 && w1 > d[0] - 0.2) return false; return true; };
+// jendela di pita lantai atas yang sedang terbuka (D.bands, world.js setFloorBand) menurut gaya fasad gedung (H.fst):
+// 2 menara, 1 ruko/gedung publik, 4 mal, 0 rumah (jendela sah) — rumus sama dengan shader world.js & interiors.js
+const bandWin = (W, u, v) => {
+  if (v <= 0.8) return false;
+  if (W.st === 2) { const fx = fract(u / 1.7), fy = fract(v / 3.7); return fx >= 0.07 && fx <= 0.93 && fy >= 0.1 && fy <= 0.93; }
+  if (W.st === 4) { if (v < 4.1) return false; const fl = fract((v - 4.1) / 3.9), gx = fract(u / 2.0), bx = u - Math.floor(u / 46) * 46; return fl >= 0.22 && fl <= 0.62 && gx >= 0.03 && gx <= 0.97 && !(bx >= 8 && bx <= 20 && v >= 4.6 && v <= 7.0); }
+  if (W.st === 0) return houseWindow(u, v) && winOk(W, u, v);
+  const fx = fract(u / 2.6), fy = fract(v / 3.3); return fx >= 0.16 && fx <= 0.84 && fy >= 0.36 && fy <= 0.78;
+};
 const clampF = (v, a, b) => (v < a ? a : v > b ? b : v);
 // tinggi permukaan tangga di titik (x,y) (0 di kaki tangga → h1 di puncak)
 const rampH = (S, x, y) => clampF(((x - S.ax) * S.ux + (y - S.ay) * S.uy) / S.len, 0, 1) * S.h1;
@@ -55,9 +64,10 @@ export function createCollider(D, inArea, homes) {
   };
   // z0 = dasar (di atas kepala: hanya menghalangi peluru/kamera), win = info jendela dinding luar rumah,
   // floor = tinggi permukaan yang bisa diinjak (pelat lantai 2), stair = tangga (lihat rampH)
+  const freeIds = []; // slot poligon lapisan dinamis yang sudah dilepas (dipakai ulang)
   const addPoly = (flat, h, b, scale = M, z0 = 0, extra = null) => {
     const n = flat.length >> 1;
-    if (n < 3) return;
+    if (n < 3) return -1;
     const pts = new Float64Array(n * 2);
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (let j = 0; j < n; j++) {
@@ -65,11 +75,23 @@ export function createCollider(D, inArea, homes) {
       pts[2 * j] = x; pts[2 * j + 1] = y;
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
     }
-    const i = polys.push({ pts, x0, y0, x1, y1, h, b, s: 0, z0, ...extra }) - 1;
+    const G = { pts, x0, y0, x1, y1, h, b, s: 0, z0, ...extra }, i = freeIds.length ? freeIds.pop() : polys.length;
+    polys[i] = G;
     span(x0, y0, x1, y1, (c) => c.p.push(i));
+    return i;
   };
   const strip = (ax, ay, ux, uy, nx, ny, s0, s1, t0, t1) => [ax + ux * s0 + nx * t0, ay + uy * s0 + ny * t0, ax + ux * s1 + nx * t0, ay + uy * s1 + ny * t0, ax + ux * s1 + nx * t1, ay + uy * s1 + ny * t1, ax + ux * s0 + nx * t1, ay + uy * s0 + ny * t1];
   const rectFlat = (cx, cy, ux, uy, w, d) => { const vx = -uy, vy = ux, hw = w / 2, hd = d / 2; return [cx - ux * hw - vx * hd, cy - uy * hw - vy * hd, cx + ux * hw - vx * hd, cy + uy * hw - vy * hd, cx + ux * hw + vx * hd, cy + uy * hw + vy * hd, cx - ux * hw + vx * hd, cy - uy * hw + vy * hd]; };
+  // perabot: menghalangi jalan & jadi perlindungan (meja makan/kafe: termasuk kursinya; meja kantor: kursi di belakangnya)
+  function furnAdd(f, z0, b, ids) {
+    const c = Math.cos(f.rot), sn = Math.sin(f.rot), hw = f.w / 2, hd = f.d / 2 + (f.kind === 'table' ? 0.51 : 0), pts = [];
+    const sh = f.kind === 'officedesk' ? -0.3 : 0, hd2 = hd + (sh ? 0.3 : 0);
+    for (const [a, d] of [[-hw, -hd2 + sh], [hw, -hd2 + sh], [hw, hd2 + sh], [-hw, hd2 + sh]]) pts.push(f.x + a * c - d * sn, f.y + a * sn + d * c);
+    const put = (i) => { if (ids && i >= 0) ids.push(i); };
+    put(addPoly(pts, z0 + f.h + (f.kind === 'tv' ? 0.7 : 0), b, 1, z0));
+    if (f.kind === 'counter') { const o = -f.d / 2 + 0.17; put(addPoly(rectFlat(f.x - o * sn, f.y + o * c, c, sn, f.w, 0.34), z0 + 2.2, b, 1, z0 + 1.5)); } // lemari gantung dapur
+    else if (f.kind === 'kiosk') put(addPoly(pts, z0 + 2.42, b, 1, z0 + 2.3)); // atap kios
+  }
   function addHome(H) {
     const T = 0.2, b = H.i;
     for (const e of H.edges) { // dinding luar (tebal T ke dalam), celah pintu, ambang di atas pintu
@@ -78,9 +100,12 @@ export function createCollider(D, inArea, homes) {
       let s = doors.length && doors[0].s0 < 0.05 ? 0 : -(e.x0 || 0);
       const end = doors.length && doors[doors.length - 1].s1 > e.len - 0.05 ? e.len : e.len + (e.x1 || 0);
       const win = H.kind || (H.blind && H.blind.has(e.j)) ? null : { ax: e.a[0], ay: e.a[1], ux: e.ux, uy: e.uy, u0: e.u0, u1: e.u0 + e.len, doors: doors.map((d) => [d.u0, d.u1]) }; // toko/aula/menara: kaca padat; sisi menempel gedung lain: tanpa jendela; jendela terpotong sudut / menumpuk pintu: tidak ada (winOk)
+      // ruko/aula/menara: kaca lantai atas yang sedang terbuka (pita D.bands) bisa ditembus — lihat bandWin
+      const bw = H.kind && !(H.blind && H.blind.has(e.j)) ? { st: H.fst | 0, ax: e.a[0], ay: e.a[1], ux: e.ux, uy: e.uy, u0: e.u0, u1: e.u0 + e.len, doors: [] } : null;
+      const ex = win ? { win } : bw ? { bw } : {};
       for (const d of [...doors, { s0: end, s1: end }]) {
-        if (d.s0 - s > 0.02) addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, s, d.s0, 0, T), H.h, b, 1, 0, win ? { win } : {});
-        if (d.s1 > d.s0 && d.s0 < e.len) addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, d.s0, d.s1, 0, T), H.h, b, 1, d.h || 2.2, win ? { win } : {});
+        if (d.s0 - s > 0.02) addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, s, d.s0, 0, T), H.h, b, 1, 0, ex);
+        if (d.s1 > d.s0 && d.s0 < e.len) addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, d.s0, d.s1, 0, T), H.h, b, 1, d.h || 2.2, ex);
         s = d.s1;
       }
     }
@@ -89,18 +114,25 @@ export function createCollider(D, inArea, homes) {
       for (const piece of H.up.plate) addPoly(piece.flat(), H.up.floor, b, 1, H.ceil, { floor: H.up.floor });
       addPoly(H.pts.flat(), H.h, b, 1, H.up.ceil, { slab: true });
       // tangga: 6 potong sepanjang naiknya, tiap potong setinggi anak tangganya + pagar 0,95 m (dulu satu kotak 3,3 m:
-      // peluru & kamera tertahan di udara kosong di atas anak tangga bawah); berjalan tetap memakai rampH
-      const S = H.up.stair, st = { ax: S.ax, ay: S.ay, ux: S.ux, uy: S.uy, len: S.len, h1: H.up.floor }, R4 = S.rect;
-      for (let k = 0; k < 6; k++) {
-        const f0 = k / 6, f1 = (k + 1) / 6, q = (p, r, f) => [p[0] + (r[0] - p[0]) * f, p[1] + (r[1] - p[1]) * f];
-        const lo = S.dir > 0 ? [R4[0], R4[1], R4[2], R4[3]] : [R4[1], R4[0], R4[3], R4[2]]; // [kaki-dinding, puncak-dinding, puncak-dalam, kaki-dalam]
-        const piece = [q(lo[0], lo[1], f0), q(lo[0], lo[1], f1), q(lo[3], lo[2], f1), q(lo[3], lo[2], f0)];
-        addPoly(piece.flat(), Math.min(H.up.floor + 0.95, f1 * H.up.floor + 0.95), b, 1, 0, { stair: st });
+      // peluru & kamera tertahan di udara kosong di atas anak tangga bawah); berjalan tetap memakai rampH.
+      // Ruko: tiap unit punya tangga sendiri (H.up.stairs); H.up.stair = tangga utama yang dipakai bot.
+      for (const S of H.up.stairs || [H.up.stair]) {
+        const st = { ax: S.ax, ay: S.ay, ux: S.ux, uy: S.uy, len: S.len, h1: H.up.floor }, R4 = S.rect;
+        for (let k = 0; k < 6; k++) {
+          const f0 = k / 6, f1 = (k + 1) / 6, q = (p, r, f) => [p[0] + (r[0] - p[0]) * f, p[1] + (r[1] - p[1]) * f];
+          const lo = S.dir > 0 ? [R4[0], R4[1], R4[2], R4[3]] : [R4[1], R4[0], R4[3], R4[2]]; // [kaki-dinding, puncak-dinding, puncak-dalam, kaki-dalam]
+          const piece = [q(lo[0], lo[1], f0), q(lo[0], lo[1], f1), q(lo[3], lo[2], f1), q(lo[3], lo[2], f0)];
+          addPoly(piece.flat(), Math.min(H.up.floor + 0.95, f1 * H.up.floor + 0.95), b, 1, 0, { stair: st });
+        }
       }
       for (const r of H.up.rail) addPoly(r.flat(), H.up.floor + 0.95, b, 1, H.up.floor);
-    } else if (R) { // lantai di atas lobi sampai lantai atap; lantai atap (di dalam parapet) bisa dipijak
-      addPoly(H.pts.flat(), R.z, b, 1, H.ceil, { slab: true });
+    } else if (R) { // menara: pelat tiap lantai (bisa dipijak; ruang di antaranya kosong), pelat atap, lantai atap di dalam parapet
+      const F = H.floors || [];
+      for (const z of F) addPoly(H.pts.flat(), z, b, 1, z - 0.3, { slab: true, floor: z });
+      addPoly(H.pts.flat(), R.z, b, 1, F.length ? F[F.length - 1] + H.fl.ceil : H.ceil, { slab: true });
       addPoly(R.inset.flat(), R.z, b, 1, R.z - 0.05, { floor: R.z, roof: true });
+      const C = H.core;
+      if (C) addPoly(rectFlat(C.x, C.y, C.ux, C.uy, C.w, C.d), R.z, b, 1, H.ceil); // poros lift dari plafon lobi sampai atap
     }
     else addPoly(H.pts.flat(), H.h, b, 1, H.ceil, { slab: true }); // plafon + lantai atas: menahan peluru dari atas/bawah, kamera
     if (R) { // atap: parapet 0,5 m, penthouse lift, unit AC (perlindungan), pintu lift atap ↔ lobi
@@ -111,7 +143,7 @@ export function createCollider(D, inArea, homes) {
       for (const u of R.units) addPoly(rectFlat(u.x, u.y, u.ux, u.uy, u.w, u.d), R.z + u.h, b, 1, R.z);
       const L = H.lift, Dd = R.door;
       if (L && Dd) lifts.push({
-        b, z: R.z, dLo: [L.x, L.y], dHi: [Dd.x, Dd.y],
+        b, z: R.z, floors: H.floors || [], fh: H.FH || 3.7, dLo: [L.x, L.y], dHi: [Dd.x, Dd.y], // pintu lift lobi & tiap lantai di titik yang sama
         lo: { x: L.x + L.nx * 1.3, y: L.y + L.ny * 1.3, z: 0, yaw: Math.atan2(L.nx, -L.ny) }, // keluar lift menghadap lobi
         hi: { x: Dd.x + Dd.nx * 1.5, y: Dd.y + Dd.ny * 1.5, z: R.z, yaw: Math.atan2(Dd.nx, -Dd.ny) },
       });
@@ -126,15 +158,7 @@ export function createCollider(D, inArea, homes) {
         } else addPoly(strip(p.a[0], p.a[1], ux, uy, nx, ny, 0, p.len, -0.06, 0.06), ceil, b, 1, z0);
       }
     };
-    const furn = (list, z0) => {
-      for (const f of list) { // perabot: menghalangi jalan & jadi perlindungan (meja makan/kafe: termasuk kursinya)
-        const c = Math.cos(f.rot), sn = Math.sin(f.rot), hw = f.w / 2, hd = f.d / 2 + (f.kind === 'table' ? 0.51 : 0), pts = [];
-        for (const [a, d] of [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]]) pts.push(f.x + a * c - d * sn, f.y + a * sn + d * c);
-        addPoly(pts, z0 + f.h + (f.kind === 'tv' ? 0.7 : 0), b, 1, z0);
-        if (f.kind === 'counter') { const o = -f.d / 2 + 0.17; addPoly(rectFlat(f.x - o * sn, f.y + o * c, c, sn, f.w, 0.34), z0 + 2.2, b, 1, z0 + 1.5); } // lemari gantung dapur
-        else if (f.kind === 'kiosk') addPoly(pts, z0 + 2.42, b, 1, z0 + 2.3); // atap kios
-      }
-    };
+    const furn = (list, z0) => { for (const f of list) furnAdd(f, z0, b, null); };
     parts(H.parts, 0, H.ceil);
     furn(H.furn, 0);
     for (const cv of H.canopies || []) { // kanopi ruko / pintu masuk mal & menara (di atas kepala, atapnya bisa dipijak) + tiang
@@ -149,7 +173,7 @@ export function createCollider(D, inArea, homes) {
       for (const s of [pr.s0 + 0.2, pr.s1 - 0.2]) addPoly(rect(s - 0.11, s + 0.11, -pr.D + 0.09, -pr.D + 0.31), pr.h, b, 1, 0);
       addPoly(rect(pr.s0 - 0.12, pr.s1 + 0.12, -pr.D - 0.3, 0), pr.h + 0.12, b, 1, pr.h, { floor: pr.h + 0.12, roof: true });
     }
-    if (H.up) { parts(H.parts, H.up.floor, H.up.ceil); furn(H.up.furn, H.up.floor); } // lantai atas: sekat sama dengan lantai dasar
+    if (H.up) { parts(H.up.parts || H.parts, H.up.floor, H.up.ceil); furn(H.up.furn, H.up.floor); } // lantai atas: sekat sama dengan lantai dasar (ruko: sekat unit berambang)
   }
   const B = D.buildings;
   for (let i = 0; i < B.r.length; i++) {
@@ -438,12 +462,17 @@ export function createCollider(D, inArea, homes) {
     if (dh < -1e-6) { const tg = -h / dh; if (tg >= 0 && tg < best) { best = tg; hitB = -1; } }
     const L2 = Math.hypot(dx, dy);
     if (L2 > 1e-6) {
-      const T0 = best, X1 = x + dx * T0, Y1 = y + dy * T0;
+      const T0 = best, X1 = x + dx * T0, Y1 = y + dy * T0, bands = D.bands;
+      let fIn = 0;
       stamp++;
       cellsAlong(x, y, X1, Y1, (c, fexit) => {
+        // rentang tinggi sinar di sel ini: poligon yang seluruhnya di atas/bawahnya dilewati di sel ini (diuji lagi di sel
+        // berikutnya bila perlu) — pelat lantai menara bertumpuk tidak diuji satu per satu
+        const hA = h + dh * T0 * fIn, hB = h + dh * T0 * fexit, hLo = Math.min(hA, hB) - 0.02, hHi = Math.max(hA, hB) + 0.02;
+        fIn = fexit;
         for (const pi of c.p) {
           const G = polys[pi];
-          if (G.s === stamp || G.h <= 0) continue;
+          if (G.s === stamp || G.h <= 0 || G.h < hLo || (G.z0 || 0) > hHi) continue;
           G.s = stamp;
           // uji cepat: kotak poligon jauh dari garis sinar → lewati
           const cxm = (G.x0 + G.x1) / 2 - x, cym = (G.y0 + G.y1) / 2 - y, rad = (G.x1 - G.x0 + G.y1 - G.y0) * 0.5 + 0.01;
@@ -458,6 +487,7 @@ export function createCollider(D, inArea, homes) {
             const hh = h + dh * t;
             if (hh < z0 || hh > G.h) continue;
             if (G.win && t < WIN_RANGE) { const W = G.win, uu = W.u0 + (x + dx * t - W.ax) * W.ux + (y + dy * t - W.ay) * W.uy; if (houseWindow(uu, hh) && winOk(W, uu, hh)) continue; } // lewat jendela yang sah
+            if (G.bw && bands && hh > bands[G.b * 2] && hh < bands[G.b * 2 + 1]) { const W = G.bw, uu = W.u0 + (x + dx * t - W.ax) * W.ux + (y + dy * t - W.ay) * W.uy; if (bandWin(W, uu, hh)) continue; } // kaca lantai atas yang terbuka
             best = t; hitB = G.b;
           }
           if (dh < 0 && h > G.h) { // atap
@@ -518,13 +548,45 @@ export function createCollider(D, inArea, homes) {
     }
     return best;
   }
-  // pintu lift (lobi menara ↔ atap) dalam jangkauan r dari kaki agen di (x, y, z) → { L, up } (up = sedang di lobi)
+  // pintu lift menara dalam jangkauan r dari kaki agen di (x, y, z) → { L, level, up }: level 0 lobi, 1..n lantai
+  // (L.floors[level − 1]), n + 1 atap; up = sedang di lobi
   function liftAt(x, y, z, r = 1.7) {
     for (const L of lifts) {
-      if (Math.abs(z) < 1 && Math.hypot(x - L.dLo[0], y - L.dLo[1]) < r) return { L, up: true };
-      if (Math.abs(z - L.z) < 1 && Math.hypot(x - L.dHi[0], y - L.dHi[1]) < r) return { L, up: false };
+      if (Math.hypot(x - L.dLo[0], y - L.dLo[1]) < r) {
+        if (Math.abs(z) < 1) return { L, level: 0, up: true };
+        for (let k = 0; k < L.floors.length; k++) if (Math.abs(z - L.floors[k]) < 1) return { L, level: k + 1, up: false };
+      }
+      if (Math.abs(z - L.z) < 1 && Math.hypot(x - L.dHi[0], y - L.dHi[1]) < r) return { L, level: L.floors.length + 1, up: false };
     }
     return null;
+  }
+  // titik keluar lift di tingkat level (lihat liftAt): { x, y, z, yaw }
+  function liftSpot(L, level) {
+    if (level <= 0) return L.lo;
+    if (level > L.floors.length) return L.hi;
+    return { x: L.lo.x, y: L.lo.y, z: L.floors[level - 1], yaw: L.lo.yaw };
+  }
+  // Lapisan rintangan sementara (perabot lantai menara yang sedang dikunjungi, interiors.js): format sama dengan
+  // addObstacles (+ z0, b) → daftar id; removeLayer(id) melepasnya lagi (slot dipakai ulang).
+  const DEAD = { pts: new Float64Array(0), x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, h: -Infinity, z0: Infinity, b: -9, s: 0 };
+  function addLayer(list) {
+    const ids = [];
+    for (const o of list) {
+      const flat = o.pts || rectFlat(o.x, o.y, Math.cos(o.rot || 0), Math.sin(o.rot || 0), o.w, o.d);
+      const i = addPoly(flat, o.h, o.b === undefined ? -3 : o.b, 1, o.z0 || 0, o.floor ? { floor: o.h } : null);
+      if (i >= 0) ids.push(i);
+    }
+    return ids;
+  }
+  function addFurnLayer(list, z0, b) { const ids = []; for (const f of list) furnAdd(f, z0, b, ids); return ids; } // perabot lantai menara (sementara)
+  function removeLayer(ids) {
+    for (const i of ids || []) {
+      const G = polys[i];
+      if (!G || G === DEAD) continue;
+      span(G.x0, G.y0, G.x1, G.y1, (c) => { const k = c.p.indexOf(i); if (k >= 0) c.p.splice(k, 1); });
+      polys[i] = DEAD;
+      freeIds.push(i);
+    }
   }
   const wdepth = makeWaterDepth(D);
   // kedalaman air di (x, y) (m; 0 = bukan air), sama dengan dasar danau di world.js
@@ -544,5 +606,5 @@ export function createCollider(D, inArea, homes) {
     }
     return -1;
   }
-  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, lastTouch, inArea, addObstacles, fitProne };
+  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, liftSpot, addLayer, addFurnLayer, removeLayer, lastTouch, inArea, addObstacles, fitProne };
 }
