@@ -26,6 +26,7 @@ import { createPostFX, TIERS } from './postfx.js';
 import { createGovernor } from './governor.js';
 import { matchHooks } from './hooks.js';
 import { initSkins } from './skins.js';
+import { createKillFx } from './killfx.js';
 import { createLobby } from './lobby.js';
 import { profile, partySlots } from './profile.js';
 
@@ -168,6 +169,7 @@ function start(D, realAssets) {
     g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(cv);
   }
+  const kills = createKillFx({ scene, hud }); // kill pemain: spanduk beruntun, denting & partikel bertema skin senjata (game/killfx.js)
 
   // ---------- Pertempuran ----------
   const BLAST = { def: { short: 'Ledakan' } }, NADE_HIT = { def: { short: 'Granat' } };
@@ -209,7 +211,7 @@ function start(D, realAssets) {
   function fire(shooter, origin, dir, w, spreadDeg, tracerFrom) {
     const def = w.def, n = def.pellets || 1, dist = shooter.isPlayer ? 0 : camera.position.distanceTo(origin);
     const muffled = !shooter.isPlayer && dist > 3 && col.inBuilding(origin.x, -origin.z) >= 0 && col.inBuilding(camera.position.x, -camera.position.z) < 0; // dari dalam gedung
-    audio.shot(def.sound, dist, shooter.isPlayer ? 0 : panOf(origin), muffled);
+    audio.shot(def.sound, dist, shooter.isPlayer ? 0 : panOf(origin), muffled, shooter.isPlayer); // pemain: suara skin senjata
     shooter.lastShot = now;
     if (!shooter.isPlayer) { gunTip.copy(origin).addScaledVector(dir, 0.75); gunTip.y -= 0.12; if (dist < 300) fx.muzzle(gunTip); }
     else if (shooter.state === 'drive' && tracerFrom && !player.st.vfp) fx.muzzle(tracerFrom); // menembak dari kendaraan, kamera belakang
@@ -220,7 +222,7 @@ function start(D, realAssets) {
       const vh = vehicles.ray(origin, d, hit ? hit.t : tw, shooter);
       end.copy(origin).addScaledVector(d, vh ? vh.t : hit ? hit.t : tw);
       if (loot.cans.length) shootCans(origin, d, vh ? vh.t : hit ? hit.t : tw, shooter);
-      if (i % 3 === 0) fx.tracer(tracerFrom || (shooter.isPlayer ? origin : gunTip), end, shooter.isPlayer ? 1 : 0.85);
+      if (i % 3 === 0) fx.tracer(tracerFrom || (shooter.isPlayer ? origin : gunTip), end, shooter.isPlayer ? 1 : 0.85, shooter.isPlayer);
       if (vh) { // kendaraan: pengendara/penumpang motor & jip terbuka kena langsung, kaca mobil kadang tembus ke yang duduk di dekatnya
         const dm = def.dmg * falloff(def, vh.t), drv = vh.who;
         if (vh.part === 'rider' && drv) { const head = vh.h > (drv.aimY || 1.4) + 0.24; damage(drv, dm * (head ? 2.1 : 1), head ? 'head' : 'body', shooter, w); fx.burst(end, 'hit', 7); }
@@ -324,7 +326,7 @@ function start(D, realAssets) {
     t.reviveT = 0; t.reviver = null; t.revBot = null; t.reviving = null;
     t.prone = true; t.crouch = false; t.reloadEnd = 0; t.healEnd = 0;
     downed.push(t);
-    if (attacker && attacker !== t) { attacker.knocks = (attacker.knocks || 0) + 1; if (attacker.isPlayer) { stat.knocks++; credit(t, w, part); audio.kill(); } }
+    if (attacker && attacker !== t) { attacker.knocks = (attacker.knocks || 0) + 1; if (attacker.isPlayer) { stat.knocks++; credit(t, w, part); kills.knock(t, part === 'head'); } }
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part, true);
     if (t.isPlayer) { player.onDown(); hud.message('Kamu tumbang', 'Merangkak ke rekan · mereka bisa memulihkanmu', 'warn'); audio.beep(true); }
     else bots.downed(t);
@@ -387,7 +389,7 @@ function start(D, realAssets) {
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
     const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, vestHp: t.vestHp, helmetHp: t.helmetHp, bag: t.bag | 0, fuel: t.fuel | 0 };
     if (c.bag || c.fuel || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
-    if (attacker && attacker.isPlayer) audio.kill(); // spanduk kill pemain ditampilkan hud.feed
+    if (attacker && attacker.isPlayer) kills.kill(t, part === 'head'); // spanduk beruntun, denting & efek kill bertema skin (game/killfx.js)
     // regu: anggota terakhir yang berdiri jatuh → yang tumbang ikut tersingkir; regu habis → peringkat regu
     const sq = t.sq;
     refreshSquad(sq);
@@ -859,6 +861,7 @@ function start(D, realAssets) {
       grass.update(camera.position, t / 1000, me.state === 'ground' && me.alive ? me.pos : null);
       interiors.update(camera.position);
       fx.update(dt);
+      kills.update(dt);
       loot.update(now, camera.position);
       if (F.state === 'ground' && shadowC.distanceTo(F.pos) > 40 && !F.swim) refreshShadows(F.pos);
       else if (F.state === 'drive' && shadowC.distanceTo(F.pos) > 95) refreshShadows(F.pos, 300);
