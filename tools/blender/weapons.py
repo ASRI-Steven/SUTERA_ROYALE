@@ -28,6 +28,8 @@ Kontrak GLB (web/game/assets/weapons/weapons.glb, dipakai web/game/weapons.js):
   - Tangan: fp_hand_r (menggenggam gagang; node diekspor di posisi genggamnya relatif origin senjata) dan fp_hand_l
     (menyangga dari bawah; taruh di <kind>_guard). Origin = pusat telapak, lengan bawah menjulur ke belakang-bawah
     (ke arah kamera). Material glove, sleeve, cuff, skin, poly, grip, gold.
+  - Tangan kiri per senjata (v5): fp_hand_l_<kind> (pistol & revolver: fp_hand_l_pistol, lihat weapons[].handL di
+    weapons.json), taruh di <kind>_guard (= pusat telapaknya). fp_hand_l tetap untuk rig obat & granat.
 
 v4 (model orang pertama realistis):
   - make_obj(): bevel mikro ±0,55 mm di semua tepi tajam + normal berbobot luas face (tepi menangkap kilau);
@@ -40,6 +42,16 @@ v4 (model orang pertama realistis):
   - Opsi tambahan: --kinds ar,pistol (iterasi cepat, jangan untuk ekspor akhir), --no-bevel, --shots4 (pratinjau
     preview/weapons/v4-lineup.png + v4-fp-ar.png). Render: Cycles CPU 2 thread, ≤ 960 px, 16–32 sampel.
   - Mesin dipakai bersama pemain: jalankan lewat  taskpolicy -b nice -n 19 Blender -b -t 2 …  (OMP_NUM_THREADS=2).
+
+v5 (tangan kiri dipaskan per senjata, build_hand_l_fit / build_hand_l_pistol):
+  - Dulu satu genggaman kiri untuk semua senjata: ibu jari lurus menjulur ke depan di bawah sisi kiri pelindung tangan
+    (tampak seperti satu jari "nongol"), jari mengait di atas pelindung yang tipis, pistol/revolver memakai tangan terbuka.
+  - Kini penampang pelindung tangan/pompa diukur dengan sinar ke rakitan senjata yang sudah jadi (kulit cembung per 1°);
+    telapak datar dicari kemiringan & letaknya supaya ujung jari berhenti di sisi kanan tanpa menyembul di atas punggung
+    pelindung dan sendi jari tidak melayang; ruas jari kaku melingkari kulit (tali busur tidak menembus); ibu jari rebah
+    di sisi kiri menghadap depan (sinar radial). Pistol & revolver: tangan penyangga dua tangan (membungkus jari kanan).
+  - <kind>_guard pindah ke pusat telapak baru. Lengan bawah tetap searah ARM_L (= AX_L di web/game/weapons.js), lengan
+    baju 0,46 m supaya ujungnya di luar layar juga saat membidik. Tanpa bevel mikro: ±2,8 rb segitiga per tangan.
 """
 import bpy
 import bmesh
@@ -1235,6 +1247,303 @@ def build_hand_nade():
     return B
 
 
+# ---------------------------------------------------------------- v5: tangan kiri dipaskan per senjata
+# fp_hand_l (satu genggaman untuk semua senjata) tetap diekspor untuk rig obat & granat. Senjata memakai fp_hand_l_<kind>:
+# telapak menempel di bawah-kiri pelindung tangan, empat jari mengikuti kontur sisi kanannya (penampang diukur dengan
+# sinar ke rakitan senjata yang sudah jadi), ibu jari rebah di sisi kiri mengarah ke depan. Pistol & revolver memakai
+# fp_hand_l_pistol: tangan penyangga dua tangan (jari membungkus jari tangan kanan di depan gagang, ibu jari di bawah ibu
+# jari kanan). Origin = pusat telapak (= titik <kind>_guard baru). Lengan bawah selalu searah ARM_L seperti fp_hand_l,
+# jadi sumbu lengan di web/game/weapons.js (AX_L) tetap berlaku untuk animasi isi ulang/periksa.
+ARM_L = (-0.33, -0.84, -0.43)
+FIT_HOLD = {'shotgun': ('shotgun_pump',), 'dbs': ('dbs_brk',)}  # bagian bergerak yang ikut digenggam
+FIT_ONLY = {'shotgun'}  # hanya bagian bergerak itu (pompa, bukan laras di atasnya)
+HAND_L_OF = {'revolver': 'pistol'}  # senjata yang memakai tangan kiri senjata lain (gagang sama)
+FINGERS_L = (  # (y relatif pusat telapak, ruas [proksimal, tengah, distal], jari-jari pangkal); telunjuk paling depan
+    (0.0265, (0.040, 0.023, 0.019), 0.0094),
+    (0.0085, (0.044, 0.026, 0.020), 0.0097),
+    (-0.0095, (0.041, 0.025, 0.019), 0.0093),
+    (-0.0265, (0.033, 0.020, 0.017), 0.0083),
+)
+PALM_L = (0.066, 0.076, 0.023)  # lebar (sampai pangkal jari), panjang (sepanjang laras), tebal
+SLEEVE_FIT = 0.46  # lengan baju lebih panjang dari fp_hand_l: ujungnya selalu di luar layar (juga saat membidik DMR/runduk)
+
+
+def hold_bvh(objs):
+    from mathutils.bvhtree import BVHTree
+    bpy.context.view_layer.update()
+    V_, P_ = [], []
+    for ob in objs:
+        M = ob.matrix_world
+        o0 = len(V_)
+        V_ += [M @ v.co for v in ob.data.vertices]
+        P_ += [tuple(i + o0 for i in p.vertices) for p in ob.data.polygons]
+    return BVHTree.FromPolygons(V_, P_, all_triangles=False, epsilon=0.0)
+
+
+class Hull:
+    """Kulit cembung penampang senjata di bidang y (titik dari sinar luar → pusat c), lewat fungsi tumpu per 1°."""
+
+    def __init__(self, bvh, y, c, zcap, xtop=0.01, R=0.14):
+        self.y, self.c = y, c
+        pts = []
+        for k in range(180):
+            a = k * 2.0 * D2R
+            u = Vector((math.cos(a), 0.0, math.sin(a)))
+            h = bvh.ray_cast(Vector((c[0], y, c[1])) + u * R, -u, R)[0]
+            if h is not None and h.z <= zcap:
+                pts.append(Vector((h.x, y, h.z)))
+        if len(pts) < 8:
+            raise RuntimeError('penampang kosong di y=%.3f' % y)
+        # punggung pelindung tangan (rel/rusuk sempit di tengah diabaikan): ujung jari harus tetap di bawahnya
+        self.top = max((p.z for p in pts if abs(p.x - c[0]) >= xtop), default=max(p.z for p in pts))
+        self.n, self.h, self.s = [], [], []
+        for k in range(360):
+            n = Vector((math.cos(k * D2R), 0.0, math.sin(k * D2R)))
+            p = max(pts, key=lambda q: q.dot(n))
+            self.n.append(n)
+            self.h.append(p.dot(n))
+            self.s.append(p)
+
+    def at(self, a, rho):  # titik pada lengkung offset (kulit + rho) di sudut normal a (derajat)
+        k = int(round(a)) % 360
+        return self.s[k] + self.n[k] * rho
+
+    def dist(self, x):  # jarak titik di luar ke kulit (≤ 0 = di dalam)
+        return max(x.dot(n) - h for n, h in zip(self.n, self.h))
+
+    def ang(self, p):
+        return math.degrees(math.atan2(p.z - self.c[1], p.x - self.c[0]))
+
+
+def walk_poly(poly, p, L):
+    """Titik pertama pada polyline [(sudut, titik)] — mulai dari proyeksi p padanya, maju — yang berjarak L dari p.
+    Lengkung offset melompat di sisi datar (normal sama), jadi segmen lurus antar titik = sisi datar itu sendiri."""
+    best, i0, t0 = None, 0, 0.0
+    for i in range(min(len(poly) - 1, 60)):  # p ada di dekat awal polyline (sudut sendi sebelumnya − 25°)
+        A, Bv = poly[i][1], poly[i + 1][1]
+        D = Bv - A
+        dd = D.dot(D)
+        t = 0.0 if dd < 1e-14 else min(1.0, max(0.0, (p - A).dot(D) / dd))
+        e = (A + D * t - p).length
+        if best is None or e < best - 1e-9:
+            best, i0, t0 = e, i, t
+    for i in range(i0, len(poly) - 1):
+        A, Bv = poly[i][1], poly[i + 1][1]
+        D = Bv - A
+        a_, b_, c_ = D.dot(D), (A - p).dot(D), (A - p).dot(A - p) - L * L
+        ts = t0 if i == i0 else 0.0
+        if a_ > 1e-14:
+            disc = b_ * b_ - a_ * c_
+            if disc >= 0.0:
+                for t in sorted(((-b_ - math.sqrt(disc)) / a_, (-b_ + math.sqrt(disc)) / a_)):
+                    if ts - 1e-9 <= t <= 1.0:
+                        return A + D * t, poly[i][0] + (poly[i + 1][0] - poly[i][0]) * t
+    return poly[-1][1], poly[-1][0]
+
+
+def wrap_chain(hull, p0, a0, lens, radii, gap=0.0008, amax=250.0):
+    """Ruas jari kaku yang melingkari kulit: tiap sendi di lengkung offset, berjarak tepat sepanjang ruas dari sendi
+    sebelumnya (sudut naik = ke atas di sisi kanan); sendi diangkat seperlunya supaya tengah ruas tidak masuk senjata."""
+    pts, prev, a = [Vector(p0)], Vector(p0), a0
+    for k, L in enumerate(lens):
+        r0, r1 = radii[k], radii[k + 1]
+        lift = 0.0
+        for _ in range(5):
+            rho = r1 + gap + lift
+            poly = [(aa, hull.at(aa, rho)) for aa in (a - 25.0 + i for i in range(int(min(amax, a + 170.0) - a + 26.0)))]
+            q, aq = walk_poly(poly, prev, L)
+            worst = max(r0 + (r1 - r0) * t + gap - hull.dist(prev.lerp(q, t)) for t in (0.3, 0.5, 0.7))
+            if worst <= 0.0004:
+                break
+            lift += worst * 1.7
+        pts.append(q)
+        prev, a = q, aq
+    return pts, a
+
+
+def frame_m(ex, ey, ez):
+    return Matrix(((ex.x, ey.x, ez.x, 0), (ex.y, ey.y, ez.y, 0), (ex.z, ey.z, ez.z, 0), (0, 0, 0, 1)))
+
+
+def ellipsoid(B, center, ax, rx, ry, rz, mat='glove'):
+    """Elipsoid (pangkal ibu jari): sumbu panjang ry searah ax."""
+    ay = Vector(ax).normalized()
+    ax_ = ay.orthogonal().normalized()
+    az = ax_.cross(ay)
+    M = T(*center) @ frame_m(ax_, ay, az) @ Matrix.Diagonal((rx, ry, rz, 1.0))
+    put(B, p_sphere(1.0, 12, 7), mat, M)
+
+
+def build_hand_l_fit(kind, bvh, guard):
+    """Tangan kiri yang dipaskan ke pelindung tangan/pompa senjata kind (koordinat senjata). Kembali: (bmesh di koordinat
+    senjata, pusat telapak). Telapak dimiringkan beta (normal menghadap kanan-atas) lalu ditempel ke kulit penampang;
+    beta disetel sampai ujung jari tengah berhenti di sisi kanan atas (± 30–55°), tidak melewati punggung pelindung."""
+    gy = guard.y
+    # penampang: dasar pelindung tangan tepat di atas titik guard; pusat = tengah pita terlebar; batas atas (zcap) dari
+    # sinar tegak di samping garis tengah (rel atas, pegangan angkut, dsb. di tengah tidak ikut digenggam)
+    zb = bvh.ray_cast(Vector((0, gy, guard.z - 0.06)), Vector((0, 0, 1)), 0.2)[0].z
+    widths = []
+    for k in range(1, 18):
+        z = zb + 0.004 * k
+        w_ = 0.0
+        for sx in (-1, 1):
+            h = bvh.ray_cast(Vector((sx * 0.15, gy, z)), Vector((-sx, 0, 0)), 0.3)[0]
+            w_ = max(w_, abs(h.x) if h is not None and abs(h.x) < 0.06 else 0.0)
+        widths.append((z, w_))
+    hw = max(max(w for _, w in widths), 0.015)
+    band = [z for z, w in widths if w >= 0.97 * hw] or [zb + hw]
+    c = (0.0, 0.5 * (band[0] + band[-1]))
+    tops = [h.z for h in (bvh.ray_cast(Vector((sx * 0.6 * hw, gy, c[1] + 0.25)), Vector((0, 0, -1)), 0.3)[0] for sx in (-1, 1)) if h is not None]
+    zcap = (min(tops) + 0.012) if tops else c[1] + 1.6 * hw
+    W, Lp, Tp = PALM_L
+    hulls = {}
+
+    def hull(y):
+        k = round(y, 4)
+        if k not in hulls:
+            hulls[k] = Hull(bvh, k, c, zcap, 0.5 * hw)
+        return hulls[k]
+
+    foot = []
+    for dy in (-0.034, -0.017, 0.0, 0.017, 0.034):
+        foot += hull(gy + dy).s
+    Hc = hull(gy)
+
+    def pose(beta, uc):
+        """Telapak datar miring beta, menyentuh kulit di titik terendahnya (searah normal) pada x-lokal uc."""
+        b = beta * D2R
+        ex, ey, ez = Vector((math.cos(b), 0, -math.sin(b))), Vector((0, 1, 0)), Vector((math.sin(b), 0, math.cos(b)))
+        h0 = min(foot, key=lambda p: p.dot(ez))
+        P = ex * (h0.dot(ex) - uc) + ez * (h0.dot(ez) - Tp / 2 - 0.0012) + Vector((0, gy, 0))
+        return P, ex, ey, ez
+
+    def fingers_of(P, ex, ey, ez, which=range(4)):
+        out = []
+        for i in which:
+            oy, lens, r0 = FINGERS_L[i]
+            radii = [r0, r0 * 0.94, r0 * 0.87, r0 * 0.8]
+            mcp = P + ex * (W / 2 - 0.007) + ey * oy + ez * 0.001
+            H = hull(gy + oy)
+            pts, a_tip = wrap_chain(H, mcp, H.ang(mcp), lens, radii)
+            out.append((pts, radii, a_tip))
+        return out
+
+    # cari kemiringan & letak telapak: ujung jari (telunjuk & tengah) berhenti di sisi kanan, bonggolnya tetap di bawah
+    # punggung pelindung tangan (tidak mengait/menyembul di atasnya); pangkal jari & pangkal ibu jari dekat permukaan;
+    # telapak tidak terlalu miring. Pelindung tipis (SMG/PDW) → telapak lebih memutar ke kiri-bawah.
+    def over_top(fs):
+        e = 0.0
+        for (pts, radii, a_tip), i in zip(fs, (0, 1)):
+            H = hull(gy + FINGERS_L[i][0])
+            e = max(e, pts[3].z + radii[3] - (H.top - 0.003), pts[2].z + radii[2] * 1.07 - (H.top - 0.002))
+        return e
+
+    def floating(fs):  # sendi jari yang menjauh dari permukaan (ruas terangkat melewati sudut pelindung)
+        e = 0.0
+        for (pts, radii, a_tip), i in zip(fs, (0, 1)):
+            H = hull(gy + FINGERS_L[i][0])
+            e = max([e] + [H.dist(pts[k]) - radii[k] for k in (1, 2, 3)])
+        return e
+
+    best = None
+    for beta in range(-10, 60, 5):
+        for uc in (-0.012, -0.006, 0.0, 0.006, 0.012, 0.018, 0.024, 0.03):
+            P, ex, ey, ez = pose(beta, uc)
+            fs = fingers_of(P, ex, ey, ez, (0, 1))
+            pts, radii, a_tip = fs[1]
+            mcp = pts[0]
+            cmc = P + ex * (-W / 2 + 0.012) + ey * (-0.017) + ez * 0.002
+            d_m = Hc.dist(mcp) - radii[0]
+            d_c = Hc.dist(cmc) - 0.0118
+            sc = ((a_tip - 35.0) / 15.0) ** 2 + (30.0 if not 0.0 <= a_tip <= 60.0 else 0.0)
+            sc += 12.0 * (max(0.0, over_top(fs)) / 0.003) ** 2 + 4.0 * (max(0.0, floating(fs) - 0.003) / 0.003) ** 2
+            sc += ((d_m - 0.003) / 0.006) ** 2 + (max(0.0, d_c - 0.012) / 0.006) ** 2 + (beta / 40.0) ** 2
+            if best is None or sc < best[0]:
+                best = (sc, beta, uc)
+    _, beta, uc = best
+    P, ex, ey, ez = pose(beta, uc)
+    fingers = fingers_of(P, ex, ey, ez)
+    R = frame_m(ex, ey, ez)
+    B = bmesh.new()
+    put(B, p_box(W, Lp, Tp, 0.0095, 2), 'glove', T(*P) @ R)
+    put(B, p_box(0.044, 0.046, 0.004, 0.0015, 1), 'grip', T(*(P - ez * (Tp / 2 + 0.0005) - ex * 0.004)) @ R)  # punggung
+    for (pts, radii, a_tip), (oy, lens, r0) in zip(fingers, FINGERS_L):
+        put(B, p_chain(pts, radii, 8, False, False), 'glove')
+        for k in range(1, 4):
+            put(B, p_sphere(radii[k] * (1.07 if k < 3 else 1.0), 8, 5), 'glove', T(*pts[k]))
+        kn = P + ex * (W / 2 - 0.009) + ey * oy - ez * (Tp / 2 - 0.0015)  # pelindung buku jari (punggung, pangkal jari)
+        put(B, p_box(0.016, 0.016, 0.007, 0.003, 2), 'poly', T(*kn) @ R @ Ry(-24))
+    # ibu jari: pangkal di sisi kiri-belakang telapak, ruas rebah di sisi kiri pelindung tangan menghadap depan
+    cmc = P + ex * (-W / 2 + 0.012) + ey * (-0.017) + ez * 0.002
+    # ibu jari: sinar radial dari pusat penampang (stabil di sisi tegak, tidak melompat ke bagian lain), sudut mulai sedikit
+    # di atas pangkal ibu jari lalu naik pelan ke depan; 180° = sisi kiri setinggi pusat
+    am = min(205.0, max(160.0, Hc.ang(cmc) % 360.0 - 10.0))
+    rt = (0.0118, 0.0112, 0.0103, 0.0094)
+
+    def side(y, a, rho):
+        u = Vector((math.cos(a * D2R), 0.0, math.sin(a * D2R)))
+        o = Vector((c[0], y, c[1]))
+        hit, nrm = bvh.ray_cast(o + u * 0.14, -u, 0.14)[:2]
+        if hit is None:
+            return o + u * (hw + rho)
+        nrm = Vector((nrm.x, 0.0, nrm.z)).normalized() if nrm is not None and (nrm.x or nrm.z) else u
+        if nrm.dot(u) < 0.0:
+            nrm = -nrm
+        return Vector((hit.x, y, hit.z)) + nrm.lerp(u, 0.5).normalized() * rho
+    mcp_t = side(gy - 0.004, am, rt[1] + 0.0015)
+    ip_t = side(gy + 0.027, am - 6.0, rt[2] + 0.0012)
+    tip_t = side(gy + 0.051, am - 10.0, rt[3] + 0.0008)
+    put(B, p_chain([cmc, mcp_t, ip_t, tip_t], list(rt), 9, False, False), 'glove')
+    for p_, r_ in ((mcp_t, rt[1] * 1.06), (ip_t, rt[2] * 1.06), (tip_t, rt[3])):
+        put(B, p_sphere(r_, 9, 5), 'glove', T(*p_))
+    ellipsoid(B, cmc.lerp(mcp_t, 0.42) - ez * 0.002, mcp_t - cmc, 0.0125, 0.024, 0.0135)  # pangkal ibu jari (tenar)
+    wrist = P + ex * (-0.019) + ey * (-0.047) + ez * (-0.007)
+    arm_parts(B, wrist, ARM_L, seed=2.3, length=SLEEVE_FIT)
+    log('tangan kiri', kind, 'beta %.0f uc %.3f' % (beta, uc), 'ujung jari tengah %.0f°' % fingers[1][2],
+        'lewat punggung %.1f mm' % (1000 * over_top(fingers[:2])), 'ibu jari %.0f°' % am, 'telapak', tuple(round(v, 4) for v in P))
+    return B, P
+
+
+def pistol_palm():  # pusat telapak tangan kiri penyangga (sisi kiri gagang)
+    return Vector((-0.0315, yc(-0.012) - 0.004, -0.012))
+
+
+def build_hand_l_pistol():
+    """Tangan kiri penyangga pistol/revolver (gagang sama untuk semua senjata): telapak menempel di sisi kiri gagang,
+    empat jari membungkus jari tangan kanan di depan gagang (ujungnya di buku jari kanan), ibu jari menghadap depan di
+    bawah ibu jari kanan. Koordinat senjata; kembali (bmesh, pusat telapak)."""
+    B = bmesh.new()
+    s, c_ = math.sin(TILT), math.cos(TILT)
+    f = Vector((0.0, c_, -s))   # pergelangan → pangkal jari (depan, sedikit turun mengikuti gagang condong)
+    t = Vector((0.0, s, c_))    # sisi ibu jari (atas, sejajar gagang)
+    n = Vector((1.0, 0.0, 0.0))  # normal telapak (menghadap gagang)
+    R = frame_m(f, t, n)
+    P = pistol_palm()
+    put(B, p_box(0.066, 0.074, 0.022, 0.0095, 2), 'glove', T(*P) @ R)
+    put(B, p_box(0.044, 0.046, 0.004, 0.0015, 1), 'grip', T(*(P - n * 0.0115)) @ R)  # punggung tangan (menghadap kiri)
+    # jari: pangkal di tepi depan telapak, melingkar ke depan jari tangan kanan, ujung di sisi kanan
+    for i, (oz, sc) in enumerate(((0.0255, 1.0), (0.0075, 1.04), (-0.0105, 0.98), (-0.0275, 0.84))):
+        r0 = 0.0093 * (1.0 if i < 3 else 0.9)
+        mcp = P + f * 0.027 + t * oz + n * 0.002
+        z = mcp.z
+        y0 = yc(z)
+        pts = [mcp, Vector((-0.0155, y0 + 0.0535, z + 0.001)), Vector((0.0075 * sc, y0 + 0.0585, z + 0.0015)),
+               Vector((0.0255 * sc, y0 + 0.0495 * sc, z + 0.002))]
+        finger(B, pts, r0)
+        put(B, p_box(0.016, 0.016, 0.007, 0.003, 2), 'poly', T(*(mcp - n * 0.0095 - f * 0.003)) @ R)  # pelindung buku jari
+    # ibu jari di bawah ibu jari kanan, sejajar slide, ujung di depan pelatuk
+    rt = (0.0118, 0.0112, 0.0103, 0.0094)
+    cmc = P + f * (-0.012) + t * 0.022 + n * 0.0
+    th = [cmc, Vector((-0.0285, 0.004, 0.0255)), Vector((-0.0215, 0.033, 0.0365)), Vector((-0.0195, 0.0575, 0.0395))]
+    put(B, p_chain(th, list(rt), 9, False, False), 'glove')
+    for p_, r_ in ((th[1], rt[1] * 1.06), (th[2], rt[2] * 1.06), (th[3], rt[3])):
+        put(B, p_sphere(r_, 9, 5), 'glove', T(*p_))
+    ellipsoid(B, cmc.lerp(th[1], 0.4) - n * 0.003, th[1] - cmc, 0.0125, 0.023, 0.0135)
+    wrist = P - f * 0.044 - n * 0.004 - t * 0.008
+    arm_parts(B, wrist, ARM_L, seed=2.3, length=SLEEVE_FIT)
+    return B, P
+
+
 # ---------------------------------------------------------------- LOD1 (≤ 350 segitiga, warna verteks)
 def build_lod1(kind):
     L = bmesh.new()
@@ -1430,14 +1739,15 @@ def make_obj(name, bm, origin=(0, 0, 0), ang=50, fin=True):
     return ob, tris
 
 
-def bake_vwx(objs, maxd=0.03, rays=12):
+def bake_vwx(objs, maxd=0.03, rays=12, occ=()):
     """Oklusi ambien (sinar ke belahan bola, seluruh rakitan senjata sebagai penghalang) + tanda aus → lapisan UV 'vwx'
     (u = AO, v = aus). Diekspor sebagai TEXCOORD_0 dan dibaca web/game/weapons.js sebagai atribut `vwx`; sengaja BUKAN
-    warna verteks supaya material GLB (ikon HUD, game/icons.js) tidak ikut berubah warna."""
+    warna verteks supaya material GLB (ikon HUD, game/icons.js) tidak ikut berubah warna. occ: penghalang tambahan yang
+    tidak ikut dipanggang (mis. senjata untuk tangan kiri yang menggenggamnya)."""
     from mathutils.bvhtree import BVHTree
     bpy.context.view_layer.update()
     V_, P_ = [], []
-    for ob in objs:
+    for ob in list(objs) + list(occ):
         M = ob.matrix_world
         names = [m.name.split('.')[0] if m else '' for m in ob.data.materials]
         o0 = len(V_)
@@ -1525,7 +1835,7 @@ def build_all():
     bpy.ops.wm.read_factory_settings(use_empty=True)
     REST.clear()
     make_materials()
-    objs, meta = [], {'weapons': [], 'hands': {}}
+    objs, meta, fit_hands = [], {'weapons': [], 'hands': {}}, []
     only = opt('--kinds')  # iterasi cepat: --kinds ar,pistol (ekspor akhir harus tanpa opsi ini)
     only = only.split(',') if isinstance(only, str) else None
     for kind, fn in BUILD.items():
@@ -1558,6 +1868,19 @@ def build_all():
             w['tris'] += t2
             w.setdefault('parts', []).append(dict(node=pn, pos=gl(po_), tris=t2))
         bake_vwx(objs[n0:])  # AO + aus untuk seluruh rakitan senjata ini (badan, magasin, pompa, bolt, …)
+        # tangan kiri yang dipaskan ke senjata ini (v5); <kind>_guard pindah ke pusat telapaknya
+        hold = [o for o in objs[n0:] if (o.name == kind and kind not in FIT_ONLY) or o.name in FIT_HOLD.get(kind, ())]
+        hl_name = 'fp_hand_l_' + HAND_L_OF.get(kind, kind)
+        if kind in HAND_L_OF:  # revolver: gagang sama dengan pistol → tangan penyangga yang sama
+            d['guard'] = tuple(pistol_palm())
+        else:
+            hb, hc = build_hand_l_pistol() if kind == 'pistol' else build_hand_l_fit(kind, hold_bvh(hold), Vector(d['guard']))
+            d['guard'] = tuple(hc)
+            hlo, hlt = make_obj(hl_name, hb, origin=hc, ang=50, fin=False)
+            bake_vwx([hlo], maxd=0.02, rays=10, occ=hold)
+            fit_hands.append(hlo)
+            meta['hands'][hl_name] = dict(tris=hlt, note='tangan kiri menggenggam ' + ('gagang (dua tangan)' if kind == 'pistol' else 'pelindung tangan') + '; letakkan di <kind>_guard')
+        w['handL'] = hl_name
         lo, lt = make_vc_obj(kind + '_lod1', build_lod1(kind))
         objs.append(lo)
         w['lod1'] = kind + '_lod1'
@@ -1586,13 +1909,13 @@ def build_all():
     ho, to_ = make_obj('fp_hand_open', build_hand_open(), ang=50)
     for h_ in (hr, hl, hn, fa, ho):
         bake_vwx([h_], maxd=0.02, rays=10)
-    objs += [hr, hl, hn, fa, ho]
-    meta['hands'] = {'fp_hand_r': dict(tris=tr, pos=gl(HAND_R), note='letakkan node di posisi ini relatif origin senjata (sama untuk semua senjata)'),
-                     'fp_hand_l': dict(tris=tl, note='letakkan di <kind>_guard (pusat telapak)'),
-                     'fp_hand_nade': dict(tris=tn, note='tangan kanan menggenggam granat; origin = pusat badan granat'),
-                     'fp_forearm': dict(tris=tf, note='lengan bawah 1 m sepanjang +Y glTF (pergelangan di +0,5), diskala ke panjang lengan'),
-                     'fp_hand_open': dict(tris=to_, note='tangan terbuka: jari ke −Z glTF, ibu jari +X; origin = pusat telapak')}
-    log('tangan', 'kanan', tr, 'kiri', tl)
+    objs += [hr, hl, hn, fa, ho] + fit_hands
+    meta['hands'].update({'fp_hand_r': dict(tris=tr, pos=gl(HAND_R), note='letakkan node di posisi ini relatif origin senjata (sama untuk semua senjata)'),
+                          'fp_hand_l': dict(tris=tl, note='genggaman umum (rig obat & granat); senjata memakai fp_hand_l_<kind> (weapons[].handL)'),
+                          'fp_hand_nade': dict(tris=tn, note='tangan kanan menggenggam granat; origin = pusat badan granat'),
+                          'fp_forearm': dict(tris=tf, note='lengan bawah 1 m sepanjang +Y glTF (pergelangan di +0,5), diskala ke panjang lengan'),
+                          'fp_hand_open': dict(tris=to_, note='tangan terbuka: jari ke −Z glTF, ibu jari +X; origin = pusat telapak')})
+    log('tangan', 'kanan', tr, 'kiri', tl, 'kiri per senjata', sum(meta['hands'][o.name]['tris'] for o in fit_hands))
     meta['axes'] = 'glTF: +Y atas, laras −Z, kanan +X; origin senjata = titik genggam gagang pistol (condong 18°)'
     return objs, meta
 

@@ -8,7 +8,8 @@ import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL, SF_U, tickSkins, FLAME_VS
 
 // ---------- Model senjata dari Blender (tools/blender/weapons.py), opsional ----------
 // weapons.glb: <jenis> (model orang pertama), <jenis>_mag, shotgun_pump, <jenis>_lod1 (warna verteks, untuk loot &
-// tangan karakter), titik <jenis>_muzzle/_sight/_guard, tangan fp_hand_r/fp_hand_l. Asal = pegangan tangan kanan, laras −Z.
+// tangan karakter), titik <jenis>_muzzle/_sight/_guard, tangan fp_hand_r/fp_hand_l, tangan kiri yang dipaskan per senjata
+// fp_hand_l_<jenis> (diletakkan di <jenis>_guard). Asal = pegangan tangan kanan, laras −Z.
 // Dimuat sebelum dunia dibangun (main.js); kalau gagal, model prosedural di bawah yang dipakai.
 let GLB = null;
 export async function loadWeaponModels(base = 'game/assets/weapons/') {
@@ -18,6 +19,7 @@ export async function loadWeaponModels(base = 'game/assets/weapons/') {
   return GLB;
 }
 const glbNode = (name) => (GLB ? GLB.root.getObjectByName(name) : null);
+const HAND_L_OF = { revolver: 'pistol' }; // gagang sama → tangan kiri penyangga yang sama (tools/blender/weapons.py)
 function nodeLocal(name, kind) { // posisi titik relatif ke asal senjata
   const o = glbNode(name), base = glbNode(kind);
   if (!o || !base) return null;
@@ -32,9 +34,9 @@ export const WEAPONS = {
   smg: { name: 'SMG Kilat', short: 'Kilat', slot: 0, ammo: 'light', dmg: 17, rpm: 860, auto: true, mag: 30, reload: 1.9, spread: 1.5, ads: 0.75, move: 1.0, recoil: 0.5, range: 32, maxRange: 350, sound: 'smg', fovAds: 60 },
   ar: { name: 'Senapan Garuda', short: 'Garuda', slot: 0, ammo: 'rifle', dmg: 27, rpm: 620, auto: true, mag: 30, reload: 2.25, spread: 1.3, ads: 0.32, move: 1.6, recoil: 0.72, range: 90, maxRange: 700, sound: 'ar', fovAds: 52 },
   shotgun: { name: 'Shotgun Badai', short: 'Badai', slot: 0, ammo: 'shell', dmg: 13, pellets: 9, rpm: 75, auto: false, mag: 5, reload: 2.6, spread: 4.2, ads: 3.4, move: 1.0, recoil: 3.2, range: 14, maxRange: 120, sound: 'shotgun', fovAds: 60 },
-  dmr: { name: 'DMR Elang', short: 'Elang', slot: 0, ammo: 'rifle', dmg: 56, rpm: 210, auto: false, mag: 10, reload: 2.6, spread: 1.0, ads: 0.04, move: 2.2, recoil: 2.0, range: 220, maxRange: 1100, sound: 'dmr', fovAds: 55, rail: [0.164, -0.245, 0.112] }, // rail: teropong bawaan model (sumbu y, z awal, z akhir) — baru tampil kalau aksesori scope terpasang,
+  dmr: { name: 'DMR Elang', short: 'Elang', slot: 0, ammo: 'rifle', dmg: 56, rpm: 210, auto: false, mag: 10, reload: 2.6, spread: 1.0, ads: 0.04, move: 2.2, recoil: 2.0, range: 220, maxRange: 1100, sound: 'dmr', fovAds: 55, rail: [0.164, -0.245, 0.112] }, // rail: teropong bawaan model (sumbu y, z awal, z akhir[, jarak bawah sumbu, bawaan 0,027]) — baru tampil kalau aksesori scope terpasang,
   // v3: senapan runduk bolt (tembakan kepala menembus helm lv.1–2), SMR, revolver, senapan semburan 3 butir, PDW, laras ganda
-  sniper: { name: 'Runduk Rajawali', short: 'Rajawali', slot: 0, ammo: 'sniper', dmg: 95, rpm: 42, auto: false, mag: 5, reload: 3.1, spread: 2.6, ads: 0.0, move: 2.8, recoil: 4.2, range: 420, maxRange: 1500, sound: 'sniper', fovAds: 55, rail: [0.172, -0.28, 0.158], bolt: 1.15 },
+  sniper: { name: 'Runduk Rajawali', short: 'Rajawali', slot: 0, ammo: 'sniper', dmg: 95, rpm: 42, auto: false, mag: 5, reload: 3.1, spread: 2.6, ads: 0.0, move: 2.8, recoil: 4.2, range: 420, maxRange: 1500, sound: 'sniper', fovAds: 55, rail: [0.172, -0.28, 0.158, 0.034], bolt: 1.15 },
   lmg: { name: 'SMR Gempa', short: 'Gempa', slot: 0, ammo: 'rifle', dmg: 25, rpm: 690, auto: true, mag: 75, reload: 4.6, spread: 1.7, ads: 0.55, move: 3.2, recoil: 0.62, range: 85, maxRange: 700, sound: 'lmg', fovAds: 54 },
   revolver: { name: 'Revolver Kobra', short: 'Kobra', slot: 2, ammo: 'magnum', dmg: 52, rpm: 150, auto: false, mag: 6, reload: 2.4, spread: 0.8, ads: 0.25, move: 1.5, recoil: 3.0, range: 45, maxRange: 350, sound: 'revolver', fovAds: 60 },
   burst: { name: 'Senapan Petir', short: 'Petir', slot: 0, ammo: 'rifle', dmg: 30, rpm: 900, auto: false, burst: 3, burstDelay: 0.3, mag: 30, reload: 2.3, spread: 1.1, ads: 0.26, move: 1.5, recoil: 0.6, range: 95, maxRange: 700, sound: 'burst', fovAds: 52 },
@@ -588,15 +590,19 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const G = guns[kind], model = src.clone(true);
     model.position.set(0, 0, 0);
     if (WEAPONS[kind].rail) { // pisahkan teropong bawaan (segitiga di sekitar sumbu teropong) supaya bisa disembunyikan sampai scope dipasang
-      const [ys, z0, z1] = WEAPONS[kind].rail, meshes = [];
+      const [ys, z0, z1, yb = 0.027] = WEAPONS[kind].rail, meshes = [];
       G.builtin = [];
       model.traverse((o) => { if (o.isMesh) meshes.push(o); });
+      // segitiga teropong: titik beratnya ATAU salah satu sudutnya di daerah teropong — segitiga tinggi dudukan cincin
+      // (bevel mikro) yang hanya titik beratnya di bawah dulu tertinggal sebagai paku hitam di atas rel
+      const inScope = (x, y, z) => z > z0 && z < z1 && y > ys - yb && Math.hypot(x, y - ys) < 0.043; // runduk: lonceng objektif r 0,032
+      const vIn = (pos, v) => inScope(pos.getX(v), pos.getY(v), pos.getZ(v));
       for (const m of meshes) {
         const g = m.geometry, pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count, keep = [], sc = [];
         for (let i = 0; i + 2 < n; i += 3) {
           const a = idx ? idx.getX(i) : i, b = idx ? idx.getX(i + 1) : i + 1, c = idx ? idx.getX(i + 2) : i + 2;
           const cx = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3, cy = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3, cz = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
-          (cz > z0 && cz < z1 && cy > ys - 0.027 && Math.hypot(cx, cy - ys) < 0.043 ? sc : keep).push(a, b, c);
+          (inScope(cx, cy, cz) || vIn(pos, a) || vIn(pos, b) || vIn(pos, c) ? sc : keep).push(a, b, c);
         }
         if (!sc.length) continue;
         const mk = (ind) => { const ng = new THREE.BufferGeometry(); for (const k in g.attributes) ng.setAttribute(k, g.attributes[k]); ng.setIndex(ind); return ng; };
@@ -619,7 +625,8 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (mz) G.muzzle.position.copy(mz);
     if (sg) { SIGHT_Y[kind] = sg.y; G.sightX = sg.x; G.sightZ = sg.z + 0.1; }
     for (const [hn, pos] of [['fp_hand_r', [0.026, 0.004, 0.01]], ['fp_hand_l', gd ? [gd.x, gd.y, gd.z] : [0, -0.03, -0.25]]]) {
-      const h = glbNode(hn);
+      // tangan kiri: genggaman yang dipaskan ke pelindung tangan senjata ini (fp_hand_l_<jenis>; revolver = pistol), kalau ada
+      const h = (hn === 'fp_hand_l' && glbNode('fp_hand_l_' + (HAND_L_OF[kind] || kind))) || glbNode(hn);
       if (!h) continue;
       const c = h.clone(true);
       c.position.set(...pos);
@@ -861,7 +868,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   // titik kerja tangan kiri (ruang senjata), magasin cadangan yang dijatuhkan, slide pistol (dipisah dari model)
   const _bb = new THREE.Box3(), _m4 = new THREE.Matrix4(), _m4b = new THREE.Matrix4(), _v3 = new THREE.Vector3(), _q3 = new THREE.Quaternion(), ONE = new THREE.Vector3(1, 1, 1);
   function rigGun(G, kind) {
-    G.armL = !!(G.handL && G.handL.name === 'fp_hand_l');
+    G.armL = !!(G.handL && G.handL.name.startsWith('fp_hand_l'));
     G.armR = !!(G.handR && G.handR.name === 'fp_hand_r');
     const R = G.handRest.toArray();
     let mb = null;
@@ -1601,7 +1608,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         else { G.g.position.copy(pBase); G.g.quaternion.copy(qBase); }
         G.g.updateMatrix();
         if (rA || st.inspW > 0 || st.boltT) { // tangan beraksi: ujung lengan tetap di luar layar
-          if (G.armL) keepSleeve(G.handL, AX_L, G.g);
+          if (G.armL && (rA || st.inspW > 0)) keepSleeve(G.handL, AX_L, G.g); // kokang bolt: tangan kiri tetap menggenggam (tidak diputar)
           if (G.armR) { if (!st.boltT && !(rA && rA.K.ev.bolt)) G.handR.quaternion.identity(); keepSleeve(G.handR, AX_R, G.g); } // tangan kanan diam di pegangan: mulai dari pose asli tiap frame
         }
         G.g.visible = low < 0.98;
