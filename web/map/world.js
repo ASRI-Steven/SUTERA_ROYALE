@@ -347,6 +347,9 @@ async function upgradeTrees(scene, D, old) {
 // ditambahkan terpisah lewat map/context.js. Tanpa opts.game: diorama melayang (peta digital twin).
 // Melempar Error('WEBGL') kalau perangkat tidak mendukung WebGL.
 export function buildWorld(D, opts = {}) {
+  // OSM building=roof (jenis 5) setinggi menara = bagian menara yang salah tanda (gedung kembar 130 m), bukan kanopi:
+  // diperlakukan menara (jenis 2) oleh semua modul (render, collider, interior, loot)
+  for (let i = 0; i < D.buildings.k.length; i++) if (D.buildings.k[i] === 5 && D.buildings.h[i] * M >= 12) D.buildings.k[i] = 2;
   cleanTrees(D); // pohon tidak di jalan/gedung/air (collider memakai daftar yang sama)
   const progress = opts.progress || (() => {});
   const game = !!opts.game;
@@ -986,10 +989,11 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
   }
   // Jendela rumah yang sah (aturan yang sama di collide.js winOk & interiors.js): sel jendela utuh di dalam sisi dinding
   // (≥ 0,3 m dari sudut; vSeg = rentang u sisi) dan, di lantai dasar, tidak menumpuk pintu (± 0,2 m).
+  // Sisi buta (menempel gedung lain, vSeg.x = −5): tanpa jendela, tetapi pintunya tetap digambar/dilubangi.
   float wb0 = floor(vWuv.x / 3.6) * 3.6 + 1.08, wb1 = wb0 + 1.44;
-  bool hWinOk = !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
+  bool hWinOk = vSeg.x > -1.0 && !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
   float doorK = 0.0, dU0 = 0.0, dU1 = 1.0; // doorK = 1: piksel daun pintu tertutup (rumah belum dibuka)
-  if (vWuv.x >= 0.0 && (vWuv.z < 1.5 || abs(vWuv.z - 4.0) < 0.5) && vBid >= 0.0) {
+  if (vWuv.x >= 0.0 && vWuv.z < 4.5 && vBid >= 0.0) { // rumah, ruko/mal, menara & gedung publik (lobi)
     int bi = int(vBid + 0.5);
     ivec2 tc = ivec2((bi % ${OPEN_W / 2}) * 2, bi / ${OPEN_W / 2});
     vec4 o0 = texelFetch(uOpen, tc, 0);
@@ -1228,8 +1232,10 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       if (len < 0.05) continue;
       const n = inward ? [-dy / len, 0, -dx / len] : [dy / len, 0, dx / len];
       const win = windows && !(blind && blind.has(j));
-      const u0 = win ? per : windows ? -1000 : undefined, u1 = win ? per + len : windows ? -1000 : undefined; // −1000: dinding tanpa jendela
-      const sg = win ? [per, per + len] : null; // rentang sisi: shader meniadakan jendela yang terpotong sudut
+      const u0 = windows ? per : undefined, u1 = windows ? per + len : undefined;
+      // rentang sisi: shader meniadakan jendela yang terpotong sudut; sisi buta [−5, −5] = tanpa jendela (u tetap dipakai
+      // untuk pintu: pintu belakang di gang sempit tetap tergambar & berlubang)
+      const sg = win ? [per, per + len] : windows ? [-5, -5] : null;
       const A0 = V(a.x, a.y, z0, u0, z0, lowC, sg), B0 = V(b.x, b.y, z0, u1, z0, lowC, sg), B1 = V(b.x, b.y, z1, u1, z1, topC, sg), A1 = V(a.x, a.y, z1, u0, z1, topC, sg);
       emitTri(A0, B0, B1, n, topC, o);
       emitTri(A0, B1, A1, n, topC, o);
@@ -1276,7 +1282,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
   // Sisi rumah yang menempel gedung lain (rumah gandeng, jarak < 1,2 m): tidak diberi jendela.
   let BG = null;
   const BGC = 40, bgk = (x, y) => Math.floor(x / BGC) * 100003 + Math.floor(y / BGC);
-  function insideOther(x, y, self) {
+  function insideOther(x, y, self, minH = 0) { // minH: hanya gedung yang lebih tinggi dari ini (m)
     if (!BG) {
       BG = { cells: new Map(), box: [] };
       for (let k = 0; k < B.r.length; k++) {
@@ -1288,7 +1294,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       }
     }
     for (const k of BG.cells.get(bgk(x, y)) || []) {
-      if (k === self || B.k[k] === 5) continue;
+      if (k === self || B.k[k] === 5 || B.h[k] * M < minH) continue;
       const bb = BG.box[k];
       if (x < bb[0] || x > bb[2] || y < bb[1] || y > bb[3]) continue;
       const r = B.r[k], n = r.length >> 1;
@@ -1310,6 +1316,130 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     }
     return set;
   }
+  // ---------- Kanopi & atap yang bisa dipijak ----------
+  const segD = (x, y, a, b) => { const ex = b.x - a.x, ey = b.y - a.y, L = ex * ex + ey * ey, t = L > 0 ? Math.max(0, Math.min(1, ((x - a.x) * ex + (y - a.y) * ey) / L)) : 0; return Math.hypot(x - a.x - ex * t, y - a.y - ey * t); };
+  const edgeDist = (x, y, P) => { let m = Infinity; for (let j = 0; j < P.length; j++) m = Math.min(m, segD(x, y, P[j], P[(j + 1) % P.length])); return m; };
+  const longEdge = (P) => { let j0 = 0, L0 = 0; P.forEach((a, j) => { const L = a.distanceTo(P[(j + 1) % P.length]); if (L > L0) { L0 = L; j0 = j; } }); const a = P[j0], b = P[(j0 + 1) % P.length]; return { ux: (b.x - a.x) / L0, uy: (b.y - a.y) / L0 }; };
+  // kotak sejajar sumbu (ux, uy) berpusat (cx, cy), lebar w sepanjang u, dalam d
+  function obox(cx, cy, ux, uy, w, d, z0, z1, c, o, top = true) {
+    const vx = -uy, vy = ux, hw = w / 2, hd = d / 2;
+    const P = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(([a, b]) => new THREE.Vector2(cx + ux * a + vx * b, cy + uy * a + vy * b));
+    walls(P, z0, z1, o, c, c.clone().multiplyScalar(0.86), false, false);
+    if (top) cap(P, z1, c.clone().multiplyScalar(1.04), o);
+    return P;
+  }
+  function capDown(pts, z, c, o) { // tutup menghadap ke bawah (bawah pelat kanopi)
+    let tris;
+    try { tris = THREE.ShapeUtils.triangulateShape(pts.slice(), []); } catch (e) { return; }
+    for (const t of tris) emitTri(V(pts[t[0]].x, pts[t[0]].y, z), V(pts[t[1]].x, pts[t[1]].y, z), V(pts[t[2]].x, pts[t[2]].y, z), [0, -1, 0], c, o);
+  }
+  // Atap/kanopi terbuka (OSM building=roof: selasar, carport, garasi terbuka): pelat 22 cm di atas tiang, sisi terbuka.
+  // Tiang di sudut, sepanjang sisi (tiap ≤ 6 m), dan grid 8 m di tengah. Disimpan di D.canopy → collide.js (tiang padat,
+  // pelat menahan peluru & atasnya bisa dipijak).
+  function canopyRoof(i, pts, h, wallC, roofC, o, rec) {
+    const TH = 0.22, z0 = h - TH, cols = [], { ux, uy } = longEdge(pts), vx = -uy, vy = ux;
+    const ok = (x, y) => pip(x, y, pts) && edgeDist(x, y, pts) >= 0.3 && cols.every(([cx, cy]) => Math.hypot(cx - x, cy - y) > 2.4);
+    const inner = insetPoly(pts, 0.4);
+    for (let j = 0; j < inner.length; j++) {
+      const a = inner[j], b = inner[(j + 1) % inner.length], n = Math.max(1, Math.ceil(a.distanceTo(b) / 6));
+      for (let k = 0; k < n; k++) { const x = a.x + (b.x - a.x) * k / n, y = a.y + (b.y - a.y) * k / n; if (ok(x, y)) cols.push([x, y]); }
+    }
+    let s0 = Infinity, s1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const p of pts) { const s = p.x * ux + p.y * uy, v = p.x * vx + p.y * vy; s0 = Math.min(s0, s); s1 = Math.max(s1, s); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+    for (let s = s0 + 8; s < s1 - 3; s += 8) for (let v = v0 + 8; v < v1 - 3; v += 8) { const x = ux * s + vx * v, y = uy * s + vy * v; if (edgeDist(x, y, pts) > 2.5 && ok(x, y)) cols.push([x, y]); }
+    const colC = C('#d9d5cc'), fasciaC = wallC.clone().multiplyScalar(0.9);
+    for (const [x, y] of cols) obox(x, y, ux, uy, 0.3, 0.3, 0, z0, colC, o, false);
+    walls(pts, z0, h, o, fasciaC, fasciaC.clone().multiplyScalar(0.9), false, false); // tepi pelat
+    cap(pts, h, roofC, o);
+    capDown(pts, z0, C('#dcd7cd'), o); // bawah pelat terang (plafon selasar)
+    ring(pts, h, o);
+    if (rec) (D.canopy || (D.canopy = new Map())).set(i, { cols, ux, uy, w: 0.3, z0, h });
+  }
+  // Atap menara & gedung publik (dinaiki lift dari lobi, interiors.js): lantai atap di balik parapet 0,9 m, ruang mesin
+  // lift (penthouse) berpintu lift, tandon air di atasnya, unit AC, helipad di menara tertinggi. Disimpan di D.roofs →
+  // collide.js (lantai atap bisa dipijak, parapet, penthouse & AC padat), interiors.js (titik lift), loot.js.
+  let tallest = -1;
+  { let hm = 0; for (let k = 0; k < B.r.length; k++) if (B.k[k] === 2 && B.h[k] > hm) { hm = B.h[k]; tallest = k; } }
+  function roofTop(i, inset, h, wallC, o, rec) {
+    const z = h - 0.9, { ux, uy } = longEdge(inset), vx = -uy, vy = ux;
+    let s0 = Infinity, s1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const p of inset) { const s = p.x * ux + p.y * uy, v = p.x * vx + p.y * vy; s0 = Math.min(s0, s); s1 = Math.max(s1, s); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+    const S = s1 - s0, Vv = v1 - v0, at = (s, v) => [ux * s + vx * v, uy * s + vy * v];
+    const rectPts = (cx, cy, w, d) => { const r = []; for (const [a, b] of [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) r.push([cx + ux * a * w / 2 + vx * b * d / 2, cy + uy * a * w / 2 + vy * b * d / 2]); return r; };
+    // ruang bebas di titik atap: jarak ke tepi atap; −1 di luar atap atau di dalam gedung lain (menara yang berdiri di atas podium ini)
+    const clear = (x, y) => {
+      if (!pip(x, y, inset) || insideOther(x, y, i, z)) return -1;
+      let c = edgeDist(x, y, inset);
+      for (const [ox, oy] of [[1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6]]) if (insideOther(x + ox, y + oy, i, z)) c = Math.min(c, 0.8);
+      return c;
+    };
+    // helipad (menara tertinggi): lingkaran di titik terjauh dari tepi atap
+    let heli = null;
+    const step = Math.max(0.75, Math.min(S, Vv) / 36);
+    if (i === tallest) {
+      let best = 0, bp = null;
+      for (let s = s0 + 1; s < s1; s += step) for (let v = v0 + 1; v < v1; v += step) { const [x, y] = at(s, v), c = clear(x, y); if (c > best) { best = c; bp = [x, y]; } }
+      if (bp && best >= 8) heli = { x: bp[0], y: bp[1], r: Math.min(7, best - 1.5) };
+    }
+    // penthouse: sebesar ±30 % atap, sejauh mungkin dari tepi (dan dari helipad); mengecil sampai muat dengan ruang ≥ 2,2 m
+    let w = Math.min(12, Math.max(5, S * 0.3)), d = Math.min(8, Math.max(4, Vv * 0.3)), pent = null;
+    for (let tries = 0; tries < 8 && !pent; tries++, w *= 0.85, d *= 0.85) {
+      let best = -1;
+      for (let s = s0 + 1; s < s1; s += step) for (let v = v0 + 1; v < v1; v += step) {
+        const [x, y] = at(s, v);
+        if (heli && Math.hypot(x - heli.x, y - heli.y) < heli.r + 1.2 + Math.hypot(w, d) / 2) continue;
+        let m = Infinity;
+        for (const q of rectPts(x, y, w, d)) { m = Math.min(m, clear(q[0], q[1])); if (m < 2.2) break; }
+        if (m >= 2.2 && clear(x, y) > best) { best = clear(x, y); pent = { x, y, w, d }; }
+      }
+    }
+    if (!pent) return null;
+    const ch = Math.min(5.5, Math.max(3.2, h * 0.035)), pentC = wallC.clone().lerp(C('#d6d3cc'), 0.6);
+    pent = { ...pent, ux, uy, h: z + ch };
+    obox(pent.x, pent.y, ux, uy, pent.w, pent.d, z, z + ch, pentC, o);
+    // pintu lift di sisi penthouse yang paling lapang (titik muncul pemain di atap = 1,5 m di depannya)
+    let door = null, dBest = -Infinity;
+    for (const [a, b] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const nx = ux * a + vx * b, ny = uy * a + vy * b, half = a ? pent.w / 2 : pent.d / 2;
+      const mx = pent.x + nx * half, my = pent.y + ny * half, c = clear(mx + nx * 1.6, my + ny * 1.6) - (heli && Math.hypot(mx + nx * 1.6 - heli.x, my + ny * 1.6 - heli.y) < heli.r ? 50 : 0);
+      if (c > dBest) { dBest = c; door = { x: mx, y: my, nx, ny, w: 1.3 }; }
+    }
+    const steel = C('#8d939b'), frameC = C('#4a4e56');
+    { const tx = -door.ny, ty = door.nx; obox(door.x + door.nx * 0.04, door.y + door.ny * 0.04, tx, ty, door.w + 0.24, 0.08, z, z + 2.42, frameC, o); obox(door.x + door.nx * 0.09, door.y + door.ny * 0.09, tx, ty, door.w, 0.04, z, z + 2.25, steel, o); }
+    // tandon air di atas penthouse
+    const tank = { r: Math.min(1.1, pent.d / 2 - 0.4), h: 1.9 };
+    { const r = tank.r, cx = pent.x - ux * (pent.w / 2 - r - 0.5), cy = pent.y - uy * (pent.w / 2 - r - 0.5), ring8 = [];
+      tank.x = cx; tank.y = cy;
+      for (let k = 0; k < 10; k++) { const a = k / 10 * Math.PI * 2; ring8.push(new THREE.Vector2(cx + Math.cos(a) * r, cy + Math.sin(a) * r)); }
+      walls(ring8, z + ch, z + ch + 1.9, o, C('#5d7fa6'), C('#4d6b8e'), false, false); cap(ring8, z + ch + 1.9, C('#6b8db3'), o); }
+    // unit AC di atap (perlindungan untuk penembak di atap)
+    const units = [], acC = C('#c9cad3');
+    for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = ux * a + vx * b, ny = uy * a + vy * b;
+      if (Math.abs(nx - door.nx) + Math.abs(ny - door.ny) < 0.01) continue;
+      const half = a ? pent.w / 2 : pent.d / 2, tx = -ny, ty = nx;
+      for (const off of [-1.2, 1.2]) {
+        const x = pent.x + nx * (half + 1.6) + tx * off, y = pent.y + ny * (half + 1.6) + ty * off;
+        if (clear(x, y) < 1.3 || (heli && Math.hypot(x - heli.x, y - heli.y) < heli.r + 1.5)) continue;
+        obox(x, y, tx, ty, 1.1, 0.8, z, z + 0.95, acC, o);
+        units.push({ x, y, ux: tx, uy: ty, w: 1.1, d: 0.8, h: 0.95 });
+      }
+    }
+    if (heli) { // helipad: cincin kuning + huruf H putih (dicat di lantai atap)
+      const paint = (P, c) => { for (let k = 1; k + 1 < P.length; k++) emitTri(V(P[0][0], P[0][1], z + 0.03), V(P[k][0], P[k][1], z + 0.03), V(P[k + 1][0], P[k + 1][1], z + 0.03), null, c, o); };
+      const yel = C('#e8b62c'), wht = C('#f2f1ec'), N = 40;
+      for (let k = 0; k < N; k++) {
+        const a0 = k / N * Math.PI * 2, a1 = (k + 1) / N * Math.PI * 2, r0 = heli.r - 0.45, r1 = heli.r;
+        paint([[heli.x + Math.cos(a0) * r0, heli.y + Math.sin(a0) * r0], [heli.x + Math.cos(a0) * r1, heli.y + Math.sin(a0) * r1], [heli.x + Math.cos(a1) * r1, heli.y + Math.sin(a1) * r1], [heli.x + Math.cos(a1) * r0, heli.y + Math.sin(a1) * r0]], yel);
+      }
+      const hs = heli.r * 0.42, at2 = (s, v) => [heli.x + ux * s + vx * v, heli.y + uy * s + vy * v];
+      const bar = (s0b, s1b, v0b, v1b) => paint([at2(s0b, v0b), at2(s1b, v0b), at2(s1b, v1b), at2(s0b, v1b)], wht);
+      bar(-hs, -hs + 0.7, -hs * 1.2, hs * 1.2); bar(hs - 0.7, hs, -hs * 1.2, hs * 1.2); bar(-hs, hs, -0.35, 0.35);
+    }
+    const out = { z, top: h, inset: inset.map((p) => [p.x, p.y]), pent, door, units, heli, tank };
+    if (rec) (D.roofs || (D.roofs = new Map())).set(i, out);
+    return out;
+  }
   function addBuilding(i, o, override) {
     const pts = V2(B.r[i]);
     if (pts.length < 3) return;
@@ -1322,6 +1452,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     const lowC = wallC.clone().multiplyScalar(0.78);
     o.kind = kind === 1 && area > 3000 ? 4 : kind; // 4 = mal / toko besar (gaya fasad sendiri di shader)
     o.cur = i;
+    if (kind === 5) { canopyRoof(i, pts, h, wallC, roofC, o, !override); return; } // atap terbuka bertiang (bukan prisma padat)
     const blind = kind === 0 ? blindEdges(i, pts) : null;
     if (blind && blind.size) (D.blind || (D.blind = new Map())).set(i, blind); // dipakai interiors.js & collide.js (tanpa lubang jendela)
     walls(pts, 0, h, o, wallC, lowC, false, true, blind);
@@ -1350,7 +1481,8 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     ring(pts, h, o);
     if (h > 10 && pts.length <= 12) for (const p of pts) o.lines.push(p.x, 0, -p.y, p.x, h, -p.y);
     const cx = inset.reduce((s, p) => s + p.x, 0) / inset.length, cy = inset.reduce((s, p) => s + p.y, 0) / inset.length;
-    if (kind === 2) { // mahkota gedung tinggi
+    if ((kind === 2 || kind === 3) && roofTop(i, inset, h, wallC, o, !override)) { /* atap menara/gedung publik bisa dinaiki */ }
+    else if (kind === 2) { // mahkota gedung tinggi
       const crown = inset.map((p) => new THREE.Vector2(cx + (p.x - cx) * 0.78, cy + (p.y - cy) * 0.78));
       const ch = THREE.MathUtils.clamp(h * 0.06, 3, 8);
       walls(crown, h - 0.9, h - 0.9 + ch, o, wallC, wallC.clone().multiplyScalar(0.88), false, true);
@@ -1391,7 +1523,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       sh.uniforms.uOpen = openU;
       sh.vertexShader = 'attribute vec3 wuv;\nattribute float bid;\nattribute vec2 wseg;\nvarying vec3 vWuv;\nvarying float vBid;\nvarying vec2 vSeg;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vWuv = wuv;\n  vBid = bid;\n  vSeg = wseg;');
       sh.fragmentShader = 'uniform highp sampler2D uOpen;\nvarying vec3 vWuv;\nvarying float vBid;\nvarying vec2 vSeg;\n' + sh.fragmentShader.replace('void main() {', `void main() {
-  if (vWuv.x >= 0.0 && (vWuv.z < 1.5 || abs(vWuv.z - 4.0) < 0.5) && vBid >= 0.0) {
+  if (vWuv.x >= 0.0 && vWuv.z < 4.5 && vBid >= 0.0) {
     int bi = int(vBid + 0.5);
     ivec2 tc = ivec2((bi % ${OPEN_W / 2}) * 2, bi / ${OPEN_W / 2});
     vec4 o0 = texelFetch(uOpen, tc, 0);
@@ -1401,7 +1533,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       if (o1.b > 0.0) { float bf = mod(vWuv.x, o1.b); if ((inA || inB) && bf >= o1.a && bf <= o1.b - o1.a) discard; }
       else {
         float wb0 = floor(vWuv.x / 3.6) * 3.6 + 1.08, wb1 = wb0 + 1.44, hfx = fract(vWuv.x / 3.6), hfy = fract(vWuv.y / 3.3);
-        bool ok = !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
+        bool ok = vSeg.x > -1.0 && !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
         if (vWuv.y < 3.3 && ((wb0 < o0.b + 0.2 && wb1 > o0.g - 0.2) || (wb0 < o1.g + 0.2 && wb1 > o1.r - 0.2))) ok = false;
         if ((vWuv.y < 2.2 && (inA || inB)) || (ok && vWuv.y > 0.8 && hfy >= 0.36 && hfy <= 0.78 && hfx >= 0.3 && hfx <= 0.7)) discard;
       }
