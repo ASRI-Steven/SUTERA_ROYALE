@@ -343,6 +343,24 @@ export function createCollider(D, inArea, homes) {
     }
     return null;
   }
+  // Badan rebah (tiarap / tumbang) ±0,9 m sepanjang arah hadap (fx, fy satuan, koordinat data): kepala, dada, dan kaki
+  // didorong keluar dinding/perabot/pohon seperti lingkaran badan, dan seluruh badan ikut bergeser (kaku). Dulu hanya
+  // lingkaran di tengah badan → kepala menembus tembok dan bisa ditembak dari balik dinding. Titik & jari-jari mengikuti
+  // bola kena tembak tiarap di main.js (SPH_PRONE). Tidak muat (lorong sempit, badan melintang) → posisi semula.
+  const PRONE_PTS = [[0.88, 0.17], [0.45, 0.24], [-0.82, 0.15]];
+  function fitProne(x, y, fx, fy, ay = 0) {
+    const x0 = x, y0 = y;
+    for (let it = 0; it < 3; it++) {
+      let moved = false;
+      for (let k = 0; k < PRONE_PTS.length; k++) {
+        const d = PRONE_PTS[k][0], r = PRONE_PTS[k][1], px = x + fx * d, py = y + fy * d, q = resolve(px, py, r, false, ay);
+        if (q.x !== px || q.y !== py) { x += q.x - px; y += q.y - py; moved = true; }
+      }
+      if (!moved) break;
+    }
+    if ((x !== x0 || y !== y0) && (blocked(x, y, 0.3, ay) || Math.hypot(x - x0, y - y0) > 1.2)) return { x: x0, y: y0 };
+    return { x, y };
+  }
   function viewSpot(sp, tx, ty) { // mundur beberapa meter dari gedung supaya fasadnya kelihatan
     const dx = sp[0] - tx, dy = sp[1] - ty, l = Math.hypot(dx, dy);
     if (l < 1) return sp;
@@ -526,5 +544,5 @@ export function createCollider(D, inArea, homes) {
     }
     return -1;
   }
-  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, lastTouch, inArea, addObstacles };
+  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, lastTouch, inArea, addObstacles, fitProne };
 }
