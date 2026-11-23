@@ -43,12 +43,16 @@ export function createNav(col, homes = null) {
       const ox = e.a[0] + e.nx * 0.1, oy = e.a[1] + e.ny * 0.1;
       addGap(0, ox + e.ux * d.s0, oy + e.uy * d.s0, ox + e.ux * d.s1, oy + e.uy * d.s1);
     }
-    for (const p of H.parts || []) if (p.g1 > p.g0 && p.len > 0) {
-      const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len;
-      const x0 = p.a[0] + ux * p.g0, y0 = p.a[1] + uy * p.g0, x1 = p.a[0] + ux * p.g1, y1 = p.a[1] + uy * p.g1;
-      addGap(0, x0, y0, x1, y1);
-      if (H.up) addGap(1, x0, y0, x1, y1); // lantai atas memakai sekat yang sama
-    }
+    // celah berambang di sekat. Lantai atas memakai sekatnya sendiri bila ada (ruko 2 lantai: H.up.parts berambang,
+    // sekat lantai dasarnya penuh), selain itu sekat yang sama dengan lantai dasar.
+    const gapsOf = (parts, lvi) => {
+      for (const p of parts || []) if (p.g1 > p.g0 && p.len > 0) {
+        const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len;
+        addGap(lvi, p.a[0] + ux * p.g0, p.a[1] + uy * p.g0, p.a[0] + ux * p.g1, p.a[1] + uy * p.g1);
+      }
+    };
+    gapsOf(H.parts, 0);
+    if (H.up) gapsOf(H.up.parts || H.parts, 1);
   });
   const GT = [0.5, 0.45, 0.55, 0.4, 0.6, 0.35, 0.65, 0.3, 0.7, 0.25, 0.75, 0.2, 0.8, 0.15, 0.85, 0.1, 0.9]; // dari tengah celah ke tepi
   let rx = 0, ry = 0, rg = false, rnx = 0, rny = 0; // rg: titik wakil = titik celah (uji terhalang memakai RG), (rnx, rny) normal celah

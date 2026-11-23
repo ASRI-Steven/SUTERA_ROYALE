@@ -1504,6 +1504,7 @@ export function createBots(ctx, n = 50) {
         let best = null, bs = -1;
         const armed = b.weapons[0] || b.weapons[1], gear = geared(b), minV = peek ? 7.5 : a.mode === 'loot' ? 0 : gear ? 4.5 : now > a.lootEnd ? 2 : 0;
         loot.near(x, y, L ? 30 : unarmed ? 110 : a.mode === 'loot' ? 70 : 30, (it) => { // belum bersenjata: cari lebih jauh, sesi jarah tidak berakhir sampai dapat senjata
+          if (it.z > 0.5 && !homeUp(it.x, it.y, it.z) && !roofLift(it.x, it.y, it.z)) return; // lantai kantor menara (lift pilih lantai, hanya pemain) / kanopi: tidak terjangkau bot
           if (it.claim && it.claim !== b && !(it.claim.roof && LIFTS.size)) return; // barang atap (loot.js menandainya 'atap'): bot kini bisa naik lift
           const v = itemValue(b, it);
           if (v <= minV || skipped(b, it, now)) return;

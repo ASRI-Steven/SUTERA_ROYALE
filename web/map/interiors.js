@@ -297,7 +297,7 @@ function planHouse(i, pts, area, h, { roadDist, occupied, neighborOcc }) {
   const types = roomTypes(H);
   H.rooms.forEach((r, k) => { r.type = types[k]; });
   const li = types.indexOf('living');
-  if (h >= 6.2) { const occ = neighborOcc(i); for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, occ); } } // tangga dulu (prioritas), kamar mandi menyesuaikan
+  if (h >= 6.2 && !NO_UP.has(i)) { const occ = neighborOcc(i); for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, occ); } } // tangga dulu (prioritas), kamar mandi menyesuaikan
   planBath(H, types);
   planPorch(H, d1, roadDist, occupied);
   H.furn = furnish(H, H.rooms, types, H.avoid || [], 0);
@@ -376,6 +376,9 @@ function roomTypes(H) {
 // lantai 2: tangga lurus menempel dinding luar di ruang tamu (pendekatan & pendaratan di ruang yang sama, jauh dari pintu
 // dan celah sekat). Pelat lantai 2 = denah dikurangi lubang tangga (3 potong yang pas dengan dinding).
 // occ(x, y): titik di tapak gedung lain (dinding tetangga yang menjorok ke dalam rumah ini menutup jalur tangga)
+// Rumah non-persegi yang lantai atasnya < 85 % terjangkau dari bordes tangga (mis. kamar mandi menutup bordes) tetap satu
+// lantai. Daftar dari .wt/_tools/audit-lantai.mjs (23 Nov) dan terikat pada data/alsut-map.json: audit ulang kalau peta dibangun ulang.
+const NO_UP = new Set([2464, 2466, 2488, 4049, 5295, 5447, 5448, 5449, 5452, 5454, 5455, 5462]);
 function planUpper(H, li, occ = null) {
   const rect = isRect(H.edges, 0.1); // segi empat: pelat 3 potong pas dinding; denah lain: pelat = denah dikurangi lubang tangga
   if (H.h < 6.2 || li < 0) return;
@@ -499,6 +502,11 @@ function planHallUpper(H, L, other) {
       if (d <= best || other(c)) continue;
       let good = true;
       for (const [a, b] of CORN) { const q = W(s + a * aw / 2, v + b * ad / 2); if (!ok(q, 5)) { good = false; break; } }
+      // pendaratan tangga (di luar ujung atrium, lajur tangga) harus lapang: bukan dinding / tapak gedung lain (menara di atas podium)
+      if (good) good = [0.4, 1.4, 2.8].every((ds2) => [-0.9, 0, 0.9].every((dv2) => {
+        const q = W(s + aw / 2 + ds2, v - ad / 2 + T + SW / 2 + dv2);
+        return ok(q, 0.8) && !other([q[0] + 0.6, q[1]]) && !other([q[0] - 0.6, q[1]]) && !other([q[0], q[1] + 0.6]) && !other([q[0], q[1] - 0.6]);
+      }));
       if (good) { best = d; A = { s, v, aw, ad }; }
     }
   }
@@ -551,7 +559,7 @@ function planHallUpper(H, L, other) {
   }
   H.up = {
     floor: RISE, ceil: upC, plate: plateMinusHole(H.pts, fa, 0, A.aw, 0, A.ad), rail, stair: S, types: H.rooms.map(() => 'hall'), parts: [],
-    avoid: stairAvoid(S), furn, lights, render: [{ contour: H.pts, hole }], atrium: { hole, f: fa, aw: A.aw, ad: A.ad },
+    avoid: stairAvoid(S), furn: furn.filter((f) => !other([f.x, f.y])), lights, render: [{ contour: H.pts, hole }], atrium: { hole, f: fa, aw: A.aw, ad: A.ad }, // perabot di tapak gedung lain (menara di atas podium) dibuang
   };
 }
 function planUnits(H, r, occ = null) {
@@ -1464,8 +1472,14 @@ export function createInteriors(scene, W, homes, col = null) {
   }
   // ---------- Lantai menara (dicapai dengan lift): satu lantai terbuka pada satu waktu = lantai tempat kamera berada ----------
   const towers = list.filter((H) => H.fl);
-  const towerAt = (x, y) => {
-    for (const H of towers) { const k = H.k; if (Math.hypot(cen[k][0] - x, cen[k][1] - y) <= rad[k] && pip(x, y, H.pts)) return H; }
+  // slot poligon lapisan dinamis dipesan di muka: nav.js mengosongkan seluruh indeks & cache-nya tiap kali col.polys.length
+  // berubah, sedangkan perabot lantai menara (addFurnLayer, ≤ 3 poligon per perabot) dipasang & dilepas tiap ganti lantai
+  if (col && towers.length) col.removeLayer(col.addLayer(Array.from({ length: Math.max(...towers.map((T) => T.fl.furn.length)) * 3 + 8 }, () => ({ x: 0, y: 0, w: 0.1, d: 0.1, h: 0.1 }))));
+  // menara yang memuat (x, y) DAN punya lantai kantor di ketinggian kaki z → [menara, indeks lantai] atau null.
+  // Menara di atas podium (mis. #5442 di atas #966) bertumpuk tapaknya; menara pertama yang memuat titik belum tentu pemilik lantai itu.
+  const lvlOf = (T, z) => T.floors.indexOf(Math.round(Math.floor((z + 0.5) / T.FH) * T.FH * 1000) / 1000);
+  const towerAt = (x, y, z) => {
+    for (const H of towers) { const k = H.k; if (Math.hypot(cen[k][0] - x, cen[k][1] - y) <= rad[k] && pip(x, y, H.pts)) { const li = lvlOf(H, z); if (li >= 0) return [H, li]; } }
     return null;
   };
   const flo = { T: null, k: 0, ids: null, shown: false };
@@ -1507,16 +1521,21 @@ export function createInteriors(scene, W, homes, col = null) {
       }
       // lantai menara tempat pemain berdiri (tanpa foot: kamera, mata ±1,6 m di atas pelat)
       const fx = foot ? foot.x : x, fy = foot ? -foot.z : y, fz = foot ? foot.y : cam.y - 1.6;
-      const T = towers.length ? towerAt(fx, fy) : null, li = T ? T.floors.indexOf(Math.round(Math.floor((fz + 0.5) / T.FH) * T.FH * 1000) / 1000) : -1, k = li + 1; // k = nomor lantai di daftar T.floors (1…)
+      const hit = towers.length ? towerAt(fx, fy, fz) : null, T = hit ? hit[0] : null, k = hit ? hit[1] + 1 : 0; // k = nomor lantai di daftar T.floors (1…)
       if ((k ? T : null) !== flo.T || k !== flo.k) { closeFloor(); if (k) { flo.T = T; flo.k = k; } }
       const t0 = performance.now();
-      if (flo.T && !flo.shown) { // templat lantai didahulukan (terbangun selama layar lift gelap)
-        if (!flo.T.flMesh && !(flJob && flJob.T === flo.T)) flJob = { T: flo.T, it: buildGen(flo.T.fl) };
-        while (flJob && performance.now() - t0 < BUILD_MS) { const r = flJob.it.next(); if (r.done) { flJob.T.flMesh = r.value; flJob = null; } }
-        if (flo.T.flMesh) showFloor();
-      }
+      if (flo.T && !flo.shown && flo.T.flMesh) showFloor(); // templat sudah ada: langsung dipasang
+      // Satu generator pada satu waktu: penampung verteks VP/VN/VC/VS + vn dipakai bersama dan buildGen mengosongkannya saat
+      // mulai, jadi templat lantai yang dimulai di tengah cicilan gedung lain menghapus sebagian dinding gedung itu.
+      // Urutan: selesaikan yang sedang berjalan → templat lantai menara (terbangun selama layar lift gelap) → antrean gedung.
       while (performance.now() - t0 < BUILD_MS) {
+        if (flJob) {
+          const r = flJob.it.next();
+          if (r.done) { const T = flJob.T; T.flMesh = r.value; flJob = null; if (flo.T === T && !flo.shown) showFloor(); }
+          continue;
+        }
         if (!job) {
+          if (flo.T && !flo.shown && !flo.T.flMesh) { flJob = { T: flo.T, it: buildGen(flo.T.fl) }; continue; }
           if (!queue.length) break;
           const H = list[queue.shift()];
           if (open.has(H.i)) continue;

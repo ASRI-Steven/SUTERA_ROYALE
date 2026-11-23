@@ -734,8 +734,14 @@ export function createPlayer(ctx) {
   function closeLiftPick() { st.liftPick = null; drawPick(); }
   function liftPickKey(e) {
     const P = st.liftPick, n = P.L.floors.length + 1;
-    if (e.code === 'KeyW' || e.code === 'ArrowUp') { e.preventDefault(); P.sel = Math.min(n, P.sel + 1); drawPick(); }
-    else if (e.code === 'KeyS' || e.code === 'ArrowDown') { e.preventDefault(); P.sel = Math.max(0, P.sel - 1); drawPick(); }
+    const ud = e.code === 'KeyW' || e.code === 'ArrowUp' ? 1 : e.code === 'KeyS' || e.code === 'ArrowDown' ? -1 : 0;
+    if (ud) { // W/S yang masih ditahan dari berjalan ke pintu lift (ulangan otomatis) diabaikan sampai ditekan baru; sesudahnya tahan = gulir cepat
+      e.preventDefault();
+      if (e.repeat && !P.fresh) return;
+      P.fresh = true;
+      P.sel = Math.max(0, Math.min(n, P.sel + ud));
+      drawPick();
+    }
     else if (!e.repeat && (e.code === 'KeyF' || e.code === 'KeyE' || e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); if (P.sel === P.cur) closeLiftPick(); else { const to = P.sel; closeLiftPick(); startLift(P.L, P.cur, to); } }
     else if (e.code === 'Escape' || e.code === 'KeyQ' || e.code === 'Backspace') { e.preventDefault(); closeLiftPick(); if (e.code === 'Escape') { escRelock = true; st.wantLock = true; st.escAt = performance.now(); relockLoop(); } }
   }
