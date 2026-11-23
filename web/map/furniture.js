@@ -693,6 +693,7 @@ export function createFurniture(W, A, col) {
   const last = new THREE.Vector3(Infinity, 0, 0), fwd = new THREE.Vector3(), lastFwd = new THREE.Vector3();
   const PM = new THREE.Matrix4(), frustum = new THREE.Frustum(), sph = new THREE.Sphere();
   let lastK = 1, dirty = true, warm = 0;
+  let rA = R0, rB = R1; // radius LOD0 & batas model (m, × zoom); setDetail(true) = grafik Hemat: LOD1 saja, 20 m
   // Pemanasan: semua mesh tampil (0 instans) di beberapa frame pertama — main.js memanggil update() sejak menu, jadi program
   // shader dikompilasi dengan cahaya adegan sungguhan sebelum interior pertama. Shader gagal → perabot 3D mati, kotak lama dipakai.
   function warmCheck() {
@@ -719,7 +720,7 @@ export function createFurniture(W, A, col) {
     cam.updateMatrixWorld();
     PM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     frustum.setFromProjectionMatrix(PM);
-    const r0 = R0 * k, r1 = R1 * k, r02 = r0 * r0, r12 = r1 * r1;
+    const r0 = rA * k, r1 = rB * k, r02 = r0 * r0, r12 = r1 * r1;
     const inB = col ? col.inBuilding(p.x, -p.z) : -1;
     for (const M of meshes) M.n = 0;
     let near = 0;
@@ -764,6 +765,8 @@ export function createFurniture(W, A, col) {
     has: (kind) => byKind.has(kind),
     get disabled() { return disabled; },
     begin, commit, show, hide,
+    // grafik Hemat (main.js applyStep): model LOD1 saja sampai 20 m, selebihnya kotak proksi — model dekat (LOD0) paling mahal di GPU
+    setDetail(low) { const a = low ? 0 : R0, b = low ? 20 : R1; if (a !== rA || b !== rB) { rA = a; rB = b; dirty = true; } },
     drop: (rec) => hide(rec), // rekaman dilepas (interior ditutup / templat dibuang); null boleh
     // tiap frame sebelum scene.updateMatrixWorld() (main.js), juga di menu (pemanasan shader)
     update,

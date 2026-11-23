@@ -850,7 +850,7 @@ function start(D, realAssets, envAssets, furnAssets) {
   // sesi lalu sempat turun karena mesin sedang sibuk, kualitas tidak tertahan rendah; pengatur turun lagi dalam ±1,5 dtk bila perlu
   const FLOOR0 = post ? STEPS.reduce((a, st, i) => (st[0] <= 1 ? i : a), 0) : Math.min(STEPS.length - 1, 2);
   try { const s = (localStorage.getItem('royale.gfx2') || '').split(','); if (s.length === 2 && +s[0] >= 0 && +s[0] < STEPS.length) { gfx0 = Math.min(+s[0], FLOOR0); half0 = false; } } catch (e) { /* abaikan */ }
-  const applyStep = (i) => { if (post) post.setTier(STEPS[i][0]); if (renderer.getPixelRatio() !== STEPS[i][1]) renderer.setPixelRatio(STEPS[i][1]); };
+  const applyStep = (i) => { if (post) post.setTier(STEPS[i][0]); if (renderer.getPixelRatio() !== STEPS[i][1]) renderer.setPixelRatio(STEPS[i][1]); if (furniture) furniture.setDetail(post && TIERS[STEPS[i][0]].id === 'off'); }; // Hemat: perabot 3D LOD1 saja
   const gov = createGovernor({
     n: STEPS.length, start: gfx0, half: half0, ri: refreshProbe.stop(), apply: applyStep,
     floor: post ? STEPS.reduce((a, st, i) => (st[0] <= 1 ? i : a), 0) : Math.min(STEPS.length - 1, 2), // demi laju layar penuh paling rendah "Tinggi"; di bawah itu lebih baik setengah laju

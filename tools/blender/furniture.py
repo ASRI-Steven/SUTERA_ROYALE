@@ -2411,6 +2411,103 @@ def m_glassdoor_std(lod):
     return m, {}
 
 
+# ================================================================ KANTOR (lantai menara, templat per lantai)
+def office_chair_lo(m, x, y, rot=0.0):
+    """Kursi kantor LOD1: kaki bintang pipih, tiang, dudukan & sandaran kotak (±40 segitiga)."""
+    M0 = T(x, y, 0) @ Rz(rot)
+    sub = Mesh()
+    box(sub, 'plastic_black', (0, 0, 0.04), (0.54, 0.06, 0.04))
+    box(sub, 'plastic_black', (0, 0, 0.04), (0.06, 0.54, 0.04))
+    cyl(sub, 'chrome', 0, 0, 0.06, 0.022, 0.022, 0.34, 4)
+    box(sub, 'tfab_main', (0, 0, 0.46), (0.46, 0.46, 0.08))
+    box(sub, 'tfab_main', (0, 0.24, 0.78), (0.44, 0.07, 0.48))
+    merge_mesh(m, sub, M0)
+
+
+def kursi_kantor(m, x, y, lod, rot=0.0):
+    if lod == 0:
+        office_chair(m, x, y, lod, rot=rot)
+    else:
+        office_chair_lo(m, x, y, rot=rot)
+
+
+def monitor(m, x, y, h, lod, face='-y'):
+    """Monitor di atas meja (alas, leher, badan, layar menyala atlas). face: arah layar menghadap (±y)."""
+    s = -1 if face == '-y' else 1
+    box(m, 'metal_black', (x, y, h + 0.008), (0.22, 0.16, 0.016), bevel=0.004 if lod == 0 else 0)
+    box(m, 'metal_black', (x, y - s * 0.02, h + 0.15), (0.045, 0.03, 0.27))
+    box(m, 'plastic_black', (x, y + s * 0.02, h + 0.31), (0.6, 0.03, 0.36), bevel=0.006 if lod == 0 else 0)
+    yy = y + s * 0.036
+    if s < 0:  # menghadap −y (urutan titik sama dengan monitor resepsionis)
+        pts = [(x + 0.28, yy, h + 0.145), (x - 0.28, yy, h + 0.145), (x - 0.28, yy, h + 0.475), (x + 0.28, yy, h + 0.475)]
+    else:
+        pts = [(x - 0.28, yy, h + 0.145), (x + 0.28, yy, h + 0.145), (x + 0.28, yy, h + 0.475), (x - 0.28, yy, h + 0.475)]
+    quad(m, 'atlas_misce', pts, uvs=[(MISC['laptop'] + 0.01, 0.01), (MISC['laptop'] + 0.99, 0.01), (MISC['laptop'] + 0.99, 0.99), (MISC['laptop'] + 0.01, 0.99)])
+
+
+# ---------- meja kantor: daun laminasi, panel samping & depan (+y), laci dorong, monitor menghadap kursi; kursi di −y
+#            (kotak tabrakan perabot meluas sampai −(d/2 + 0,6) di sisi kursi, collide.js furnAdd)
+@model('officedesk_std', 'officedesk', (1.4, 0.7, 0.75), ctx=('tower',), ao=0.45, wall=None, group='office')
+def m_officedesk_std(lod):
+    m = Mesh()
+    w, d, h = 1.4, 0.7, 0.75
+    rng = random.Random(91)
+    bev = 0.005 if lod == 0 else 0
+    box(m, 'wood_white', (0, 0, h - 0.0125), (w, d, 0.025), bevel=bev, seg=2)
+    for sx in (-1, 1):
+        box(m, 'paint_grey', (sx * (w / 2 - 0.015), 0, (h - 0.025) / 2), (0.03, d - 0.02, h - 0.025))
+    box(m, 'paint_grey', (0, d / 2 - 0.03, 0.3 + (h - 0.325) / 2), (w - 0.06, 0.018, h - 0.325))  # panel depan (sisi monitor)
+    # laci dorong (beroda) di bawah sisi kanan
+    box(m, 'paint_grey', (0.42, 0.04, 0.3), (0.4, 0.5, 0.54), bevel=bev)
+    if lod == 0:
+        for k, z in enumerate((0.47, 0.32, 0.14)):
+            box(m, 'paint_white', (0.42, -0.215, z), (0.37, 0.012, 0.13 if k < 2 else 0.2), bevel=0.002)
+            handle(m, 'steel', 0.42, -0.222, z + (0.04 if k < 2 else 0.07), 0.12, 'x', lod, out=0.012)
+    monitor(m, 0.0, d / 2 - 0.16, h, lod, face='-y')
+    box(m, 'plastic_black', (0.0, -0.1, h + 0.011), (0.44, 0.14, 0.022), bevel=0.004 if lod == 0 else 0)  # papan ketik
+    if lod == 0:
+        box(m, 'plastic_black', (0.32, -0.1, h + 0.013), (0.065, 0.105, 0.026), bevel=0.01, seg=2)  # tetikus
+        for k in range(3):  # tumpukan kertas
+            box(m, 'paint_white', (-0.46 + rng.uniform(-0.01, 0.01), 0.04, h + 0.003 + k * 0.004), (0.21, 0.297, 0.003), M=None)
+        lathe(m, 'ceramic', [(0.0, h), (0.04, h), (0.042, h + 0.1), (0.038, h + 0.1)], 12, M=T(-0.5, -0.17, 0))  # mug
+        cyl(m, 'plastic_green', -0.5, 0.2, h, 0.05, 0.06, 0.09, 10)  # pot kecil
+        for k in range(5):
+            a = k * 1.26
+            leaf_blade(m, 'leaf_mid', (-0.5, 0.2, h + 0.08), (math.cos(a) * 0.4, math.sin(a) * 0.4, 1.0), 0.12, 0.035, curl=0.2, segs=3, lod=lod)
+    kursi_kantor(m, 0.05, -(d / 2 + 0.29), lod, rot=188)
+    m.px((0, 0, h / 2), (w, d, h), 'wood_white')
+    m.px((0.0, d / 2 - 0.14, h + 0.31), (0.6, 0.06, 0.36), 'plastic_black')
+    m.px((0.05, -(d / 2 + 0.29), 0.5), (0.5, 0.5, 1.0), 'tfab_main', 1)
+    return m, {}
+
+
+# ---------- meja rapat 2,4 × 1,0: daun kayu, dua kaki panel, telepon konferensi, enam kursi kantor berhadapan
+#            (kotak tabrakan meja meluas ±(d/2 + 0,51) untuk kursi, collide.js furnAdd)
+@model('table_meeting', 'table', (2.4, 1.0, 0.75), ctx=('tower',), ao=0.45, wall=None, group='office')
+def m_table_meeting(lod):
+    m = Mesh()
+    w, d, h = 2.4, 1.0, 0.75
+    bev = 0.008 if lod == 0 else 0
+    box(m, 'wood_walnut', (0, 0, h - 0.02), (w, d, 0.04), bevel=bev, seg=2)
+    for sx in (-1, 1):  # kaki panel logam + kaki melintang
+        box(m, 'metal_black', (sx * (w / 2 - 0.32), 0, (h - 0.04) / 2), (0.06, d - 0.3, h - 0.04))
+        box(m, 'metal_black', (sx * (w / 2 - 0.32), 0, 0.02), (0.1, d - 0.16, 0.04))
+    box(m, 'metal_black', (0, 0, h - 0.07), (w - 0.7, 0.08, 0.06))  # balok penghubung (saluran kabel)
+    if lod == 0:
+        box(m, 'plastic_black', (0, 0, h + 0.015), (0.22, 0.22, 0.03), bevel=0.012, seg=2)  # telepon konferensi
+        cyl(m, 'plastic_grey', 0, 0, h + 0.03, 0.05, 0.04, 0.008, 12)
+        for k, x in enumerate((-0.8, 0.85)):
+            box(m, 'paint_white', (x, 0.18 - 0.36 * k, h + 0.002), (0.21, 0.297, 0.003))  # kertas
+    for x in (-0.75, 0.0, 0.75):
+        kursi_kantor(m, x, d / 2 + 0.21, lod, rot=0 + (4 if x > 0 else -3))
+        kursi_kantor(m, x, -(d / 2 + 0.21), lod, rot=180 + (3 if x < 0 else -4))
+    m.px((0, 0, h - 0.02), (w, d, 0.04), 'wood_walnut')
+    m.px((0, 0, (h - 0.04) / 2), (w - 0.6, d - 0.3, h - 0.04), 'metal_black')
+    for b in (-1, 1):
+        m.px((0, b * (d / 2 + 0.21), 0.5), (w * 0.85, 0.48, 1.0), 'tfab_main', 1)
+    return m, {}
+
+
 # ================================================================ AO, objek, ekspor
 def ao_dirs(n):
     out = []
