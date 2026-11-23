@@ -1182,3 +1182,56 @@ Keluhan Steven: bot kadang diam sendiri dan baru bergerak setelah didekati. Ukur
 - **Pagar proyek "Sutera Land":** tidak pernah < 2,5 m dari rumah atau di jalan/gedung/pohon/air; kebanyakan seng polos/biru, spanduk sesekali (4 desain fiktif); tiang di tiap sambungan & ujung (collision menerus: 0 bocor dari 2.004 uji lintas).
 - **Audit:** benda di tanah dibuang bila menimpa gedung/tembok/pohon/air/pintu/lajur (hanya 7); jaring lapangan kini padat; pagar kawat diberi tiang ujung.
 - **Realisme:** permukaan benda memakai tekstur foto beton & plester mode realistis (tanpa unduhan tambahan) + relief, kotoran dekat tanah, karat di kaki logam, variasi warna per benda; pagar/pagar proyek/gapura dipecah per blok 320 m dan disembunyikan > 450 m (±60 ribu segitiga lebih sedikit per frame). Uji: 0/48 percobaan lewat samping gapura berhasil, 50/50 jalan gapura tetap bisa dilalui, 0/11.777 pintu tertutup.
+
+## 34. Lantai atas masuk main + perabot interior 3D (23 Nov 2026, integrator; desain Fable, kerja Opus)
+
+Dua pekerjaan 18 Nov yang belum masuk main: `wip/world` (lantai atas) dan `wip/furn` (perabot 3D, belum pernah di-commit). Digabung di branch `integ/lantai-perabot` (worktree `.wt/integ`), diuji, lalu main di-fast-forward (lokal; push hanya atas izin Steven).
+
+### 34.1 Dari `wip/world`
+- Lift menara dengan panel pilih lantai (F di pintu lift; W/S/gulir pilih, F berangkat, Esc batal), lantai kantor dibangun malas per menara (satu templat `H.fl`, dipindah ke tinggi lantai yang dikunjungi), kaca fasad lantai itu terbuka.
+- Ruko 2 lantai (tangga per pasangan unit), mal/aula lantai 2 beratrium (kios, kafe, taman, deret toko `shopunit`), rumah non-persegi 2 lantai.
+- API collider: `liftSpot`, `addFurnLayer`, `addLayer`, `removeLayer` (slot dipakai ulang).
+
+### 34.2 Perbaikan saat integrasi (wip/world bercabang sebelum bot & nav baru `cf68185`)
+- **Dinding hilang saat naik lift:** `buildGen` memakai penampung verteks bersama dan mengosongkannya saat mulai; templat lantai yang dimulai di tengah cicilan gedung lain menghapus dindingnya → satu generator pada satu waktu (`interiors.update`).
+- **Menara di atas podium** (#5442 di atas #966, lantai pertama 25,9 m): lantainya tidak pernah terbuka karena `towerAt` mengambil menara pertama yang tapaknya memuat titik → kini pilih menara yang punya lantai di ketinggian kaki (`towerAt(x, y, z)`).
+- **Tangga atrium mal #5292** mendarat di dalam menara #5282 → pencarian atrium menguji pendaratan; perabot lantai 2 di tapak gedung lain dibuang.
+- **nav.js:** celah sekat lantai atas memakai `H.up.parts` (ruko) bila ada.
+- **bots.js:** barang di atas 0,5 m yang bukan lantai atas rumah/ruko/mal (`homeUp`) atau atap menara (`roofLift`) tidak diincar — lantai kantor & kanopi tidak terjangkau bot.
+- **Cache nav tidak dibuang tiap ganti lantai:** slot poligon lapisan dinamis dipesan di muka (nav.js membangun ulang semua indeks bila `col.polys.length` berubah).
+- **12 rumah non-persegi** yang lantai atasnya < 85 % terjangkau dari bordes tetap satu lantai (`NO_UP` di interiors.js, terikat `data/alsut-map.json` — audit ulang bila peta dibangun ulang).
+- **Panel lift:** W/S yang masih ditahan dari berjalan ke pintu lift tidak menggulir pilihan (ulangan otomatis diabaikan sampai ditekan baru).
+
+### 34.3 Perabot 3D (`web/map/furniture.js`)
+- Aset: `tools/blender/furniture.py` → `web/game/assets/furniture/furniture.glb` + `furniture.json` (+ `detail_*.jpg`); kontrak di docstring skrip. Tiap model: LOD0 (≤ 9 m × zoom), LOD1 (≤ 30 m), kotak proksi (jauh + bayangan matahari); ukuran acuan = kotak tabrakan perabot; 9-slice & modul berulang (rak, gondola).
+- API (interiors.js memanggil): `begin(H)` → `batch.add(f, Z)` per perabot saat interior dicicil → `commit(batch)` → `rec`; `show(rec, dy)` / `hide(rec)` / `drop(rec)`. Templat lantai kantor: commit sekali, `show(rec, z)` di `showFloor`, `hide` di `closeFloor`, `drop` saat templat dibuang. Konteks `'floor'` → model `'tower'`.
+- Pengaman ukuran: model terbaik yang melar > ±1,65× pada sumbu tanpa 9-slice/modul → kotak lama.
+- Pemanasan: `update()` jalan sejak menu; 3 frame pertama semua mesh tampil supaya program shader dikompilasi sebelum interior pertama (uji: 4 program perabot di menu, 0 baru saat masuk rumah). Shader gagal → `disabled`, perabot kotak.
+- Gagal muat (GLB/JSON) → `furniture === null`, satu peringatan, perabot kotak (uji: 0 error).
+- Grafik Hemat: `setDetail(true)` dari `applyStep` → LOD1 saja sampai 20 m.
+- `stats`: models, recs, items, near, drawn, slots, free, disabled, ms.
+
+### 34.4 Model
+54 model / 31 jenis. Baru: `officedesk_std` (meja kantor + monitor + kursi beroda) dan `table_meeting` (meja rapat 2,4 m + 6 kursi), konteks `tower`, pratinjau `preview/furniture/office_lod*.png`. Build ulang juga membawa pengurangan LOD1 14 model yang sudah ada di skrip sejak 18 Nov. Tanpa model: `shopunit` (sengaja kotak). Resepsionis (`reception_std`) tidak pernah muncul: `free(p, 1,6)` di planTower selalu gagal melawan lingkaran pintu (juga di main lama).
+
+### 34.5 Tabrakan
+Collider dibuat dari definisi perabot yang sama (collide.js `furnAdd`, tidak berubah). Uji: instans = definisi ±1 cm / ±0,001 rad di rumah, ruko, mal, lobi & lantai kantor; kursi model baru ≤ 1 cm di luar kotak tabrakan. Peluru & pandangan bot tetap memakai kotak penuh (rak terbuka, kaca shower, tanaman tetap menahan walau model terlihat tembus).
+
+### 34.6 Kinerja (headless M1 Pro, 1280×720, Ultra/Hemat; dibanding GLB diblokir = perabot kotak)
+- CPU per frame sama atau lebih rendah (2,0–2,4 ms); draw call +0…+11; `stats.ms` pemilahan 0–0,3 ms.
+- GPU per frame di adegan sungguhan: selisih Ultra +0,1…+0,6 ms, tetapi derau antar-muat ±0,5–1 ms (bot, partikel, GPU dipakai bersama) — tidak bisa dipastikan lebih halus.
+- Batas atas biaya GPU perabot (render perabot saja tanpa tembok, timer GPU, Hemat 1024×576, sesudah `setDetail`): ruko 1,42 ms, mal 1,00, perumahan 0,75, lobi 0,45, kantor 0,33 (sebelum: 2,81 / 1,61 / 1,25 / 0,48 / 0,63). Sebagian besar dari model dekat (shading PBR rak berisi barang); kotak proksi 0,01–0,29 ms.
+
+### 34.7 Uji
+- `.wt/_tools/audit-lantai.mjs <web> [furniture.json]` (node, tanpa browser): jenis tanpa model, gedung lantai atas < 85 % terjangkau, titik barang lantai atas tak terjangkau nav. Hasil akhir: tanpa model `{shopunit: 159}`; `hall [25,0]`, `house(persegi) [1229,0]`, `house(non-persegi) [115,0]`, `shop [80,0]`; nav aula 21/522, rumah 380/20135, ruko 98/2284 (sebelum: 43, 612, 317).
+- Headless (`.wt/_tools`, serve.mjs kini mengekspos `furniture`): lift ke lantai 2–30 & atap, 61 lantai × 32 menara (titik lift lapang, semua barang terjangkau), bot 5 menit (0 error, 0 bot mengincar barang kantor, bot diam setara main), perabot ikut lantai (slot tetap), jalan 600 m pergi-pulang (rekaman = gedung terbuka, slot turun ke 0), pemblokiran GLB/JSON.
+
+### 34.8 Bangun ulang aset perabot
+`taskpolicy -b nice -n 19 ~/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup -P tools/blender/furniture.py -t 2 -- --shots` (±30 dtk model + ±11 menit pratinjau Cycles). Iterasi: `-- --only a,b --no-export --shots --fast`. **Jangan** `--only` tanpa `--no-export` atau `--out <folder>`: GLB tertimpa set parsial.
+
+### 34.9 Belum
+- Bot tidak bisa naik lift ke lantai kantor (pemain di sana tidak terjangkau bot).
+- `shopunit` belum punya model etalase; resepsionis lobi tidak pernah ditempatkan.
+- Daftar `NO_UP` → ganti dengan cek keterjangkauan saat perencanaan.
+- Bayangan matahari perabot baru muncul pada penyegaran bayangan berikutnya.
+- Kanopi/teras statis ±1,06 juta verteks selalu digambar (sudah ada di main sebelumnya).
