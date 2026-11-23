@@ -649,7 +649,7 @@ const COL = {
 };
 const COLORS = new Map(); // warna perabot per kode hex (dipakai bersama, jangan diubah isinya)
 const colorOf = (hex) => { let c = COLORS.get(hex); if (!c) COLORS.set(hex, (c = new THREE.Color(hex))); return c; };
-export function createInteriors(scene, W, homes) {
+export function createInteriors(scene, W, homes, furn = null) { // furn: pustaka perabot 3D (map/furniture.js) atau null
   // lampu ruangan: cahaya sendiri sebanding warna permukaan (interior tidak gelap walau matahari terhalang atap)
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.FrontSide });
   // Mode realistis: tekstur foto menurut jenis permukaan (atribut verteks sfc: 1 dinding plester, 2 ubin keramik,
@@ -1036,6 +1036,7 @@ export function createInteriors(scene, W, homes) {
       for (let j = 0; j < n; j++) { const p = at(-w / 2 + (j + 0.5) * w / n, 0); box(p[0], p[1], rot, w / n - 0.08, d - 0.12, z, z + 0.2 + R(j * 3 + seed) * 0.1, C(COL.goods[Math.floor(R(j * 7 + seed * 13) * COL.goods.length)])); }
     };
     function drawFurn(f) {
+      if (furn && furn.add(H, f, Z)) return; // model 3D berinstans (map/furniture.js); kotak di bawah = cadangan
       const { x, y, rot, w, d, h } = f, cs = Math.cos(rot), sn = Math.sin(rot), at = (a, b) => [x + a * cs - b * sn, y + a * sn + b * cs]; // a sepanjang dinding, b ke dalam (+)
       const fwd = (b) => at(0, b);
       switch (f.kind) {
@@ -1125,7 +1126,7 @@ export function createInteriors(scene, W, homes) {
         for (const k of BIG) consider(k);
         want.sort((a, b) => a[0] - b[0]);
         queue = want.map((w) => w[1]);
-        for (const [i, m] of open) { const H = homes.get(i); if (distTo(H.k, x, y) > R_CLOSE) { scene.remove(m); m.traverse((o) => o.geometry && o.geometry.dispose()); open.delete(i); setOpen(H, false); } }
+        for (const [i, m] of open) { const H = homes.get(i); if (distTo(H.k, x, y) > R_CLOSE) { scene.remove(m); m.traverse((o) => o.geometry && o.geometry.dispose()); open.delete(i); setOpen(H, false); if (furn) furn.drop(H); } }
       }
       const t0 = performance.now();
       while (performance.now() - t0 < BUILD_MS) {
@@ -1140,6 +1141,7 @@ export function createInteriors(scene, W, homes) {
         scene.add(r.value);
         open.set(job.H.i, r.value);
         setOpen(job.H, true);
+        if (furn) furn.show(job.H);
         job = null;
       }
     },
