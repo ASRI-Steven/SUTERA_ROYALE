@@ -131,7 +131,7 @@ function start(D, realAssets, envAssets) {
   const col = createCollider(D, inArea, homes);
   const envProps = createEnvProps(W, envAssets, col, homes); // menara SUTET/BTS, lampu jalan, tiang + kabel, halte, gerbang, reklame, dst. (map/envprops.js)
   col.addObstacles(envProps.obstacles); // sebelum kendaraan diparkir & bot bernavigasi (sel navigasi di-cache)
-  const interiors = createInteriors(scene, W, homes);
+  const interiors = createInteriors(scene, W, homes, col); // col: perabot lantai menara yang dikunjungi jadi rintangan sementara
   const mapImg = makeMapImage(D, bb);
   const hud = createHud();
   const zone = createZone(scene, { inArea, bb, boundary: W.boundary });
@@ -920,7 +920,7 @@ function start(D, realAssets, envAssets) {
       const F = focusAgent();
       bots.draw(dt, now, camera.position, camera);
       grass.update(camera.position, t / 1000, me.state === 'ground' && me.alive ? me.pos : null);
-      interiors.update(camera.position);
+      interiors.update(camera.position, F.state === 'ground' && F.alive ? F.pos : null); // lantai menara yang terbuka = lantai tempat pemain/yang ditonton berdiri
       fx.update(dt);
       kills.update(dt);
       loot.update(now, camera.position);

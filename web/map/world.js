@@ -912,10 +912,13 @@ float cnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   const MUTE = C('#b9b5ab');
   const bMat = real ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0, envMap: real.env, envMapIntensity: 1.0 }) : new THREE.MeshLambertMaterial({ vertexColors: true });
   // Game: gedung yang sedang "terbuka" (interior dibuat, map/interiors.js) → pintu & jendelanya dibuang (discard) di shader
-  // supaya benar-benar berlubang. Tabel per gedung: 2 texel RGBA.
+  // supaya benar-benar berlubang. Tabel per gedung: 4 texel RGBA.
   // Rumah: (buka, pintu1 u0, u1, plafon teratas), (pintu2 u0, u1, 0, 0); rumus jendela sama dengan pola jendela rumah di bawah.
   // Toko/aula: (buka, rentang A u0, u1, tinggi bukaan), (rentang B u0, u1, P, p) → berlubang bila mod(u, P) ∈ [p, P − p].
-  const OPEN_W = 256, openRows = Math.ceil(B.r.length / (OPEN_W / 2)) + 1;
+  // Texel 3: (z0, z1) lantai atas yang sedang terbuka (lantai menara yang dikunjungi, lantai 2 ruko/aula): kaca jendela di
+  // pita tinggi itu berlubang (aturan jendela fasad masing-masing gaya; sama dengan collide.js bandPass & interiors.js).
+  const OPEN_W = 256, OPB = OPEN_W / 4, openRows = Math.ceil(B.r.length / OPB) + 1;
+  D.bands = new Float32Array(B.r.length * 2); // pita lantai terbuka per gedung untuk collider (peluru tembus kaca)
   const openData = new Float32Array(OPEN_W * openRows * 4).fill(-1);
   const openTex = new THREE.DataTexture(openData, OPEN_W, openRows, THREE.RGBAFormat, THREE.FloatType);
   openTex.needsUpdate = true;
@@ -993,12 +996,14 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
   float wb0 = floor(vWuv.x / 3.6) * 3.6 + 1.08, wb1 = wb0 + 1.44;
   bool hWinOk = vSeg.x > -1.0 && !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
   float doorK = 0.0, dU0 = 0.0, dU1 = 1.0; // doorK = 1: piksel daun pintu tertutup (rumah belum dibuka)
+  vec2 upBand = vec2(0.0); // lantai atas yang terbuka (z0, z1)
   if (vWuv.x >= 0.0 && vWuv.z < 4.5 && vBid >= 0.0) { // rumah, ruko/mal, menara & gedung publik (lobi)
     int bi = int(vBid + 0.5);
-    ivec2 tc = ivec2((bi % ${OPEN_W / 2}) * 2, bi / ${OPEN_W / 2});
+    ivec2 tc = ivec2((bi % ${OPB}) * 4, bi / ${OPB});
     vec4 o0 = texelFetch(uOpen, tc, 0);
     if (o0.a > 0.0) { // gedung yang bisa dimasuki: data pintu selalu ada; o0.r > 0,5 = sedang terbuka (interior dibangun)
       vec4 o1 = texelFetch(uOpen, tc + ivec2(1, 0), 0);
+      upBand = texelFetch(uOpen, tc + ivec2(2, 0), 0).xy;
       bool isOpen = o0.r > 0.5 && vWuv.y < o0.a;
       if (o1.b > 0.0) { // toko/aula: bukaan berkala di rentang sisi depan
         float bf = mod(vWuv.x, o1.b);
@@ -1112,6 +1117,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
         diffuseColor.rgb *= 1.0 - 0.28 * sillSh;
       }
     }
+    if (upBand.y > upBand.x && vWuv.y > upBand.x && vWuv.y < upBand.y && winMask > 0.5) discard; // lantai atas terbuka: kaca berlubang (kusen tetap)
 #ifdef REAL
     if (winMask > 0.01) { // kaca: interior terlihat di baliknya, permukaan memantulkan langit (pantulan lingkungan + fresnel)
       float gl = winMask * (1.0 - rCur * 0.9);
@@ -1506,10 +1512,19 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
   // data pintu & keadaan buka/tutup tiap rumah untuk shader fasad (dipanggil interiors.js): baris = [terbuka 0/1, pintu A
   // u0, u1, tinggi bukaan, pintu B u0, u1, P, p]. Data pintu selalu ada (pintu tertutup digambar dari jauh, jendela yang
   // menumpuk pintu ditiadakan); kolom pertama saja yang berubah saat rumah dibuka/ditutup.
+  const texOf = (i) => ((i % OPB) * 4 + Math.floor(i / OPB) * OPEN_W) * 4;
   const setHouseOpen = (H, on) => {
-    const i = H.i, o = ((i % (OPEN_W / 2)) * 2 + Math.floor(i / (OPEN_W / 2)) * OPEN_W) * 4, f = on ? 1 : 0;
+    const i = H.i, o = texOf(i), f = on ? 1 : 0;
     if (H.open) { const O = H.open; openData.set([f, O.A[0], O.A[1], O.top, O.B[0], O.B[1], O.P, O.p], o); }
     else { const d1 = H.doors[0], d2 = H.doors[1]; openData.set([f, d1 ? d1.u0 : -9, d1 ? d1.u1 : -9, H.up ? H.up.ceil : H.ceil, d2 ? d2.u0 : -9, d2 ? d2.u1 : -9, 0, 0], o); }
+    openTex.needsUpdate = true;
+  };
+  // pita lantai atas yang terbuka (z0 < z1) atau tutup (0, 0): fasad (kaca berlubang) + D.bands untuk collider
+  const setFloorBand = (i, z0 = 0, z1 = 0) => {
+    const o = texOf(i) + 8;
+    if (openData[o] === z0 && openData[o + 1] === z1) return;
+    openData[o] = z0; openData[o + 1] = z1;
+    D.bands[i * 2] = z0; D.bands[i * 2 + 1] = z1;
     openTex.needsUpdate = true;
   };
   const buildings = new THREE.Mesh(bGeo, bMat);
@@ -1525,8 +1540,17 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       sh.fragmentShader = 'uniform highp sampler2D uOpen;\nvarying vec3 vWuv;\nvarying float vBid;\nvarying vec2 vSeg;\n' + sh.fragmentShader.replace('void main() {', `void main() {
   if (vWuv.x >= 0.0 && vWuv.z < 4.5 && vBid >= 0.0) {
     int bi = int(vBid + 0.5);
-    ivec2 tc = ivec2((bi % ${OPEN_W / 2}) * 2, bi / ${OPEN_W / 2});
+    ivec2 tc = ivec2((bi % ${OPB}) * 4, bi / ${OPB});
     vec4 o0 = texelFetch(uOpen, tc, 0);
+    vec4 o2 = texelFetch(uOpen, tc + ivec2(2, 0), 0);
+    if (o0.a > 0.0 && o2.y > o2.x && vWuv.y > o2.x && vWuv.y < o2.y) { // lantai atas terbuka: jendela menurut gaya fasad
+      float k = vWuv.z; bool w = false;
+      if (k > 3.5) { float fl = fract((vWuv.y - 4.1) / 3.9), gx = fract(vWuv.x / 2.0), bx = mod(vWuv.x, 46.0); w = vWuv.y >= 4.1 && fl >= 0.22 && fl <= 0.62 && gx >= 0.03 && gx <= 0.97 && !(bx >= 8.0 && bx <= 20.0 && vWuv.y >= 4.6 && vWuv.y <= 7.0); }
+      else if (k > 1.5 && k < 2.5) { float fx = fract(vWuv.x / 1.7), fy = fract(vWuv.y / 3.7); w = fx >= 0.07 && fx <= 0.93 && fy >= 0.1 && fy <= 0.93; }
+      else if (k > 0.5) { float fx = fract(vWuv.x / 2.6), fy = fract(vWuv.y / 3.3); w = fx >= 0.16 && fx <= 0.84 && fy >= 0.36 && fy <= 0.78; }
+      else { float wb0 = floor(vWuv.x / 3.6) * 3.6 + 1.08, wb1 = wb0 + 1.44, fx = fract(vWuv.x / 3.6), fy = fract(vWuv.y / 3.3); w = vSeg.x > -1.0 && !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3)) && fx >= 0.3 && fx <= 0.7 && fy >= 0.36 && fy <= 0.78; }
+      if (w && vWuv.y > 0.8) discard;
+    }
     if (o0.a > 0.0 && vWuv.y < o0.a) {
       vec4 o1 = texelFetch(uOpen, tc + ivec2(1, 0), 0);
       bool inA = vWuv.x >= o0.g && vWuv.x <= o0.b, inB = vWuv.x >= o1.r && vWuv.x <= o1.g;
@@ -1701,5 +1725,5 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     sunDisc.material.opacity = 0;
   }
 
-  return { real, V2, C, boundary, boundaryHoles, enclaves, game, bb, center, inArea, LAT, LON, B, renderer, small, scene, camera, hemi, sun, TEX, slab, slabTop, floorShadow, overlay, flatGeo, ribbonGeo, stripGeo, markGeo, dashGeo, clusterFill, clusterLines, goldEdge, nightU, skyU, bMat, geo, addBuilding, buildings, edges, lineMat, trees, treesReady, setHouseOpen, lamps, skyUni, sky, dome, stars, sunDisc, cloudMat, clouds };
+  return { real, V2, C, boundary, boundaryHoles, enclaves, game, bb, center, inArea, LAT, LON, B, renderer, small, scene, camera, hemi, sun, TEX, slab, slabTop, floorShadow, overlay, flatGeo, ribbonGeo, stripGeo, markGeo, dashGeo, clusterFill, clusterLines, goldEdge, nightU, skyU, bMat, geo, addBuilding, buildings, edges, lineMat, trees, treesReady, setHouseOpen, setFloorBand, lamps, skyUni, sky, dome, stars, sunDisc, cloudMat, clouds };
 }
