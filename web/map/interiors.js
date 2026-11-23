@@ -956,7 +956,8 @@ function bandHoles(e, st, zA, zB, abs = true) {
 const COLORS = new Map(); // warna perabot per kode hex (dipakai bersama, jangan diubah isinya)
 const colorOf = (hex) => { let c = COLORS.get(hex); if (!c) COLORS.set(hex, (c = new THREE.Color(hex))); return c; };
 // col (opsional, map/collide.js): perabot lantai menara yang sedang dikunjungi jadi rintangan sementara (addFurnLayer)
-export function createInteriors(scene, W, homes, col = null) {
+// furn (opsional, map/furniture.js): pustaka perabot 3D berinstans; null = perabot kotak
+export function createInteriors(scene, W, homes, col = null, furn = null) {
   // lampu ruangan: cahaya sendiri sebanding warna permukaan (interior tidak gelap walau matahari terhalang atap)
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.FrontSide });
   // Mode realistis: tekstur foto menurut jenis permukaan (atribut verteks sfc: 1 dinding plester, 2 ubin keramik,
@@ -1000,6 +1001,7 @@ export function createInteriors(scene, W, homes, col = null) {
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>\n  reflectedLight.directDiffuse *= ${W.real ? '1.0' : '0.12'}; // mode realistis: matahari sungguhan masuk lewat jendela/pintu (peta bayangan gedung berlubang)${W.real ? '\n  reflectedLight.indirectDiffuse *= 0.5; // dalam ruangan lebih gelap dari luar; mata menyesuaikan (eksposur otomatis)' : ''}`);
   };
   const open = new Map(); // indeks gedung → mesh
+  const frec = new Map(); // indeks gedung → rekaman perabot 3D (furn.commit), dilepas saat interior ditutup
   const list = [...homes.values()];
   list.forEach((H, k) => { H.k = k; });
   const cen = list.map((H) => [H.pts.reduce((s, p) => s + p[0], 0) / H.pts.length, H.pts.reduce((s, p) => s + p[1], 0) / H.pts.length]);
@@ -1065,7 +1067,7 @@ export function createInteriors(scene, W, homes, col = null) {
   // sedikit sampah memori daripada larik JS (jeda GC saat banyak rumah dibuka)
   let VP = new Float32Array(3 << 15), VN = new Float32Array(3 << 15), VC = new Float32Array(3 << 15), VS = new Float32Array(1 << 15), vn = 0;
   const grow = () => { const g = (a) => { const b = new Float32Array(a.length * 2); b.set(a); return b; }; VP = g(VP); VN = g(VN); VC = g(VC); VS = g(VS); };
-  function* buildGen(H) {
+  function* buildGen(H, fb = null) { // fb: batch perabot 3D (furn.begin) atau null
     vn = 0;
     const c = new THREE.Color();
     const mk = (P, N, Cc, S, material) => {
@@ -1378,6 +1380,7 @@ export function createInteriors(scene, W, homes, col = null) {
       for (let j = 0; j < n; j++) { const p = at(-w / 2 + (j + 0.5) * w / n, 0); box(p[0], p[1], rot, w / n - 0.08, d - 0.12, z, z + 0.2 + R(j * 3 + seed) * 0.1, C(COL.goods[Math.floor(R(j * 7 + seed * 13) * COL.goods.length)])); }
     };
     function drawFurn(f) {
+      if (fb && fb.add(f, Z)) return; // model 3D berinstans (map/furniture.js); kotak di bawah = cadangan
       const { x, y, rot, w, d, h } = f, cs = Math.cos(rot), sn = Math.sin(rot), at = (a, b) => [x + a * cs - b * sn, y + a * sn + b * cs]; // a sepanjang dinding, b ke dalam (+)
       const fwd = (b) => at(0, b);
       switch (f.kind) {
@@ -1486,7 +1489,7 @@ export function createInteriors(scene, W, homes, col = null) {
   let flJob = null; // templat lantai yang sedang dicicil { T, it }
   function closeFloor() {
     const T = flo.T;
-    if (T && flo.shown) { scene.remove(T.flMesh); if (col) col.removeLayer(flo.ids); if (W.setFloorBand) W.setFloorBand(T.i, 0, 0); }
+    if (T && flo.shown) { scene.remove(T.flMesh); if (col) col.removeLayer(flo.ids); if (W.setFloorBand) W.setFloorBand(T.i, 0, 0); if (furn) furn.hide(T.flFurn); }
     flo.T = null; flo.k = 0; flo.ids = null; flo.shown = false;
   }
   function showFloor() { // templat sudah jadi: pindahkan ke ketinggian lantai, perabot jadi rintangan, kaca lantai itu berlubang
@@ -1495,10 +1498,11 @@ export function createInteriors(scene, W, homes, col = null) {
     scene.add(m);
     if (col) flo.ids = col.addFurnLayer(T.fl.furn.filter((f) => f.kind !== 'liftcore'), z, T.i);
     if (W.setFloorBand) W.setFloorBand(T.i, z + T.fl.floorZ, z + T.fl.ceil);
+    if (furn) furn.show(T.flFurn, z); // perabot 3D templat: digambar setinggi lantai ini
     flo.shown = true;
   }
   for (const H of homes.values()) setOpen(H, false); // data pintu tiap rumah untuk shader fasad (pintu tertutup digambar dari jauh)
-  let job = null; // interior yang sedang dicicil { H, it }
+  let job = null; // interior yang sedang dicicil { H, fb, it } (fb: batch perabot 3D)
   return {
     homes,
     get openCount() { return open.size; },
@@ -1516,8 +1520,8 @@ export function createInteriors(scene, W, homes, col = null) {
         for (const k of BIG) consider(k);
         want.sort((a, b) => a[0] - b[0]);
         queue = want.map((w) => w[1]);
-        for (const [i, m] of open) { const H = homes.get(i); if (distTo(H.k, x, y) > R_CLOSE) { scene.remove(m); m.traverse((o) => o.geometry && o.geometry.dispose()); open.delete(i); setOpen(H, false); } }
-        for (const T of towers) if (T.flMesh && T !== flo.T && distTo(T.k, x, y) > R_CLOSE) { T.flMesh.traverse((o) => o.geometry && o.geometry.dispose()); T.flMesh = null; } // templat lantai menara jauh dibuang
+        for (const [i, m] of open) { const H = homes.get(i); if (distTo(H.k, x, y) > R_CLOSE) { scene.remove(m); m.traverse((o) => o.geometry && o.geometry.dispose()); open.delete(i); setOpen(H, false); if (furn) { furn.drop(frec.get(i)); frec.delete(i); } } }
+        for (const T of towers) if (T.flMesh && T !== flo.T && distTo(T.k, x, y) > R_CLOSE) { T.flMesh.traverse((o) => o.geometry && o.geometry.dispose()); T.flMesh = null; if (furn) { furn.drop(T.flFurn); T.flFurn = null; } } // templat lantai menara jauh dibuang
       }
       // lantai menara tempat pemain berdiri (tanpa foot: kamera, mata ±1,6 m di atas pelat)
       const fx = foot ? foot.x : x, fy = foot ? -foot.z : y, fz = foot ? foot.y : cam.y - 1.6;
@@ -1531,21 +1535,23 @@ export function createInteriors(scene, W, homes, col = null) {
       while (performance.now() - t0 < BUILD_MS) {
         if (flJob) {
           const r = flJob.it.next();
-          if (r.done) { const T = flJob.T; T.flMesh = r.value; flJob = null; if (flo.T === T && !flo.shown) showFloor(); }
+          if (r.done) { const T = flJob.T; T.flMesh = r.value; T.flFurn = furn ? furn.commit(flJob.fb) : null; flJob = null; if (flo.T === T && !flo.shown) showFloor(); }
           continue;
         }
         if (!job) {
-          if (flo.T && !flo.shown && !flo.T.flMesh) { flJob = { T: flo.T, it: buildGen(flo.T.fl) }; continue; }
+          if (flo.T && !flo.shown && !flo.T.flMesh) { const fb = furn ? furn.begin(flo.T.fl) : null; flJob = { T: flo.T, fb, it: buildGen(flo.T.fl, fb) }; continue; }
           if (!queue.length) break;
           const H = list[queue.shift()];
           if (open.has(H.i)) continue;
-          job = { H, it: buildGen(H) };
+          const fb = furn ? furn.begin(H) : null;
+          job = { H, fb, it: buildGen(H, fb) };
         }
         const r = job.it.next();
         if (!r.done) continue;
         scene.add(r.value);
         open.set(job.H.i, r.value);
         setOpen(job.H, true);
+        if (furn) { const rec = furn.commit(job.fb); frec.set(job.H.i, rec); furn.show(rec); }
         job = null;
       }
     },
