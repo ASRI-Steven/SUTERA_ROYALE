@@ -330,9 +330,9 @@ export function warmSkinCache(opt = {}) {
 
 // ---------- Pratinjau ----------
 // Objek 3D siap pakai untuk lobi/toko. previewCharacter: { root, rig, char } berpose diam; previewWeapon: grup senjata.
-export function previewCharacter(id, look = { variant: 'm1', hair: 0 }, gear = { pack: false, hair: true }) {
+export function previewCharacter(id, look = { variant: 'm1', hair: 0 }, gear = { pack: false, hair: true }, gunKind = null) {
   const char = buildCharacter(charPalette(id), gear, look);
-  const st = { speed: 0 };
+  const st = { speed: 0, armed: !!gunKind, gunKind };
   for (let i = 0; i < 12; i++) char.rig.pose(st, 0.1);
   return { root: char.root, rig: char.rig, char };
 }

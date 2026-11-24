@@ -26,6 +26,19 @@ function nodeLocal(name, kind) { // posisi titik relatif ke asal senjata
   const p = new THREE.Vector3(); o.getWorldPosition(p);
   return base.worldToLocal(p);
 }
+// Titik pegangan tangan karakter orang ketiga & lobi (map/rig.js setGripPoints), di ruang tulang senjata rig — model diputar
+// 180° di Y (main.js addGearParts): (x, y, z) → (−x, y, −z). l = pusat telapak kiri (<jenis>_guard, kontrak orang pertama),
+// r = pusat telapak kanan (posisi fp_hand_r), mag = asal simpul <jenis>_mag. null kalau weapons.glb tidak ada.
+export function worldGrips() {
+  if (!GLB) return null;
+  const out = {}, F = (v) => (v ? [-v.x, v.y, -v.z] : null);
+  for (const kind in WEAPONS) {
+    const l = nodeLocal(kind + '_guard', kind);
+    if (!l) { console.warn('Titik ' + kind + '_guard tidak ada di weapons.glb; pegangan orang ketiga memakai tabel lama'); continue; }
+    out[kind] = { l: F(l), r: [-0.026, 0.004, -0.01], mag: F(nodeLocal(kind + '_mag', kind)), cls: WEAPONS[kind].slot === 2 ? 'pistol' : 'long' };
+  }
+  return out;
+}
 
 const D2R = Math.PI / 180;
 // spread/recoil dalam derajat; dmg per peluru; range = jarak mulai melemah (m); pellets untuk shotgun
