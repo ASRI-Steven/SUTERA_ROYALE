@@ -4,7 +4,7 @@
 //   Legendaris: aura = selubung bercahaya berbentuk tubuh (api emas / api roh / medan energi beranimasi; setCharAura).
 // - Senjata orang pertama: varian material per skin (game/weapons.js vmSkinned); model dunia (di tangan karakter): material
 //   berwarna-verteks dengan pola yang sama. Tingkat epik & legendaris: animasi, warna pelacak & kilatan moncong, nyala
-//   moncong beranimasi (shader, bukan titik), pendar saat isi ulang/periksa/cabut, suara tembakan sendiri (game/audio.js), efek & spanduk kill (game/killfx.js).
+//   moncong beranimasi (shader, bukan titik), pendar saat isi ulang/periksa/cabut, suara tembakan sendiri (game/audio.js), denting kill (game/killfx.js).
 // Harga menurut kelangkaan: biasa 300, langka 800, epik 1800, legendaris 4000 koin; bawaan 0.
 // ID lama (char_default … char_garuda, gun_default … gun_garuda) tetap sama → profil lama (dimiliki & dipakai) tetap sah.
 import * as THREE from 'three';
@@ -78,7 +78,7 @@ export const CHAR_SKINS = [
 // th (tema): coat = berpernis (MeshPhysicalMaterial), tracer/flash = warna HDR [r, g, b], flame = nyala moncong beranimasi
 // ({ style: fire|plasma|glint|spirit|arc|frost|glow, c1, c2 }),
 // glow = pendar isi ulang/periksa/cabut, voice = suara tembakan (audio.js VOICES), kill = efek kill (killfx.js),
-// emblem = lambang spanduk kill (hud.js), color/color2 = warna tema (spanduk, toko)
+// emblem = lambang tema (dulu spanduk kill), color/color2 = warna tema (toko)
 const G = (id, name, rarity, col, desc, fx, th = {}) => ({ id, name, rarity, col, price: fx ? PRICE[rarity] : 0, desc, fx, kind: 'weapon', th });
 export const GUN_SKINS = [
   G('gun_default', 'Baja Standar', 'biasa', 'taktis', 'Tampilan pabrik: baja hitam dan polimer.', 0, { color: '#d29f52' }),
@@ -126,7 +126,7 @@ export function skinFeatures(s) {
     const th = s.th || {};
     if (th.glow) f.push(['anim', 'Animasi & pendar']);
     if (th.voice) f.push(['sound', 'Suara tembakan khusus']);
-    if (th.kill) f.push(['kill', 'Spanduk & denting kill khusus']);
+    if (th.kill) f.push(['kill', 'Denting kill khusus']);
     if (th.tracer) f.push(['tracer', th.flash ? 'Pelacak & kilatan khusus' : 'Pelacak berwarna']);
     if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
   } else {
@@ -136,7 +136,7 @@ export function skinFeatures(s) {
   }
   return f;
 }
-// tema senjata yang dipakai pemain (efek kill, spanduk, suara). Skin tanpa efek khusus: ledakan cahaya warna temanya.
+// tema senjata yang dipakai pemain (efek kill, suara). Skin tanpa efek khusus: ledakan cahaya warna temanya.
 export function gunTheme(id = profile.equipped && profile.equipped.weapon) {
   const s = BY.get(id) || GUN_SKINS[0], th = s.th || {};
   return { id: s.id, name: s.name, rarity: s.rarity, voice: th.voice || null, kill: th.kill || 'burst', emblem: th.emblem || 'std', color: th.color || '#d29f52', color2: th.color2 || '#fff1c8' };
