@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL, SF_U, tickSkins, FLAME_VS, FLAME_FS, FLAME_STYLE } from './skinfx.js';
 
@@ -16,7 +17,10 @@ import { SKIN_COMMON, GUN_SKIN_GLSL, CHAR_SLEEVE_GLSL, SF_U, tickSkins, FLAME_VS
 let GLB = null, META = null;
 export async function loadWeaponModels(base = 'game/assets/weapons/') {
   const meta = fetch(base + 'weapons.json?v=6').then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const gltf = await new GLTFLoader().loadAsync(base + 'weapons.glb?v=6');
+  // weapons.glb terkompresi Draco; dekoder dari CDN yang sama dengan three (gagal → model prosedural lama)
+  const draco = new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/libs/draco/gltf/');
+  const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(base + 'weapons.glb?v=6');
+  draco.dispose();
   gltf.scene.updateMatrixWorld(true);
   GLB = { root: gltf.scene };
   META = await meta;
@@ -295,7 +299,7 @@ const VM_LOOK = {
   cuff: { metalness: 0.25, roughness: 0.55, kind: 4, wear: 0, bump: 0.00022, env: 0.6, weave: 1900 },
   skin: { metalness: 0, roughness: 0.56, kind: 6, wear: 0, bump: 0.00005, env: 0.35 },
   steel: { color: '#a3a8b0', metalness: 0.95, roughness: 0.26, kind: 1, wear: 0.4, bump: 0.00002, env: 1.1 }, // v6: baut, mahkota laras
-  rubber: { color: '#1d1e21', metalness: 0, roughness: 0.88, kind: 3, wear: 0.05, bump: 0.00012, env: 0.25 }, // v6: eyecup, bantalan
+  rubber: { color: '#1d1e21', metalness: 0, roughness: 0.92, kind: 3, wear: 0.05, bump: 0.00002, env: 0.12 }, // v6: eyecup, bantalan
 };
 const VM_MATS = new Map();
 function vmPatch(m, L) {
@@ -331,7 +335,7 @@ function vmMaterial(name, src) {
   let m;
   if (name === 'dot') m = new THREE.MeshBasicMaterial({ color: new THREE.Color(7, 0.5, 0.25) }); // titik bidik: HDR → berpendar (bloom)
   else if (name === 'lens') { // kaca optik berlapis (objektif, okuler pratinjau): lebih gelap & lebih memantul dari kaca biasa
-    m = vmPatch(new THREE.MeshStandardMaterial({ color: '#1a1226', metalness: 0, roughness: 0.02, transparent: true, opacity: 0.32, depthWrite: false, envMapIntensity: 3.2 }), { kind: 0, glass: true });
+    m = vmPatch(new THREE.MeshStandardMaterial({ color: '#2a1838', metalness: 0, roughness: 0.02, transparent: true, opacity: 0.1, depthWrite: false, envMapIntensity: 2.2 }), { kind: 0, glass: true });
   } else if (name === 'glass') {
     m = vmPatch(new THREE.MeshStandardMaterial({ color: '#0c1622', metalness: 0, roughness: 0.03, transparent: true, opacity: 0.14, depthWrite: false, envMapIntensity: 2.4 }), { kind: 0, glass: true });
   } else {
@@ -390,13 +394,13 @@ void main() {
     ill = max(ill, dotm(p, vec2(0.0, 0.0), 0.45));
   } else if (uRet == 2) { // 2×: tapal kuda + titik + 3 tanda jatuh peluru
     float a = atan(p.x, -p.y);
-    ill = ring(p, 9.0, 0.7) * step(0.62, abs(a));
-    ill = max(ill, dotm(p, vec2(0.0), 0.55));
-    for (int i = 1; i <= 3; i++) { float y = -2.4 * float(i), w = 1.6 - 0.35 * float(i); ill = max(ill, seg(p, vec2(-w, y), vec2(w, y), 0.4)); }
+    ill = ring(p, 13.0, 1.0) * step(0.62, abs(a));
+    ill = max(ill, dotm(p, vec2(0.0), 0.8));
+    for (int i = 1; i <= 3; i++) { float y = -3.4 * float(i), w = 2.4 - 0.5 * float(i); ill = max(ill, seg(p, vec2(-w, y), vec2(w, y), 0.55)); }
   } else if (uRet == 3) { // 4×: chevron berpendar + tangga mil + kurung jarak (hitam)
-    ill = max(seg(p, vec2(0.0), vec2(-1.6, -1.9), 0.42), seg(p, vec2(0.0), vec2(1.6, -1.9), 0.42));
-    blk = seg(p, vec2(0.0, -3.0), vec2(0.0, -14.0), 0.32);
-    for (int i = 1; i <= 5; i++) { float y = -2.0 * float(i) - 1.0, w = 0.5 + 0.4 * float(i); blk = max(blk, seg(p, vec2(-w, y), vec2(w, y), 0.3)); }
+    ill = max(seg(p, vec2(0.0), vec2(-2.6, -3.1), 0.6), seg(p, vec2(0.0), vec2(2.6, -3.1), 0.6));
+    blk = seg(p, vec2(0.0, -4.5), vec2(0.0, -18.0), 0.4);
+    for (int i = 1; i <= 5; i++) { float y = -2.6 * float(i) - 2.0, w = 0.7 + 0.5 * float(i); blk = max(blk, seg(p, vec2(-w, y), vec2(w, y), 0.35)); }
     blk = max(blk, seg(p, vec2(-30.0, 0.0), vec2(-4.5, 0.0), 0.5));
     blk = max(blk, seg(p, vec2(4.5, 0.0), vec2(30.0, 0.0), 0.5));
     blk = max(blk, seg(p, vec2(-8.0, 1.2), vec2(-8.0, -1.2), 0.3));
@@ -453,7 +457,8 @@ function lensMaterial(id, lensR, win) {
   m.userData.lens = { id, mag };
   return m;
 }
-const maskMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.75, depthTest: false, depthWrite: false }), _rs = new THREE.Vector2();
+const maskMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.75, depthTest: false, depthWrite: false }), _rs = new THREE.Vector2()
+const backMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
 // geometri ringan optik (LOD1, warna verteks) untuk loot x_s2/4/8; null bila tidak ada di GLB
 export function opticGeometry(id) {
   const n = glbNode('opt_' + id + '_lod1');
@@ -858,6 +863,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       O.mask = new THREE.Mesh(new THREE.RingGeometry(O.meta ? O.meta.lensR : 0.015, 0.6, 48), maskMat); // Hemat (tanpa post): cincin gelap
       O.mask.position.copy(O.lensMesh.position); O.mask.renderOrder = 40; O.mask.visible = false; O.mask.frustumCulled = false;
       O.root.add(O.mask);
+      if (O.lensMesh.material.userData.lens.mag) { // latar hitam di belakang eyecup (celah tipis jahitan bubut tidak memperlihatkan dunia)
+        const lr = O.meta ? O.meta.lensR : 0.015, back = new THREE.Mesh(new THREE.RingGeometry(lr * 0.98, lr * 2.1, 40), backMat);
+        back.position.copy(O.lensMesh.position); back.position.z -= 0.0004; back.frustumCulled = false; O.root.add(back);
+      }
       G.g.add(O.root);
       G.optics[id] = O;
     }

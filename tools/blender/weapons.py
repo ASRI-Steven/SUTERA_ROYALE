@@ -1174,7 +1174,7 @@ def build_opt_s2(lo=False):
     put(B, ylathe([(0.0146, 0.0535), (0.0170, 0.0535), (0.0172, 0.0605), (0.0166, 0.0615), (0.0152, 0.0615), (0.0148, 0.0570), (0.0146, 0.0535)], n, h), 'dark')
     put(B, ylathe([(0.01705, 0.0560), (0.01725, 0.0560), (0.01725, 0.0574), (0.01705, 0.0574), (0.01705, 0.0560)], n, h), 'gold')
     put(B, gk.lens(0.0150, 0.0012, n), 'lens', T(0, 0.0560, h) @ Matrix.Diagonal((1, -1, 1, 1)))
-    put(B, ylathe([(0.0130, -0.0525), (0.0150, -0.0525), (0.0160, -0.0580), (0.0168, -0.0640), (0.0161, -0.0655), (0.0137, -0.0655), (0.0130, -0.0600),
+    put(B, ylathe([(0.0130, -0.0525), (0.0150, -0.0525), (0.0156, -0.0560), (0.0158, -0.0590), (0.0152, -0.0600), (0.0136, -0.0600), (0.0130, -0.0575),
                    (0.0130, -0.0525)], n, h), 'rubber')
     # garis panel di sisi prisma (alur 0,4 mm)
     for sx in (-1, 1):
@@ -1186,7 +1186,7 @@ def build_opt_s2(lo=False):
         put(B, b, 'dark')
     for y in (-0.019, 0.016):
         cross_bolt(B, y, 0.028)
-    return dict(body=B, eye=(0, -0.0528, h), obj=(0, 0.0560, h), lensR=0.0125, objR=0.0150, fill=0.40)
+    return dict(body=B, eye=(0, -0.0528, h), obj=(0, 0.0560, h), lensR=0.0125, objR=0.0150, fill=0.33)
 
 
 def build_opt_s4(lo=False):
@@ -1205,9 +1205,9 @@ def build_opt_s4(lo=False):
                    (0.0184, 0.0458), (0.0195, 0.0502), (0.0195, 0.0728), (0.0188, 0.0758), (0.0173, 0.0758), (0.0168, 0.0712), (0.0158, 0.0692),
                    (0.0140, 0.0692), (0.0140, -0.0505)], n, h), 'dark')
     put(B, yknurl(0.0176, -0.0495, -0.0405, h, 56), 'dark')  # cincin diopter
-    put(B, ylathe([(0.0146, -0.0505), (0.0180, -0.0505), (0.0186, -0.0545), (0.0186, -0.0730), (0.0180, -0.0775), (0.0156, -0.0780), (0.0146, -0.0740),
+    put(B, ylathe([(0.0146, -0.0505), (0.0180, -0.0505), (0.0186, -0.0535), (0.0186, -0.0625), (0.0180, -0.0655), (0.0158, -0.0660), (0.0148, -0.0630),
                    (0.0146, -0.0505)], n, h), 'rubber')
-    for k in range(5):  # rusuk armor karet
+    for k in range(2):  # rusuk armor karet
         y = -0.0565 - k * 0.0038
         put(B, ylathe([(0.0186, y), (0.0190, y - 0.0008), (0.0190, y - 0.0016), (0.0186, y - 0.0024), (0.0186, y)], n, h), 'rubber')
     put(B, ylathe([(0.01952, 0.0700), (0.01970, 0.0700), (0.01970, 0.0712), (0.01952, 0.0712), (0.01952, 0.0700)], n, h), 'gold')
@@ -1230,7 +1230,7 @@ def build_opt_s4(lo=False):
             put(B, zturret(gk.screw('torx', 0.0030, 0.0012), (sx * 0.0128, y, h + 0.0128), '+z'), 'steel')
     for b in gk.rail_clamp(-0.0400, 0.0400, 0.0260, 0.0035):
         put(B, b, 'dark')
-    return dict(body=B, eye=(0, -0.0508, h), obj=(0, 0.0694, h), lensR=0.0138, objR=0.0160, fill=0.72)
+    return dict(body=B, eye=(0, -0.0508, h), obj=(0, 0.0694, h), lensR=0.0138, objR=0.0160, fill=0.76)
 
 
 S8_RING = (0, -0.0915)
@@ -1290,11 +1290,10 @@ def build_opt_s8(lo=False):
         a = 2 * pi * k / 12
         put(ring, p_box(0.0024, 0.0150, 0.0016, 0.0005), 'dark', Ry(-a / D2R) @ T(0, 0, 0.0204))
     put(ring, gk.plate([(-0.0060, 0.0190), (0.0060, 0.0190), (0.0040, 0.0290), (-0.0040, 0.0290)], 0.0050, [0.0, 0.0, 0.0018, 0.0018], 0.0006), 'dark', Ry(-35))
-    return dict(body=B, eye=(0, -0.1585, h), obj=(0, 0.1350, h), lensR=0.0165, objR=0.0262, fill=0.78, ring=(ring, (S8_RING[0], S8_RING[1], h)))
+    return dict(body=B, eye=(0, -0.1585, h), obj=(0, 0.1350, h), lensR=0.0165, objR=0.0262, fill=0.88, ring=(ring, (S8_RING[0], S8_RING[1], h)))
 
 
 OPTICS = {'rds': build_opt_rds, 'holo': build_opt_holo, 's2': build_opt_s2, 's4': build_opt_s4, 's8': build_opt_s8}
-OPTIC_FILL = {'s2': 0.40, 's4': 0.72, 's8': 0.78}
 OPTIC_DEFAULT = {'ar': 'rds', 'burst': 'holo'}  # optik bawaan (selalu terpasang bila tidak ada scope)
 
 
@@ -1953,7 +1952,16 @@ def micro_bevel(bm, width=0.00055, ang=33.0):
     except Exception as e:
         log('bevel mikro gagal', e)
         return set()
-    return set(f for f in r.get('faces', []) if f.is_valid)
+    new = set(f for f in r.get('faces', []) if f.is_valid)
+    # v6: bidang bevel mewarisi material tetangganya (Blender 5 memberi indeks 0 = 'metal' → cincin terang di optik)
+    for _ in range(3):
+        for f in new:
+            for e in f.edges:
+                o = next((g for g in e.link_faces if g is not f and g not in new), None)
+                if o is not None:
+                    f.material_index = o.material_index
+                    break
+    return new
 
 
 def face_width(f):
@@ -2229,7 +2237,11 @@ def export(objs, meta):
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_apply=True, export_yup=True,
                               export_vertex_color='ACTIVE', export_all_vertex_colors=False, export_normals=True,
                               export_texcoords=True, export_tangents=False, export_cameras=False, export_lights=False,
-                              export_animations=False, export_extras=False, export_draco_mesh_compression_enable=False)
+                              export_animations=False, export_extras=False,
+                              # v6: Draco (±10 MB → ±2 MB); runtime memakai DRACOLoader (CDN jsdelivr, sama dengan three)
+                              export_draco_mesh_compression_enable=not opt('--no-draco'), export_draco_mesh_compression_level=6,
+                              export_draco_position_quantization=14, export_draco_normal_quantization=10,
+                              export_draco_texcoord_quantization=10, export_draco_color_quantization=8)
     with open(os.path.join(OUT, 'weapons.json'), 'w') as f:
         json.dump(meta, f, indent=1)
     log('ekspor', path, os.path.getsize(path), 'byte')

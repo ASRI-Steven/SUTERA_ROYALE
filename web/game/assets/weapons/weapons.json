@@ -914,9 +914,9 @@
    "lensR": 0.0125,
    "objR": 0.015,
    "axisH": 0.034,
-   "fill": 0.4,
+   "fill": 0.33,
    "relief": null,
-   "tris": 6728,
+   "tris": 6808,
    "lod1": "opt_s2_lod1",
    "lod1Tris": 52
   },
@@ -935,9 +935,9 @@
    "lensR": 0.0138,
    "objR": 0.016,
    "axisH": 0.038,
-   "fill": 0.72,
+   "fill": 0.76,
    "relief": null,
-   "tris": 12690,
+   "tris": 11394,
    "lod1": "opt_s4_lod1",
    "lod1Tris": 80
   },
@@ -956,7 +956,7 @@
    "lensR": 0.0165,
    "objR": 0.0262,
    "axisH": 0.04,
-   "fill": 0.78,
+   "fill": 0.88,
    "relief": null,
    "tris": 17856,
    "ring": {

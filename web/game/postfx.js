@@ -200,7 +200,8 @@ void main() {
     sOut = smoothstep(1.0, 1.06, length((uv - uScope.xy) * vec2(uAspect, 1.0)) / uScope.z) * uScope.w;
     if (sOut > 0.0) {
       vec3 bs = src.rgb; float br = 6.0 * sOut;
-      for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398 + 0.3; bs += texture2D(tColor, uv + vec2(cos(a), sin(a)) * br * uTexel).rgb; }
+      float a0 = ign(gl_FragCoord.xy) * 6.2831853; // sudut acak per piksel: tanpa bayangan ganda di tepi kontras
+      for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398 + a0, rr = br * (0.45 + 0.55 * fract(float(i) * 0.618 + a0)); bs += texture2D(tColor, uv + vec2(cos(a), sin(a)) * rr * uTexel).rgb; }
       src.rgb = bs / 9.0;
     }
   }
@@ -233,7 +234,7 @@ void main() {
 #endif
     col = mix(col, fc, fg);
   }
-  if (sOut > 0.0) col *= mix(1.0, d <= VMD ? 0.75 : 0.3, sOut);
+  if (sOut > 0.0) col *= mix(1.0, d <= VMD ? 0.75 : 0.22, sOut);
   vec3 c = col * uExposure;
 #ifdef BLOOM
   c += texture2D(tBloom, uv).rgb * uBloom;
