@@ -455,51 +455,93 @@ def grip_bm():
     return p_loft(rings)
 
 
-def trigger_group(B, y0=0.0):  # y0 < 0: pelindung lebih pendek (senapan dengan liang magasin di depan pelatuk)
+def trigger_group(B, y0=0.0, trig='gold'):  # y0 < 0: pelindung lebih pendek (senapan dengan liang magasin di depan pelatuk)
     """Pelindung pelatuk + pelatuk emas di depan gagang (y0 = geser depan untuk senjata panjang)."""
     put(B, p_chain([(0, 0.024, 0.048), (0, 0.030, 0.022), (0, 0.072 + y0, 0.019), (0, 0.082 + y0, 0.032), (0, 0.083 + y0, 0.050)],
                    [0.0033] * 5, 6), 'poly')
-    put(B, p_chain([(0, 0.053, 0.054), (0, 0.050, 0.044), (0, 0.044, 0.036)], [0.0032, 0.0028, 0.0024], 6), 'gold')
+    put(B, p_chain([(0, 0.053, 0.054), (0, 0.050, 0.044), (0, 0.044, 0.036)], [0.0032, 0.0028, 0.0024], 6), trig)
 
 
 # ---------------------------------------------------------------- P9: pistol polimer ringkas
 def build_pistol():
+    """P9 (v6 M2): pistol 9 mm rangka polimer, striker. Slide = node terpisah `pistol_slide` (asal di asal senjata; runtime
+    menggesernya di sumbu laras): gerigi tarik depan-belakang, lubang lontar + ekstraktor, pisir 3 titik. Badan: laras +
+    blok kamar (terlihat lewat lubang lontar), rangka dengan rel aksesori bawah, tuas & pin, pelindung pelatuk."""
     B = bmesh.new()
-    # slide (dark) dengan alur tarik belakang
-    put(B, p_prof([(-0.047, 0.062), (0.134, 0.062), (0.137, 0.068), (0.137, 0.088), (0.132, 0.094), (-0.043, 0.094), (-0.047, 0.088)],
-                  0.026, 0.003, 2), 'dark')
-    for i in range(6):
-        put(B, p_box(0.0272, 0.0018, 0.022), 'metal', T(0, -0.040 + i * 0.0052, 0.079))
-    # lubang lontar kanan (+X) & tudung laras
-    put(B, p_box(0.002, 0.032, 0.013, 0.0006), 'metal', T(0.0127, 0.028, 0.087))
-    put(B, p_box(0.0012, 0.03, 0.0012), 'gold', T(0.0134, 0.06, 0.071))  # garis emas tipis di sisi slide
-    put(B, p_box(0.0012, 0.03, 0.0012), 'gold', T(-0.0134, 0.06, 0.071))
-    # pisir: takik belakang (2 blok), pejera depan bertitik emas
+    zb = 0.078
+    W = 0.0256
+    hw = W / 2
+    # ---- slide: penampang (sisi datar, bahu atas dipangkas dua tingkat) diekstrusi sepanjang laras, lalu dipotong
+    sec = [(-hw, 0.0636), (hw, 0.0636), (hw, 0.0868), (hw - 0.0022, 0.0912), (hw - 0.0056, 0.0945), (-(hw - 0.0056), 0.0945),
+           (-(hw - 0.0022), 0.0912), (-hw, 0.0868)]
+    sl = gk.prof_y(sec, -0.0470, 0.1385)
+    cutters = []
     for sx in (-1, 1):
-        put(B, p_box(0.0068, 0.008, 0.0075, 0.0012), 'dark', T(sx * 0.0067, -0.040, 0.0975))
-    put(B, p_box(0.0042, 0.0065, 0.0065, 0.001), 'dark', T(0, 0.127, 0.0965))
-    put(B, p_sphere(0.0012, 6, 4), 'gold', T(0, 0.1235, 0.0982))
-    # laras & mulut laras
-    put(B, p_cyly(0.0062, 0.006, 14), 'metal', T(0, 0.140, 0.078))
-    put(B, p_cyly(0.0042, 0.0006, 10), 'dark', T(0, 0.1432, 0.078))
-    # rangka polimer (dust cover + rel)
-    put(B, p_prof([(-0.040, 0.050), (0.132, 0.050), (0.132, 0.062), (-0.040, 0.062)], 0.0235, 0.002, 1), 'poly')
-    put(B, p_prof([(0.085, 0.043), (0.128, 0.043), (0.128, 0.050), (0.085, 0.050)], 0.018, 0.001, 1), 'dark')
+        for i in range(7):   # gerigi tarik belakang (miring 16°)
+            cutters.append(gk.xf(gk.box(0.0026, 0.0018, 0.0200), T(sx * hw, -0.0405 + i * 0.0040, 0.0765) @ Rx(-16)))
+        for i in range(5):   # gerigi depan
+            cutters.append(gk.xf(gk.box(0.0026, 0.0018, 0.0200), T(sx * hw, 0.1040 + i * 0.0040, 0.0765) @ Rx(-16)))
+        # panel peringan di sisi depan (cekung 0,7 mm)
+        cutters.append(gk.xf(gk.ext_x(gk.fillet2d([(0.0640, 0.0660), (0.0985, 0.0660), (0.0945, 0.0835), (0.0600, 0.0835)], 0.0015), 0.0014)[0], T(sx * hw, 0, 0)))
+    cutters.append(gk.box(0.0200, 0.0400, 0.0300, 0.0128, 0.0400, 0.0960))          # lubang lontar (kanan-atas)
+    cutters.append(gk.xf(gk.cyl(0.0079, 0.1300, 24), T(0, 0.0150, zb) @ Rx(-90)))    # liang laras tembus ke depan
+    cutters.append(gk.xf(gk.cyl(0.0036, 0.0040, 16), T(0, 0.1365, 0.0672) @ Rx(-90)))  # ceruk batang pegas di muka slide
+    sl = gk.cut(sl, cutters)
+    S = bmesh.new()
+    put(S, sl, 'dark')
+    # pisir belakang takik-U + 2 titik, pejera depan landai + 1 titik (garis bidik z = 0,101)
+    put(S, gk.prof_y([(-0.0082, 0.0942), (0.0082, 0.0942), (0.0082, 0.1016), (0.0024, 0.1016), (0.0024, 0.0986), (-0.0024, 0.0986),
+                      (-0.0024, 0.1016), (-0.0082, 0.1016)], -0.0450, -0.0365), 'dark')
+    for sx in (-1, 1):
+        put(S, zturret(gk.cyl(0.0011, 0.0003, 12), (sx * 0.0052, -0.0450, 0.0996), '-y'), 'canister')
+    put(S, gk.plate([(0.1215, 0.0942), (0.1320, 0.0942), (0.1312, 0.1006), (0.1262, 0.1006)], 0.0036, 0.0, 0.0004), 'dark')
+    put(S, zturret(gk.cyl(0.0011, 0.0003, 12), (0, 0.1247, 0.0990), '-y') , 'canister')
+    put(S, p_box(0.0014, 0.0180, 0.0030, 0.0005), 'steel', T(hw - 0.0002, 0.0100, 0.0855))      # ekstraktor
+    put(S, p_box(0.0190, 0.0012, 0.0220, 0.0005), 'poly', T(0, -0.0473, 0.0790))                # pelat tutup belakang
+    put(S, zturret(gk.cyl(0.0022, 0.0004, 14), (0, -0.0479, 0.0800), '-y'), 'steel')            # indikator striker
+    put(S, p_box(0.0008, 0.0160, 0.0008), 'gold', T(hw, -0.0040, 0.0700), mirror=True)           # garis identitas
+    # ---- laras + blok kamar (diam; tampak di lubang lontar dan di muka slide)
+    put(B, ylathe([(0.0044, 0.0580), (0.0070, 0.0580), (0.0070, 0.1400), (0.0063, 0.1415), (0.0048, 0.1415), (0.0044, 0.1385),
+                   (0.0044, 0.0580)], 22, zb), 'steel')
+    put(B, p_cyly(0.0044, 0.0010, 14), 'rubber', T(0, 0.1380, zb))                              # dasar lubang laras (gelap)
+    put(B, p_box(0.0150, 0.0400, 0.0180, 0.0012), 'steel', T(0, 0.0400, 0.0842))                # blok kamar
+    put(B, p_cyly(0.0030, 0.0030, 12), 'steel', T(0, 0.1362, 0.0672))                           # ujung batang pegas
+    # ---- rangka polimer: dust cover + ekor, rel aksesori bawah, pelindung pelatuk
+    put(B, gk.plate([(-0.0400, 0.0480), (-0.0520, 0.0525), (-0.0540, 0.0605), (-0.0460, 0.0632), (0.1330, 0.0632), (0.1340, 0.0490),
+                     (0.0900, 0.0470), (0.0860, 0.0500), (0.0240, 0.0500)], 0.0246, [0.002, 0.003, 0.003, 0.001, 0.001, 0.002, 0.001, 0.001, 0.0],
+                    0.0024, segs=2), 'poly')
+    put(B, gk.picatinny(0.0400, 0.0900, 0.0, -0.0075, 0.0140, end=0.005), 'poly', T(0, 0, 0.0402) @ Ry(180))
+    tg = gk.plate([(0.0200, 0.0520), (0.0930, 0.0520), (0.0930, 0.0230), (0.0850, 0.0128), (0.0330, 0.0128), (0.0245, 0.0220)], 0.0150,
+                  [0.0, 0.0, 0.004, 0.005, 0.005, 0.003], 0.0026, segs=2, tri=False)
+    tg = gk.cut(tg, [gk.ext_x(gk.fillet2d([(0.0310, 0.0182), (0.0870, 0.0182), (0.0870, 0.0475), (0.0290, 0.0475)], 0.0055, 4), 0.03)[0]])
+    put(B, tg, 'poly')
+    put(B, gk.plate([(0.0490, 0.0510), (0.0560, 0.0510), (0.0545, 0.0410), (0.0500, 0.0310), (0.0462, 0.0296), (0.0480, 0.0400)], 0.0070,
+                    0.001, 0.0014), 'dark')                                                    # pelatuk
+    put(B, gk.plate([(0.0500, 0.0440), (0.0515, 0.0440), (0.0480, 0.0320), (0.0462, 0.0318)], 0.0022, 0.0, 0.0003), 'steel')  # bilah pengaman
+    # tuas penahan slide (kiri), tuas bongkar (dua sisi), tombol magasin, pin
+    put(B, gk.plate([(0.0180, 0.0612), (0.0520, 0.0612), (0.0520, 0.0640), (0.0300, 0.0668), (0.0180, 0.0660)], 0.0022, 0.0008, 0.0005,
+                    x0=-(0.0123 + 0.0009)), 'dark')
     for i in range(3):
-        put(B, p_box(0.019, 0.003, 0.003), 'poly', T(0, 0.092 + i * 0.012, 0.0425))
-    put(B, p_box(0.004, 0.012, 0.005, 0.001), 'gold', T(-0.0128, 0.036, 0.064))  # tuas slide
+        put(B, p_box(0.0010, 0.0010, 0.0040), 'dark', T(-0.0142, 0.0215 + i * 0.0026, 0.0640))
+    put(B, p_box(0.0272, 0.0085, 0.0036, 0.0008), 'dark', T(0, 0.0640, 0.0560))
+    put(B, p_box(0.0345, 0.0085, 0.0085, 0.0012), 'dark', T(0, 0.0215, 0.0440))
+    for (y, z, d) in ((0.0560, 0.0575, 0.0034), (0.0740, 0.0590, 0.0040), (-0.0300, 0.0570, 0.0034)):
+        for sx in (-1, 1):
+            put(B, zturret(gk.cyl(d / 2, 0.0006, 14), (sx * 0.0123, y, z), '+x' if sx > 0 else '-x'), 'steel')
     put(B, grip_bm(), 'grip')
-    trigger_group(B)
     # magasin (di dalam gagang; alas terlihat di bawah)
     top = Vector((0, yc(0.045), 0.045))
     M = bmesh.new()
     rings = [superellipse(0, yc(z), z, 0.0105, 0.016, 0.017, 12, 3) for z in (-0.064, 0.045)]
     merge(M, p_loft(rings), 'dark')
-    put(M, p_box(0.033, 0.058, 0.007, 0.0025), 'poly', T(0, yc(-0.066) - 0.001, -0.066))
-    put(M, p_box(0.0336, 0.004, 0.0074), 'gold', T(0, yc(-0.066) + 0.027, -0.066))
+    yb = yc(-0.066)
+    put(M, gk.plate([(yb - 0.0300, -0.0700), (yb + 0.0290, -0.0700), (yb + 0.0320, -0.0660), (yb + 0.0300, -0.0620), (yb - 0.0290, -0.0620),
+                     (yb - 0.0310, -0.0660)], 0.0330, 0.0012, 0.0026, segs=2), 'poly')
     for v in M.verts:
         v.co -= top
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.1435, 0.078), sight=(0, -0.040, 0.101), guard=(-0.026, 0.008, -0.034))
+    wear = [((0, 0.140, zb), 0.05), ((0.012, 0.040, 0.090), 0.045), ((0, -0.030, 0.080), 0.04), ((0, -0.020, -0.066), 0.045), ((0, 0.110, 0.045), 0.04)]
+    return dict(body=B, mag=(M, top), parts=[('pistol_slide', S, (0, 0, 0))], muzzle=(0, 0.1420, zb), sight=(0, -0.040, 0.101),
+                guard=(-0.026, 0.008, -0.034), wear=wear)
 
 
 # ---------------------------------------------------------------- Kilat: SMG ringkas, popor lipat di kiri
@@ -570,69 +612,130 @@ def red_dot(B, y, zs):
     put(B, p_box(0.008, 0.012, 0.006, 0.0015), 'dark', T(0.023, y + 0.004, zs))  # tombol kecerahan kanan
 
 
+def side_disc(B, y, z, x, d, mat='steel', h=0.0010, n=16, sides=(-1, 1)):
+    """Kepala pin / cakram tipis di sisi badan (x = setengah lebar badan), kedua sisi."""
+    for sx in sides:
+        put(B, zturret(gk.cyl(d / 2, h, n), (sx * x, y, z), '+x' if sx > 0 else '-x'), mat)
+
+
 def build_ar():
+    """Garuda (v6 M2): karabin modular piston gas 14,5", upper monolitik. Rel atas penuh, pelindung tangan free-float
+    berongga berslot 3 sisi (laras, blok gas & tabung piston terlihat di dalam), lubang lontar + pintu debu terbuka,
+    forward-assist, pin takedown, popor teleskopik + bantalan karet, magasin lengkung berpanel, peredam kilat sangkar."""
     B = bmesh.new()
     zb = 0.088
-    put(B, p_prof([(-0.106, 0.062), (0.176, 0.062), (0.176, 0.112), (0.165, 0.118), (-0.098, 0.118), (-0.106, 0.11)], 0.046, 0.004, 2), 'dark')
-    put(B, p_box(0.0015, 0.058, 0.017, 0.0005), 'metal', T(0.0235, 0.045, 0.096))  # penutup lubang lontar
-    put(B, p_cylx(0.0055, 0.012, 10), 'metal', T(0.028, -0.01, 0.103))  # forward assist
-    R6 = {}  # v6: rel atas menerus + BUIS rebah (selalu membawa optik: titik merah bawaan)
-    add_rail_and_buis(R6, B, 0.12645, -0.105, 0.46, merged=True, base=-0.0115, mount=0.0)
-    # rangka bawah + liang magasin melebar
-    put(B, p_prof([(-0.092, 0.040), (-0.06, 0.032), (0.135, 0.032), (0.135, 0.064), (-0.092, 0.064)], 0.042, 0.003, 2), 'dark')
-    put(B, p_prof([(0.06, 0.004), (0.132, 0.010), (0.134, 0.064), (0.06, 0.064)], 0.038, 0.003, 2), 'dark')
-    put(B, p_prof([(0.056, -0.003), (0.137, 0.003), (0.137, 0.011), (0.056, 0.006)], 0.042, 0.002, 1), 'dark')  # bibir liang magasin
-    put(B, p_box(0.0012, 0.05, 0.0012), 'gold', T(0.0212, 0.098, 0.016))
-    lower_details(B, 0.021)
-    # pelindung tangan 8 sisi + celah M-LOK + aksen emas
-    put(B, p_cyly(0.027, 0.285, 8, flat=True), 'poly', T(0, 0.3185, zb))
-    for i in range(4):
-        for sx in (-1, 1):
-            put(B, p_box(0.004, 0.032, 0.007), 'dark', T(sx * 0.0255, 0.21 + i * 0.062, zb - 0.004))
-        put(B, p_box(0.009, 0.032, 0.004), 'dark', T(0, 0.21 + i * 0.062, zb - 0.0265))
-    put(B, p_cyly(0.0275, 0.005, 8, flat=True), 'gold', T(0, 0.452, zb))
-    put(B, p_box(0.0012, 0.2, 0.0012), 'gold', T(0.0262, 0.31, zb + 0.008))
-    put(B, p_box(0.0012, 0.2, 0.0012), 'gold', T(-0.0262, 0.31, zb + 0.008))
-    # laras, blok gas, rem moncong
-    put(B, p_cyly(0.0085, 0.115, 12), 'dark', T(0, 0.512, zb))
-    put(B, p_cyly(0.012, 0.062, 14), 'metal', T(0, 0.597, zb))
-    put(B, p_cyly(0.0124, 0.004, 14), 'gold', T(0, 0.567, zb))
+    # ---- upper: penampang bahu dipangkas dua tingkat, lubang lontar dipotong
+    up = gk.prof_y([(-0.0200, 0.0655), (0.0200, 0.0655), (0.0200, 0.1035), (0.0168, 0.1105), (0.0105, 0.1152), (-0.0105, 0.1152),
+                    (-0.0168, 0.1105), (-0.0200, 0.1035)], -0.1060, 0.1800)
+    pk = lambda pts, sx: gk.xf(gk.ext_x(gk.fillet2d(pts, 0.002), 0.0014)[0], T(sx * 0.0200, 0, 0))  # panel cekung 0,7 mm
+    up = gk.cut(up, [gk.box(0.0080, 0.0560, 0.0150, 0.0200, 0.0500, 0.0935),
+                     pk([(-0.0880, 0.0740), (0.1680, 0.0740), (0.1680, 0.0985), (-0.0640, 0.0985)], -1),
+                     pk([(-0.0880, 0.0740), (-0.0300, 0.0740), (-0.0300, 0.0985), (-0.0640, 0.0985)], 1),
+                     pk([(0.0900, 0.0740), (0.1680, 0.0740), (0.1680, 0.0985), (0.0900, 0.0985)], 1)])
+    put(B, up, 'dark')
+    put(B, p_box(0.0010, 0.0540, 0.0130), 'steel', T(0.0164, 0.0500, 0.0935))                  # pembawa bolt di dalam lubang lontar
     for i in range(3):
-        for sx in (-1, 1):
-            put(B, p_box(0.004, 0.008, 0.007), 'dark', T(sx * 0.0105, 0.585 + i * 0.013, zb + 0.003))
-    put(B, p_cyly(0.0065, 0.0008, 10), 'dark', T(0, 0.6285, zb))
-    # tabung buffer + popor polimer dengan sandaran pipi + bantalan
-    put(B, p_cyly(0.0155, 0.17, 14), 'metal', T(0, -0.19, zb))
-    # popor teleskopik rangka terbuka: cangkang pipi di atas tabung, penyangga bawah miring, bantalan
-    put(B, loft_y([(-0.205, zb + 0.004, 0.024, 0.021, 0.0175), (-0.235, zb + 0.008, 0.029, 0.024, 0.0195), (-0.33, zb + 0.010, 0.031, 0.026, 0.0205),
-                   (-0.352, zb + 0.008, 0.031, 0.028, 0.0205)]), 'poly')
-    put(B, p_chain([(0, -0.232, zb - 0.02), (0, -0.300, 0.030), (0, -0.348, 0.004)], [0.0085, 0.009, 0.0095], 10, True), 'poly')
-    put(B, p_box(0.040, 0.016, 0.132, 0.006, 2), 'grip', T(0, -0.360, zb - 0.032))
-    put(B, p_box(0.041, 0.003, 0.128), 'gold', T(0, -0.3515, zb - 0.032))
-    put(B, p_box(0.008, 0.03, 0.006, 0.002), 'gold', T(0, -0.236, zb - 0.026))  # tuas pengatur panjang
-    for sx in (-1, 1):
-        put(B, p_cylx(0.006, 0.003, 12), 'metal', T(sx * 0.0205, -0.30, zb + 0.008))  # dudukan tali QD
-    # tuas kokang T emas
-    put(B, p_box(0.03, 0.012, 0.007, 0.002), 'gold', T(0, -0.1, 0.1145))
+        put(B, p_box(0.0012, 0.0016, 0.0130), 'dark', T(0.0166, 0.0360 + i * 0.0050, 0.0935))
+    put(B, p_box(0.0016, 0.0600, 0.0165, 0.0005), 'dark', T(0.0228, 0.0500, 0.0770) @ Ry(-14))  # pintu debu terbuka
+    put(B, p_cyly(0.0017, 0.0660, 10), 'steel', T(0.0208, 0.0500, 0.0852))                      # engselnya
+    put(B, gk.plate([(0.0020, 0.0880), (0.0190, 0.0880), (0.0190, 0.1010), (0.0100, 0.1010)], 0.0070, 0.002, 0.0022, x0=0.0200), 'dark')  # pemantul selongsong
+    put(B, zturret(gk.cyl(0.0064, 0.0100, 18), (0.0185, -0.0140, 0.1000), '+x'), 'dark')        # forward-assist
+    put(B, zturret(gk.knurl(0.0052, 0.0042, 22, 0.0004), (0.0285, -0.0140, 0.1000), '+x'), 'dark')
+    put(B, p_box(0.0420, 0.0100, 0.0070, 0.0020), 'dark', T(0, -0.1090, 0.1090))                # tuas kokang T
+    put(B, p_box(0.0080, 0.0150, 0.0076, 0.0015), 'dark', T(-0.0185, -0.1050, 0.1090))          # kaitnya
+    R6 = {}  # rel atas menerus + BUIS rebah (selalu membawa optik: titik merah bawaan)
+    add_rail_and_buis(R6, B, 0.12645, -0.105, 0.46, merged=True, base=-0.0115, mount=0.0)
+    # ---- lower: siluet samping + liang magasin melebar
+    put(B, gk.plate([(-0.1060, 0.0670), (-0.1060, 0.0540), (-0.0940, 0.0450), (-0.0420, 0.0450), (-0.0320, 0.0500), (0.0580, 0.0500),
+                     (0.0600, 0.0670)], 0.0370, [0.0, 0.004, 0.004, 0.003, 0.003, 0.0, 0.0], 0.0026, segs=2), 'dark')
+    put(B, gk.plate([(0.0580, 0.0050), (0.1350, 0.0115), (0.1380, 0.0160), (0.1380, 0.0670), (0.0580, 0.0670)], 0.0400,
+                    [0.002, 0.003, 0.002, 0.0, 0.0], 0.0030, segs=2), 'dark')
+    put(B, gk.plate([(0.0555, 0.0010), (0.1385, 0.0080), (0.1395, 0.0150), (0.0560, 0.0085)], 0.0440, 0.0015, 0.0022, segs=2), 'dark')  # bibir liang
+    for i in range(4):  # gerigi jari di muka liang magasin
+        put(B, p_box(0.0300, 0.0012, 0.0030, 0.0004), 'dark', T(0, 0.1384, 0.0260 + i * 0.0085))
+    put(B, ylathe([(0.0120, -0.1075), (0.0175, -0.1075), (0.0175, -0.0990), (0.0120, -0.0990), (0.0120, -0.1075)], 24, zb), 'dark')  # menara buffer
+    side_disc(B, -0.0780, 0.0585, 0.0185, 0.0080)                                               # pin takedown belakang
+    side_disc(B, 0.1280, 0.0560, 0.0200, 0.0080)                                                # pin pivot depan
+    side_disc(B, 0.0120, 0.0570, 0.0185, 0.0042)
+    side_disc(B, -0.0130, 0.0610, 0.0185, 0.0042)
+    side_disc(B, -0.0320, 0.0570, 0.0185, 0.0110, 'dark', 0.0016, 20)                           # pemilih tembak (poros dua sisi)
+    put(B, gk.plate([(-0.0340, 0.0550), (-0.0120, 0.0590), (-0.0125, 0.0625), (-0.0350, 0.0595)], 0.0030, 0.001, 0.0008, x0=-0.0212), 'dark')  # tuasnya (kiri)
+    put(B, p_box(0.0008, 0.0030, 0.0008), 'gold', T(-0.0187, -0.0400, 0.0640))                  # tanda indeks
+    put(B, p_box(0.0030, 0.0110, 0.0130, 0.0010), 'dark', T(0.0212, 0.0500, 0.0540))            # tombol magasin (kanan)
+    for i in range(3):
+        put(B, p_box(0.0008, 0.0090, 0.0010), 'dark', T(0.0229, 0.0500, 0.0505 + i * 0.0035))
+    put(B, gk.plate([(0.0380, 0.0440), (0.0640, 0.0440), (0.0640, 0.0470), (0.0380, 0.0470)], 0.0030, 0.001, 0.0006, x0=0.0205), 'dark')  # pagar tombol
+    put(B, gk.plate([(0.0290, 0.0640), (0.0410, 0.0640), (0.0410, 0.0800), (0.0330, 0.0820), (0.0290, 0.0780)], 0.0028, 0.0015, 0.0008,
+                    x0=-0.0212), 'dark')                                                       # penahan bolt (kiri)
+    # ---- pelindung tangan free-float berongga: slot samping, bawah, dan diagonal atas
+    HX, HT, HB = 0.0232, 0.0272, 0.0250
+    hg = gk.loft_shell([(0.1800, zb, HT, HB, HX, 5.0), (0.4520, zb, HT, HB, HX, 5.0)], 32, 0.0028)
+    cs = []
+    for i in range(4):
+        y0 = 0.2020 + i * 0.0610
+        cs.append(gk.xf(gk.slot_x(y0, y0 + 0.0400, 0.0, 0.0090, 0.0800), T(0, 0, zb - 0.0015)))
+        cs.append(gk.slot_z(y0, y0 + 0.0400, 0.0, 0.0090, 0.0200, zb - HB))
+        for a in (-45, 45):
+            cs.append(gk.xf(gk.slot_z(y0 + 0.0060, y0 + 0.0340, 0.0, 0.0062, 0.0200, 0.0300), T(0, 0, zb) @ Ry(a)))
+    put(B, gk.cut(hg, cs), 'poly')
+    put(B, gk.loft_shell([(0.4522, zb, HT + 0.0004, HB + 0.0004, HX + 0.0004, 5.0), (0.4548, zb, HT + 0.0004, HB + 0.0004, HX + 0.0004, 5.0)],
+                         32, 0.0040), 'gold')                                                  # cincin identitas di ujung
+    put(B, ylathe([(0.0100, 0.1740), (0.0222, 0.1740), (0.0222, 0.1830), (0.0100, 0.1830), (0.0100, 0.1740)], 28, zb), 'dark')  # mur laras
+    for y in (0.1900, 0.2000):
+        put(B, zturret(gk.screw('torx', 0.0046, 0.0014), (-HX - 0.0002, y, zb - 0.0170), '-x'), 'steel')
+    # ---- laras, blok gas + tabung piston (di dalam pelindung tangan), peredam kilat sangkar
+    put(B, ylathe([(0.0, 0.1700), (0.0104, 0.1700), (0.0104, 0.3000), (0.0092, 0.3040), (0.0092, 0.4560), (0.0085, 0.4590),
+                   (0.0085, 0.5620), (0.0076, 0.5650), (0.0076, 0.5880), (0.0, 0.5880)], 20, zb), 'dark')
+    put(B, gk.plate([(0.3540, zb - 0.0125), (0.3860, zb - 0.0125), (0.3860, zb + 0.0215), (0.3540, zb + 0.0215)], 0.0220, 0.003, 0.0030), 'dark')
+    put(B, p_cyly(0.0046, 0.1700, 12), 'steel', T(0, 0.2700, zb + 0.0165))
+    fh = gk.lathe([(0.0044, 0.5840), (0.0104, 0.5840), (0.0112, 0.5880), (0.0112, 0.6240), (0.0100, 0.6289), (0.0062, 0.6289),
+                   (0.0062, 0.5960), (0.0044, 0.5940), (0.0044, 0.5840)], 24)
+    fh = gk.cut(fh, gk.radial_slots(0.5990, 0.6210, 0.0030, 0.0200, 0.0036, [0, 60, -60, 120, -120]))
+    put(B, gk.xf(fh, T(0, 0, zb)), 'dark')
+    put(B, ylathe([(0.0078, 0.5790), (0.0098, 0.5790), (0.0098, 0.5838), (0.0078, 0.5838), (0.0078, 0.5790)], 6, zb), 'steel')   # mur pengunci
+    # ---- tabung buffer + popor teleskopik
+    put(B, ylathe([(0.0, -0.2860), (0.0140, -0.2860), (0.0146, -0.2810), (0.0146, -0.1000), (0.0, -0.1000)], 24, zb), 'dark')
+    put(B, p_box(0.0090, 0.1700, 0.0060, 0.0010), 'dark', T(0, -0.1950, zb - 0.0160))
+    put(B, yknurl(0.0186, -0.1185, -0.1090, zb, 28, 0.0014), 'dark')                            # mur kastil
+    put(B, p_box(0.0340, 0.0026, 0.0440, 0.0040), 'dark', T(0, -0.1072, zb - 0.0040))           # pelat ujung
+    st = gk.plate([(-0.1960, 0.1110), (-0.3440, 0.1150), (-0.3520, 0.1090), (-0.3520, 0.0120), (-0.3440, 0.0060), (-0.3180, 0.0140),
+                   (-0.2380, 0.0640), (-0.1960, 0.0680)], 0.0340, [0.004, 0.006, 0.003, 0.003, 0.004, 0.006, 0.010, 0.003], 0.0042,
+                  segs=3, tri=False)
+    st = gk.cut(st, [gk.ext_x(gk.fillet2d([(-0.3360, 0.0300), (-0.3360, 0.0640), (-0.2660, 0.0640)], 0.006, 4), 0.06)[0]])  # lubang peringan
+    put(B, st, 'poly')
+    put(B, gk.plate([(-0.3520, 0.0085), (-0.3520, 0.1100), (-0.3620, 0.1070), (-0.3645, 0.0600), (-0.3620, 0.0110)], 0.0350, 0.002, 0.0034,
+                    segs=2), 'rubber')                                                         # bantalan karet
+    put(B, gk.plate([(-0.2100, 0.0670), (-0.2640, 0.0670), (-0.2590, 0.0590), (-0.2230, 0.0570)], 0.0120, 0.002, 0.0018), 'dark')  # tuas setelan
+    side_disc(B, -0.3000, 0.0840, 0.0170, 0.0120, 'steel', 0.0008, 20)                          # soket tali QD
+    side_disc(B, -0.3000, 0.0840, 0.0170, 0.0070, 'rubber', 0.0011, 16)
     put(B, grip_bm(), 'grip')
-    trigger_group(B, -0.025)
-    engrave(B, 'GARUDA', -0.0216, 0.03, 0.047)
-    # magasin melengkung (pisang)
+    trigger_group(B, -0.025, 'steel')
+    engrave(B, 'GARUDA', -0.0188, 0.0200, 0.0590, 0.0055)
+    # ---- magasin lengkung berpanel (asal = titik masuk)
     top = Vector((0, 0.097, 0.060))
     M = bmesh.new()
-    rings = []
-    for k in range(7):
-        t = k / 6
-        z = 0.060 - 0.205 * t
-        rings.append(superellipse(0, 0.097 + 0.05 * t ** 1.6, z, 0.0122, 0.0315 + 0.003 * t, 0.0305, 12, 3.4))
-    merge(M, p_loft(rings), 'dark')
-    put(M, p_box(0.030, 0.07, 0.009, 0.003), 'poly', T(0, 0.097 + 0.05 + 0.002, -0.149))
-    put(M, p_box(0.0305, 0.004, 0.0094), 'gold', T(0, 0.097 + 0.05 + 0.032, -0.149))
-    for k in range(4):
-        put(M, p_box(0.0254, 0.0025, 0.004), 'dark', T(0, 0.097 + 0.05 * ((k + 1) / 5) ** 1.6 - 0.031, 0.04 - k * 0.045))
+
+    def mag_line(k0, k1, n, df, dr):
+        F, Rr = [], []
+        for i in range(n + 1):
+            t = k0 + (k1 - k0) * i / n
+            c = Vector((0.097 + 0.05 * t ** 1.6, 0.060 - 0.205 * t))
+            tg_ = Vector((0.08 * t ** 0.6, -0.205)).normalized()
+            nrm = Vector((-tg_.y, tg_.x))   # ke depan (+Y)
+            F.append(tuple(c + nrm * df))
+            Rr.append(tuple(c - nrm * dr))
+        return F + list(reversed(Rr))
+    put(M, gk.plate(mag_line(0.0, 1.0, 10, 0.0312, 0.0305), 0.0236, 0.0, 0.0030, segs=2), 'poly')
+    put(M, gk.plate(mag_line(0.30, 0.93, 8, 0.0240, 0.0235), 0.0252, 0.0, 0.0008), 'poly')    # panel menonjol
+    for k in range(3):
+        put(M, gk.plate(mag_line(0.36 + k * 0.19, 0.39 + k * 0.19, 1, 0.0312, 0.0305), 0.0262, 0.0, 0.0008), 'poly')  # rusuk melintang
+    a = math.degrees(math.atan2(0.08, 0.205))
+    put(M, p_box(0.0290, 0.0700, 0.0090, 0.0030, 2), 'poly', T(0, 0.097 + 0.05 + 0.0015, 0.060 - 0.205 - 0.0030) @ Rx(a))
     for v in M.verts:
         v.co -= top
-    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.6289, zb), guard=(0, 0.33, zb - 0.027 - 0.017)), **R6}
+    wear = [((0, 0.610, zb), 0.06), ((0.020, 0.050, 0.093), 0.06), ((0, 0.097, 0.010), 0.06), ((0, -0.108, 0.109), 0.04), ((-0.020, -0.030, 0.057), 0.04),
+            ((0, 0.330, 0.060), 0.08), ((0, -0.360, 0.060), 0.07)]
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.6289, zb), guard=(0, 0.33, zb - HB - 0.017), wear=wear), **R6}
 
 
 # ---------------------------------------------------------------- Badai: shotgun pompa
@@ -762,67 +865,99 @@ def shift(bm, o):
 
 
 def build_sniper():
-    """Rajawali: senapan runduk bolt-action, sasis gelap + popor zaitun, laras berat beralur, teropong 8×."""
+    """Rajawali (v6 M2): senapan runduk bolt sasis. Aksi silinder dengan lubang lontar (bolt baja terlihat), sasis zaitun
+    dengan alur laras bebas + potongan peringan, laras berat beralur 6 + rem moncong berport, popor rangka berlubang
+    dengan penyangga pipi & bantalan yang bisa disetel, bipod terlipat, tuas bolt berbonggol bergerigi."""
     B = bmesh.new()
     zb = 0.090
-    put(B, p_cyly(0.0175, 0.25, 18), 'metal', T(0, 0.035, zb))  # penerima bulat
-    put(B, p_box(0.0015, 0.07, 0.016, 0.0005), 'dark', T(0.0172, 0.07, zb + 0.004))  # lubang lontar kanan
-    put(B, p_prof([(-0.118, 0.046), (0.215, 0.046), (0.215, 0.082), (-0.118, 0.082)], 0.042, 0.004, 2), 'dark')  # sasis
-    put(B, p_box(0.0012, 0.30, 0.0012), 'gold', T(0.0212, 0.05, 0.05), mirror=True)
-    engrave(B, 'RAJAWALI', -0.0216, 0.06, 0.064, 0.0075)
+    # ---- aksi (penerima silinder) + lubang lontar kanan-atas
+    ac = gk.lathe([(0.0, -0.0950), (0.0150, -0.0950), (0.0165, -0.0900), (0.0165, 0.1500), (0.0186, 0.1520), (0.0186, 0.1660), (0.0, 0.1660)], 28)
+    ac = gk.cut(ac, [gk.box(0.0300, 0.0700, 0.0300, 0.0190, 0.0750, 0.0110)])
+    put(B, gk.xf(ac, T(0, 0, zb)), 'dark')
     R6 = {}  # rel atas 20 MOA (datar di sini) + BUIS
-    add_rail_and_buis(R6, B, zb + 0.026, -0.12, 0.20, base=-0.0085, mount=0.04)
-    # forend 8 sisi zaitun + celah + cincin emas
-    put(B, p_cyly(0.027, 0.30, 8, flat=True), 'olive', T(0, 0.365, zb - 0.004))
+    add_rail_and_buis(R6, B, zb + 0.026, -0.12, 0.20, base=-0.0108, mount=0.04)
+    # ---- sasis zaitun: siluet samping, alur laras bebas, potongan peringan di forend
+    ch = gk.plate([(-0.1000, 0.0460), (-0.1000, 0.0840), (0.1650, 0.0840), (0.1750, 0.0800), (0.5220, 0.0800), (0.5300, 0.0720), (0.5300, 0.0600),
+                   (0.5220, 0.0540), (0.2000, 0.0540), (0.1850, 0.0460)], 0.0400, [0.002, 0.003, 0.003, 0.003, 0.003, 0.004, 0.004, 0.003, 0.004, 0.004],
+                  0.0040, segs=3, tri=False)
+    cs = [gk.xf(gk.cyl(0.0158, 0.4000, 28), T(0, 0.1600, zb) @ Rx(-90))]
     for i in range(4):
+        y0 = 0.2150 + i * 0.0760
+        cs.append(gk.xf(gk.slot_x(y0, y0 + 0.0520, 0.0, 0.0090, 0.0800), T(0, 0, 0.0652)))
+    put(B, gk.cut(ch, cs), 'olive')
+    for (y, z) in ((-0.0700, 0.0660), (0.1400, 0.0660)):
         for sx in (-1, 1):
-            put(B, p_box(0.004, 0.042, 0.008), 'dark', T(sx * 0.0255, 0.265 + i * 0.066, zb - 0.006))
-    put(B, p_cyly(0.0275, 0.005, 8, flat=True), 'gold', T(0, 0.514, zb - 0.004))
-    # laras berat beralur (6 alur) + rem moncong berlubang
-    put(B, p_cyly(0.0118, 0.36, 18), 'dark', T(0, 0.69, zb))
-    for k in range(6):
-        a = k * pi / 3
-        put(B, p_box(0.0032, 0.24, 0.0032), 'metal', T(0.0112 * math.cos(a), 0.70, zb + 0.0112 * math.sin(a)))
-    put(B, p_cyly(0.017, 0.08, 14), 'metal', T(0, 0.905, zb))
-    put(B, p_cyly(0.0174, 0.004, 14), 'gold', T(0, 0.868, zb))
-    for i in range(3):
-        for sx in (-1, 1):
-            put(B, p_box(0.004, 0.012, 0.01), 'dark', T(sx * 0.0155, 0.886 + i * 0.019, zb + 0.002))
-    put(B, p_cyly(0.0075, 0.0008, 10), 'dark', T(0, 0.9455, zb))
-    # popor: leher ke gagang, badan zaitun, sandaran pipi dapat diatur, bantalan karet
-    put(B, loft_y([(-0.11, zb - 0.012, 0.03, 0.03, 0.021), (-0.16, zb - 0.014, 0.034, 0.05, 0.022), (-0.29, zb - 0.02, 0.036, 0.085, 0.0225),
-                   (-0.43, zb - 0.024, 0.038, 0.095, 0.023)], 16, 2.6), 'olive')
-    for yy in (-0.25, -0.36):
-        put(B, p_cyl(0.0042, 0.0042, 0.03, 10), 'metal', T(0, yy, zb + 0.026))
-    put(B, loft_y([(-0.225, zb + 0.044, 0.008, 0.007, 0.018), (-0.25, zb + 0.047, 0.011, 0.008, 0.0195), (-0.38, zb + 0.047, 0.011, 0.008, 0.0195),
-                   (-0.395, zb + 0.044, 0.008, 0.007, 0.018)], 14, 2.4), 'dark')
-    put(B, p_box(0.047, 0.018, 0.14, 0.006, 2), 'grip', T(0, -0.442, zb - 0.058))
-    put(B, p_box(0.048, 0.003, 0.136), 'gold', T(0, -0.4325, zb - 0.058))
-    put(B, p_chain([(0, -0.31, zb - 0.105), (0, -0.33, zb - 0.135)], [0.006, 0.006], 8, True), 'metal')  # monopod belakang
-    # bipod terlipat
-    put(B, p_box(0.03, 0.026, 0.014, 0.003), 'dark', T(0, 0.48, zb - 0.036))
+            put(B, zturret(gk.screw('torx', 0.0062, 0.0014), (sx * 0.0200, y, z), '+x' if sx > 0 else '-x'), 'steel')
+    put(B, gk.picatinny(0.0600, 0.4500, 0.0, -0.0075, 0.0150), 'dark', T(0, 0, 0.0478) @ Ry(180))    # rel bawah untuk bipod
+    put(B, gk.plate([(0.0360, 0.0460), (0.0450, 0.0460), (0.0470, 0.0300), (0.0400, 0.0280)], 0.0100, 0.0015, 0.0012), 'dark')  # tuas magasin
+    engrave(B, 'RAJAWALI', -0.0203, 0.0500, 0.0660, 0.0058)
+    # ---- laras berat beralur 6 + rem moncong 3 port
+    br = gk.lathe([(0.0, 0.1500), (0.0150, 0.1500), (0.0150, 0.2000), (0.0128, 0.2300), (0.0122, 0.8700), (0.0100, 0.8720), (0.0100, 0.8860), (0.0, 0.8860)], 24)
+    fl = [gk.xf(gk.slot_z(0.2700, 0.8300, 0.0, 0.0044, 0.0060, 0.0143), Ry(30 + 60 * k)) for k in range(6)]
+    put(B, gk.xf(gk.cut(br, fl), T(0, 0, zb)), 'dark')
+    mb = gk.lathe([(0.0058, 0.8800), (0.0150, 0.8800), (0.0166, 0.8860), (0.0166, 0.9400), (0.0152, 0.9455), (0.0070, 0.9455), (0.0070, 0.8920),
+                   (0.0058, 0.8900), (0.0058, 0.8800)], 24)
+    cs = [gk.slot_x(0.8960 + i * 0.0150, 0.8960 + i * 0.0150 + 0.0090, 0.0, 0.0130, 0.0600, 0.0030) for i in range(3)]
+    cs += [gk.xf(gk.cyl(0.0022, 0.0200, 12), T(0, 0.9005 + i * 0.0150, 0.0050)) for i in range(3)]
+    put(B, gk.xf(gk.cut(mb, cs), T(0, 0, zb)), 'dark')
+    put(B, ylathe([(0.0100, 0.8755), (0.0131, 0.8755), (0.0131, 0.8790), (0.0100, 0.8790), (0.0100, 0.8755)], 24, zb), 'gold')    # cincin identitas
+    # ---- popor rangka berlubang (zaitun) + penyangga pipi + bantalan bersetelan
+    sk = gk.plate([(-0.0950, 0.0860), (-0.1500, 0.0960), (-0.4180, 0.0960), (-0.4180, -0.0300), (-0.3920, -0.0360), (-0.3300, -0.0040),
+                   (-0.2500, 0.0300), (-0.1700, 0.0460), (-0.0950, 0.0500)], 0.0380, [0.002, 0.012, 0.006, 0.006, 0.008, 0.012, 0.012, 0.006, 0.002],
+                  0.0050, segs=3, tri=False)
+    sk = gk.cut(sk, [gk.ext_x(gk.fillet2d([(-0.1850, 0.0640), (-0.3860, 0.0640), (-0.3860, 0.0020), (-0.3380, 0.0180), (-0.2560, 0.0470)], 0.009, 5), 0.07)[0]])
+    put(B, sk, 'olive')
+    put(B, gk.plate([(-0.2080, 0.0990), (-0.2160, 0.1125), (-0.3640, 0.1125), (-0.3720, 0.0990)], 0.0340, [0.001, 0.006, 0.006, 0.001], 0.0125, segs=5), 'olive')  # punggung membulat, rendah: tidak menutup pandangan pisir besi
+    for yy in (-0.2500, -0.3400):
+        put(B, p_cyl(0.0040, 0.0040, 0.0080, 12), 'steel', T(0, yy, 0.0970))
+    put(B, zturret(gk.knurl(0.0072, 0.0060, 26, 0.0006), (0.0188, -0.2950, 0.0800), '+x'), 'dark')    # kenop penyangga pipi
+    put(B, p_box(0.0360, 0.0080, 0.1260, 0.0020), 'dark', T(0, -0.4220, 0.0330))                      # pelat pangkal
+    for zz in (0.0000, 0.0680):
+        put(B, p_cyly(0.0034, 0.0120, 12), 'steel', T(0, -0.4310, zz))
+    put(B, gk.plate([(-0.4360, -0.0340), (-0.4360, 0.1000), (-0.4500, 0.0960), (-0.4530, 0.0350), (-0.4500, -0.0300)], 0.0380, 0.003, 0.0040,
+                    segs=2), 'rubber')                                                                # bantalan karet
+    put(B, zturret(gk.knurl(0.0066, 0.0050, 24, 0.0006), (0.0188, -0.4000, 0.0340), '+x'), 'dark')    # kenop bantalan
+    put(B, gk.xf(gk.knurl(0.0070, 0.0180, 24, 0.0006), T(0, -0.3600, -0.0420)), 'dark')               # monopod belakang
+    # ---- bipod terlipat ke depan di bawah forend
+    put(B, gk.plate([(0.4580, 0.0300), (0.5020, 0.0300), (0.5020, 0.0462), (0.4580, 0.0462)], 0.0300, 0.002, 0.0020), 'dark')
+    for b in gk.rail_clamp(0.4600, 0.5000, 0.0260, 0.0020):
+        put(B, b, 'dark', T(0, 0, 0.0478) @ Ry(180))
+    put(B, p_cylx(0.0036, 0.0380, 12), 'steel', T(0, 0.4800, 0.0340))
     for sx in (-1, 1):
-        put(B, p_chain([(sx * 0.011, 0.48, zb - 0.043), (sx * 0.011, 0.74, zb - 0.038)], [0.0047, 0.0042], 6, False), 'metal')
-        put(B, p_sphere(0.0064, 6, 4), 'grip', T(sx * 0.011, 0.745, zb - 0.038))
+        x = sx * 0.0150
+        put(B, p_tube((x, 0.4800, 0.0340), (x, 0.6300, 0.0370), 0.0056, 0.0056, 14), 'dark')
+        put(B, p_tube((x, 0.6260, 0.0370), (x, 0.7300, 0.0390), 0.0043, 0.0043, 12), 'steel')
+        put(B, gk.xf(gk.knurl(0.0066, 0.0100, 22, 0.0005), T(x, 0.6220, 0.0368) @ Rx(-90)), 'dark')   # kerah pengunci
+        put(B, gk.xf(gk.lathe([(0.0, 0.7280), (0.0052, 0.7280), (0.0066, 0.7330), (0.0066, 0.7440), (0.0050, 0.7480), (0.0, 0.7480)], 14), T(x, 0, 0.0392)), 'rubber')
     put(B, grip_bm(), 'grip')
-    trigger_group(B, -0.02)
-    # bolt (node terpisah): badan di dalam penerima + tuas kanan berkenop; origin di sumbu bolt (titik putar & geser)
+    trigger_group(B, -0.02, 'steel')
+    # ---- bolt (node terpisah): badan baja di dalam aksi (terlihat di lubang lontar), selubung belakang, tuas berbonggol
     bo = (0, -0.02, zb)
     BO = bmesh.new()
-    put(BO, p_cyly(0.0105, 0.09, 14), 'metal', T(0, -0.035, zb))
-    put(BO, p_cyly(0.0125, 0.02, 14), 'dark', T(0, -0.085, zb))
-    put(BO, p_chain([(0.006, -0.025, zb), (0.03, -0.03, zb - 0.006), (0.044, -0.036, zb - 0.02)], [0.0042, 0.0038, 0.0034], 8, False), 'metal')
-    put(BO, p_sphere(0.0085, 12, 8), 'gold', T(0.046, -0.037, zb - 0.023))
+    put(BO, p_cyly(0.0100, 0.1930, 18), 'steel', T(0, 0.0215, zb))
+    for k in range(3):
+        put(BO, p_cyly(0.0102, 0.0020, 18), 'dark', T(0, 0.0500 + k * 0.0200, zb))
+    put(BO, ylathe([(0.0, -0.1200), (0.0080, -0.1200), (0.0124, -0.1140), (0.0128, -0.0800), (0.0105, -0.0760), (0.0, -0.0760)], 18, zb), 'dark')
+    put(BO, zturret(gk.cyl(0.0030, 0.0006, 12), (0, -0.1200, zb), '-y'), 'red')                       # indikator kokang
+    P0, P1, P2 = Vector((0.006, -0.025, zb)), Vector((0.030, -0.030, zb - 0.006)), Vector((0.043, -0.0355, zb - 0.019))
+    put(BO, p_chain([P0, P1, P2], [0.0054, 0.0048, 0.0043], 10, False), 'steel')
+    d = (P2 - P1).normalized()
+    q = Vector((0, 0, 1)).rotation_difference(d).to_matrix().to_4x4()
+    put(BO, gk.xf(gk.knurl(0.0078, 0.0150, 22, 0.0007), T(*(P2 - d * 0.0020)) @ q), 'dark')
+    put(BO, p_sphere(0.0074, 12, 8), 'dark', T(*(P2 + d * 0.0130)))
     shift(BO, bo)
-    # magasin pendek 5 butir
+    # ---- magasin kotak 5 butir
     top = Vector((0, 0.075, 0.062))
     M = bmesh.new()
     merge(M, p_loft([superellipse(0, 0.075, z, 0.0125, 0.033, 0.032, 12, 3.6) for z in (0.0, 0.062)]), 'dark')
-    put(M, p_box(0.031, 0.072, 0.008, 0.003), 'olive', T(0, 0.075, -0.003))
-    put(M, p_box(0.0315, 0.004, 0.0084), 'gold', T(0, 0.106, -0.003))
+    for zz in (0.012, 0.026):
+        put(M, p_box(0.0262, 0.0560, 0.0030, 0.0008), 'dark', T(0, 0.075, zz))
+    put(M, gk.plate([(0.0390, -0.0080), (0.1110, -0.0080), (0.1130, -0.0030), (0.1110, 0.0020), (0.0390, 0.0020), (0.0370, -0.0030)], 0.0310, 0.0012, 0.0026,
+                    segs=2), 'poly')
     shift(M, top)
-    return {**dict(body=B, mag=(M, top), parts=[('sniper_bolt', BO, bo)], muzzle=(0, 0.9455, zb),
-                   guard=(0, 0.37, zb - 0.004 - 0.027 - 0.017)), **R6}
+    wear = [((0, 0.920, zb), 0.07), ((0.020, 0.050, 0.095), 0.08), ((0.050, -0.040, 0.065), 0.04), ((0, 0.075, 0.030), 0.05), ((0, 0.600, 0.036), 0.14),
+            ((0, -0.440, 0.030), 0.08), ((0, 0.370, 0.055), 0.08)]
+    return {**dict(body=B, mag=(M, top), parts=[('sniper_bolt', BO, bo)], muzzle=(0, 0.9455, zb), guard=(0, 0.37, 0.054 - 0.017), wear=wear), **R6}
 
 
 def build_lmg():
@@ -1186,7 +1321,7 @@ def build_opt_s2(lo=False):
         put(B, b, 'dark')
     for y in (-0.019, 0.016):
         cross_bolt(B, y, 0.028)
-    return dict(body=B, eye=(0, -0.0528, h), obj=(0, 0.0560, h), lensR=0.0125, objR=0.0150, fill=0.33)
+    return dict(body=B, eye=(0, -0.0528, h), obj=(0, 0.0560, h), lensR=0.0125, objR=0.0150, fill=0.68, relief=0.060)
 
 
 def build_opt_s4(lo=False):
@@ -1230,7 +1365,7 @@ def build_opt_s4(lo=False):
             put(B, zturret(gk.screw('torx', 0.0030, 0.0012), (sx * 0.0128, y, h + 0.0128), '+z'), 'steel')
     for b in gk.rail_clamp(-0.0400, 0.0400, 0.0260, 0.0035):
         put(B, b, 'dark')
-    return dict(body=B, eye=(0, -0.0508, h), obj=(0, 0.0694, h), lensR=0.0138, objR=0.0160, fill=0.76)
+    return dict(body=B, eye=(0, -0.0508, h), obj=(0, 0.0694, h), lensR=0.0138, objR=0.0160, fill=0.94, relief=0.060)
 
 
 S8_RING = (0, -0.0915)
@@ -1290,7 +1425,7 @@ def build_opt_s8(lo=False):
         a = 2 * pi * k / 12
         put(ring, p_box(0.0024, 0.0150, 0.0016, 0.0005), 'dark', Ry(-a / D2R) @ T(0, 0, 0.0204))
     put(ring, gk.plate([(-0.0060, 0.0190), (0.0060, 0.0190), (0.0040, 0.0290), (-0.0040, 0.0290)], 0.0050, [0.0, 0.0, 0.0018, 0.0018], 0.0006), 'dark', Ry(-35))
-    return dict(body=B, eye=(0, -0.1585, h), obj=(0, 0.1350, h), lensR=0.0165, objR=0.0262, fill=0.88, ring=(ring, (S8_RING[0], S8_RING[1], h)))
+    return dict(body=B, eye=(0, -0.1585, h), obj=(0, 0.1350, h), lensR=0.0165, objR=0.0262, fill=0.96, relief=0.068, ring=(ring, (S8_RING[0], S8_RING[1], h)))
 
 
 OPTICS = {'rds': build_opt_rds, 'holo': build_opt_holo, 's2': build_opt_s2, 's4': build_opt_s4, 's8': build_opt_s8}
@@ -2009,11 +2144,14 @@ def make_obj(name, bm, origin=(0, 0, 0), ang=50, fin=True):
     return ob, tris
 
 
-def bake_vwx(objs, maxd=0.03, rays=12, occ=()):
+def bake_vwx(objs, maxd=0.03, rays=12, occ=(), hot=None):
     """Oklusi ambien (sinar ke belahan bola, seluruh rakitan senjata sebagai penghalang) + tanda aus → lapisan UV 'vwx'
     (u = AO, v = aus). Diekspor sebagai TEXCOORD_0 dan dibaca web/game/weapons.js sebagai atribut `vwx`; sengaja BUKAN
     warna verteks supaya material GLB (ikon HUD, game/icons.js) tidak ikut berubah warna. occ: penghalang tambahan yang
-    tidak ikut dipanggang (mis. senjata untuk tangan kiri yang menggenggamnya)."""
+    tidak ikut dipanggang (mis. senjata untuk tangan kiri yang menggenggamnya).
+    v6 M2: aus kontinu = bidang bevel × keterbukaan (tepi yang tersembunyi di cekungan jarang tergesek) × bobot titik panas.
+    hot = [((x, y, z), jari-jari)] titik yang sering tergesek (moncong, lubang lontar, liang magasin, tuas); tanpa hot
+    bobotnya rata 0,8."""
     from mathutils.bvhtree import BVHTree
     bpy.context.view_layer.update()
     V_, P_ = [], []
@@ -2030,6 +2168,16 @@ def bake_vwx(objs, maxd=0.03, rays=12, occ=()):
         ph = 2 * pi * ((i * 0.6180339887) % 1.0)
         r = math.sqrt(u)
         dirs.append(Vector((r * math.cos(ph), r * math.sin(ph), math.sqrt(max(0.0, 1 - u)))))
+    hot = [(Vector(p), r) for p, r in hot] if hot else None
+
+    def hotw(q):
+        if hot is None:
+            return 0.8
+        m = 0.0
+        for p, r in hot:
+            t = max(0.0, 1.0 - (q - p).length / r)
+            m = max(m, t * t * (3 - 2 * t))
+        return 0.5 + 0.5 * m
     for ob in objs:
         me = ob.data
         M = ob.matrix_world
@@ -2055,9 +2203,9 @@ def bake_vwx(objs, maxd=0.03, rays=12, occ=()):
                         hit = bvh.ray_cast(q, t * d.x + bt * d.y + nw * d.z, maxd)
                         if hit[0] is not None:
                             occ += 1.0 - (hit[3] / maxd) ** 2
-                    ao = max(0.08, 1.0 - 0.9 * occ / rays)
+                    ao = (max(0.08, 1.0 - 0.9 * occ / rays), hotw(q))
                     cache[key] = ao
-                uv.data[li].uv = (ao, w)
+                uv.data[li].uv = (ao[0], w * (0.3 + 0.7 * ao[0] ** 1.5) * ao[1])
 
 
 def make_vc_obj(name, bm):
@@ -2137,7 +2285,7 @@ def build_all():
             objs.append(ob2)
             w['tris'] += t2
             w.setdefault('parts', []).append(dict(node=pn, pos=gl(po_), tris=t2))
-        bake_vwx(objs[n0:])  # AO + aus untuk seluruh rakitan senjata ini (badan, magasin, pompa, bolt, …)
+        bake_vwx(objs[n0:], hot=d.get('wear'))  # AO + aus untuk seluruh rakitan senjata ini (badan, magasin, pompa, bolt, …)
         if 'buis' in d:  # v6: daun pisir lipat tegak / rebah (dipanggang dengan badan sebagai penghalang)
             for nm, bb in zip(('_buis_up', '_buis_dn'), d['buis']):
                 bo_, bt_ = make_obj(kind + nm, bb)
@@ -2352,7 +2500,7 @@ def floor_plane(col, rough=0.35, size=8):
 
 def collect(kind):
     obs = [bpy.data.objects[kind]]
-    for n in (kind + '_mag', 'shotgun_pump' if kind == 'shotgun' else None, 'sniper_bolt' if kind == 'sniper' else None,
+    for n in (kind + '_mag', 'shotgun_pump' if kind == 'shotgun' else None, 'sniper_bolt' if kind == 'sniper' else None, 'pistol_slide' if kind == 'pistol' else None,
               'revolver_cyl' if kind == 'revolver' else None, 'dbs_brk' if kind == 'dbs' else None):
         if n and n in bpy.data.objects:
             obs.append(bpy.data.objects[n])
@@ -2532,16 +2680,21 @@ def sheet_shot(show, path, az, el, k=1.0, lens=60):
         if o.type == 'MESH':
             o.hide_render = o.name not in names
     bpy.context.view_layer.update()
-    pts = [o.matrix_world @ Vector(c) for o in show for c in o.bound_box]
-    lo_ = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
-    hi_ = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
-    c = (lo_ + hi_) / 2
-    r = (hi_ - lo_).length / 2
     a, e = az * D2R, el * D2R
-    dist = r / math.tan(math.atan(18 / lens) * 0.9) * k
+    fw = Vector((-math.sin(a) * math.cos(e), math.cos(a) * math.cos(e), -math.sin(e)))  # arah pandang
+    rt = fw.cross(Vector((0, 0, 1))).normalized()
+    up_ = rt.cross(fw)
+    pts = [o.matrix_world @ v.co for o in show for v in o.data.vertices]
+    us, vs = [p.dot(rt) for p in pts], [p.dot(up_) for p in pts]
+    ws = [p.dot(fw) for p in pts]
+    c = rt * ((min(us) + max(us)) / 2) + up_ * ((min(vs) + max(vs)) / 2) + fw * ((min(ws) + max(ws)) / 2)
+    scn = bpy.context.scene
+    asp = scn.render.resolution_x / scn.render.resolution_y
+    half = max((max(us) - min(us)) / 2, (max(vs) - min(vs)) / 2 * asp) * 1.06 * k  # setengah lebar bingkai
+    dist = half / (18 / lens) + (max(ws) - min(ws)) / 2
     for o in [o for o in bpy.data.objects if o.type == 'CAMERA']:
         bpy.data.objects.remove(o)
-    cam_look(c + Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e))) * dist, c, lens)
+    cam_look(c - fw * dist, c, lens)
     bpy.context.scene.render.filepath = path
     bpy.ops.render.render(write_still=True)
 
@@ -2575,8 +2728,8 @@ def sheet_guns(kinds, optic_of=None):
                         o.location = REST[o.name] + mp
                         show.append(o)
             tag = kind + ('_' + oid if oid else '')
-            for nm, az, el in (('L', -90, 2), ('R', 90, 2), ('34', 40, 20), ('top', 90, 80)):
-                sheet_shot(show, os.path.join(SHEET, 'gun_%s_%s.png' % (tag, nm)), az, el, 0.82, 50)
+            for nm, az, el in (('L', -90, 2), ('R', 90, 2), ('34', 40, 20), ('F34', 142, 16), ('top', 90, 80)):
+                sheet_shot(show, os.path.join(SHEET, 'gun_%s_%s.png' % (tag, nm)), az, el, 1.0, 80)
             for o in bpy.data.objects:  # optik kembali ke asal
                 if o.name.startswith('opt_') and o.name in REST:
                     o.location = REST[o.name]

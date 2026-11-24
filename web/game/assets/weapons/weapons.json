@@ -4,7 +4,7 @@
    "kind": "pistol",
    "name": "P9",
    "node": "pistol",
-   "tris": 3832,
+   "tris": 7174,
    "mag": {
     "node": "pistol_mag",
     "pos": [
@@ -12,15 +12,26 @@
      0.045,
      -0.01462
     ],
-    "tris": 340
+    "tris": 516
    },
+   "parts": [
+    {
+     "node": "pistol_slide",
+     "pos": [
+      0,
+      0,
+      0
+     ],
+     "tris": 2316
+    }
+   ],
    "handL": "fp_hand_l_pistol",
    "lod1": "pistol_lod1",
    "lod1Tris": 72,
    "muzzle": [
     0,
     0.078,
-    -0.1435
+    -0.142
    ],
    "sight": [
     0,
@@ -138,7 +149,7 @@
    "kind": "ar",
    "name": "Garuda",
    "node": "ar",
-   "tris": 21068,
+   "tris": 31972,
    "mag": {
     "node": "ar_mag",
     "pos": [
@@ -146,7 +157,7 @@
      0.06,
      -0.097
     ],
-    "tris": 700
+    "tris": 1160
    },
    "handL": "fp_hand_l_ar",
    "lod1": "ar_lod1",
@@ -162,8 +173,8 @@
     0.093
    ],
    "guard": [
-    -0.03094,
-    0.06355,
+    -0.03639,
+    0.06189,
     -0.33
    ],
    "handR": [
@@ -183,8 +194,8 @@
      0.01
     ],
     "l": [
-     -0.03094,
-     0.06355,
+     -0.03639,
+     0.06189,
      -0.33
     ],
     "lNode": "fp_hand_l_ar"
@@ -341,7 +352,7 @@
    "kind": "sniper",
    "name": "Rajawali",
    "node": "sniper",
-   "tris": 14588,
+   "tris": 24626,
    "mag": {
     "node": "sniper_mag",
     "pos": [
@@ -349,7 +360,7 @@
      0.062,
      -0.075
     ],
-    "tris": 344
+    "tris": 736
    },
    "parts": [
     {
@@ -359,7 +370,7 @@
       0.09,
       0.02
      ],
-     "tris": 448
+     "tris": 1456
     }
    ],
    "buis": {
@@ -386,8 +397,8 @@
     0.108
    ],
    "guard": [
-    -0.02794,
-    0.05803,
+    -0.04374,
+    0.06717,
     -0.37
    ],
    "handR": [
@@ -407,8 +418,8 @@
      0.01
     ],
     "l": [
-     -0.02794,
-     0.05803,
+     -0.04374,
+     0.06717,
      -0.37
     ],
     "lNode": "fp_hand_l_sniper"
@@ -914,8 +925,8 @@
    "lensR": 0.0125,
    "objR": 0.015,
    "axisH": 0.034,
-   "fill": 0.33,
-   "relief": null,
+   "fill": 0.68,
+   "relief": 0.06,
    "tris": 6808,
    "lod1": "opt_s2_lod1",
    "lod1Tris": 52
@@ -935,8 +946,8 @@
    "lensR": 0.0138,
    "objR": 0.016,
    "axisH": 0.038,
-   "fill": 0.76,
-   "relief": null,
+   "fill": 0.94,
+   "relief": 0.06,
    "tris": 11394,
    "lod1": "opt_s4_lod1",
    "lod1Tris": 80
@@ -956,8 +967,8 @@
    "lensR": 0.0165,
    "objR": 0.0262,
    "axisH": 0.04,
-   "fill": 0.88,
-   "relief": null,
+   "fill": 0.96,
+   "relief": 0.068,
    "tris": 17856,
    "ring": {
     "node": "opt_s8_ring",
