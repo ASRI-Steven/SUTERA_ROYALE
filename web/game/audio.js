@@ -332,6 +332,8 @@ export function chuteOpen() {
   src.start(t0, Math.random(), 0.5);
   tone({ t: 0.05, f0: 70, f1: 40, dur: 0.3, gain: 0.45 });
 }
+// mendarat: k 0 serap, 1 lari kecil, 2 berguling
+export function land(k = 0) { if (!ok()) return; burst({ dur: 0.06, freq: 700, gain: 0.2 + 0.25 * k, type: 'lowpass' }); tone({ f0: 90, f1: 45, dur: 0.18, gain: 0.3 + 0.1 * k }); }
 export function step(vol = 0.08) { if (ok()) burst({ dur: 0.05, freq: 700, gain: vol, type: 'lowpass' }); }
 // langkah orang lain: pan kiri/kanan sesuai arah, teredam (low-pass rendah) bila terhalang dinding, lebih lembut di rumput
 export function footstep(vol = 0.08, p = 0, muffled = false, soft = false) {

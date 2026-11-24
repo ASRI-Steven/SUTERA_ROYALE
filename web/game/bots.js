@@ -12,7 +12,7 @@
 // Digambar sebagai kerumunan instans (map/rig.js). Koordinat agen: dunia three.js (x, tinggi, z = −y data).
 import * as THREE from 'three';
 import { Rig, createCrowd, characterVariants } from '../map/rig.js';
-import { chuteShape } from './chutefx.js';
+import { chuteShape, chuteCollapse } from './chutefx.js';
 import { WEAPONS } from './weapons.js';
 import { applyItem, TIER, propGeometry } from './loot.js';
 import { createNav } from './nav.js';
@@ -394,6 +394,7 @@ export function createBots(ctx, n = 50) {
     if (b.pos.y <= 0) {
       const f = (ctx.inArea(b.pos.x, -b.pos.z) && col.findFree(b.pos.x, -b.pos.z, 30, 0.4, true)) || a.land; // tidak mendarat di dalam rumah
       b.pos.set(f[0], 0, -f[1]);
+      b.landAt = ctx.now(); b.landKind = chute ? 0 : 1; b.landChute = chute; // pose mendarat (map/rigair.js) & kanopi kempis
       b.state = 'ground';
       a.mode = 'loot';
       a.lootEnd = ctx.now() + SKILL.lootT;
@@ -1904,7 +1905,12 @@ export function createBots(ctx, n = 50) {
             p.airSpd = p.chute ? 12 : 52;
             p.lookYaw = own || !PLAYER ? 0 : wrap(Math.atan2(PLAYER.pos.x - b.pos.x, PLAYER.pos.z - b.pos.z) - b.yaw);
             b.pyaw = b.yaw;
-          } else b.pyaw = null;
+            p.landT = -1;
+          } else {
+            b.pyaw = null;
+            const lt = b.landAt != null && b.state === 'ground' ? now - b.landAt : -1;
+            p.landT = lt >= 0 && lt < (b.landKind ? 0.7 : 0.55) ? lt : -1; p.landKind = b.landKind | 0;
+          }
           p.prone = !driving && !!b.prone && b.alive;
           p.crouch = !driving && !p.prone && (b.crouch || !!b.healEnd || !!b.reviving);
           { const w0 = b.cur >= 0 && b.weapons[b.cur]; p.reload = b.reloadEnd && w0 ? 1 - (b.reloadEnd - now) / WEAPONS[w0.kind].reload : null; }
@@ -1924,7 +1930,10 @@ export function createBots(ctx, n = 50) {
           const A = b.rig.A;
           chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromEuler(chE.set(chO.rx + (A ? 0.10 * A.cfw - 0.16 * A.cbr : 0), b.yaw, A ? 0.30 * A.bank : 0, 'YXZ')), sv.set(chO.sx, chO.sy, chO.sz)));
           b.chuteOn = true; chuteDirty = true;
-        } else if (b.chuteOn) { chutes.setMatrixAt(b.i, ZERO); b.chuteOn = false; chuteDirty = true; }
+        } else if (b.landChute && b.state === 'ground' && chuteCollapse(now - b.landAt, chO)) { // kanopi kempis setelah mendarat
+          chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromEuler(chE.set(chO.rx, b.yaw, 0, 'YXZ')), sv.set(chO.sx, chO.sy, chO.sz)));
+          b.chuteOn = true; chuteDirty = true;
+        } else if (b.chuteOn) { chutes.setMatrixAt(b.i, ZERO); b.chuteOn = false; b.landChute = false; chuteDirty = true; }
         if (blobs.visible) { // bayangan bulat (hanya tampilan non-realistis)
           if (b.state === 'ground' || b.state === 'dead') blobs.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, 0.17, b.pos.z), q.identity(), sv.set(1, 1, 1)));
           else blobs.setMatrixAt(b.i, ZERO);
