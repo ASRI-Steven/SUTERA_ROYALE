@@ -1662,7 +1662,7 @@ export function createBots(ctx, n = 50) {
     sp.y += (my - sp.y) * k;
     const ay = b.pos.y; // tinggi kaki (lantai 2 / tangga)
     let r = col.step(x, y, x + sp.x * dt, y + sp.y * dt, 0.35, false, ay);
-    if (V) { const q2 = V.pushOut(r.x, r.y, 0.35); if (q2.x !== r.x || q2.y !== r.y) r = col.resolve(q2.x, q2.y, 0.35, false, ay); } // tidak menembus kendaraan
+    if (V) { const q2 = V.pushOut(r.x, r.y, 0.35); if (q2.x !== r.x || q2.y !== r.y) r = col.guard(r.x, r.y, col.resolve(q2.x, q2.y, 0.35, false, ay), ay, 0.35); } // tidak menembus kendaraan (dorongan yang menyeberang dinding ditolak)
     const moved = Math.hypot(r.x - x, r.y - y);
     b.moveSpeed = moved / Math.max(dt, 1e-4);
     navMove = navMove && tx !== null;
@@ -1821,6 +1821,11 @@ export function createBots(ctx, n = 50) {
       frameT0 = performance.now();
       for (const b of bots) {
         if (!b.alive && b.state === 'dead') {
+          if (b.corpseFit !== b.goneAt) { // mayat rebah telentang (±1,8 m, kepala di belakang): sekali didorong keluar dinding (tanpa menyeberanginya)
+            b.corpseFit = b.goneAt;
+            const f = col.fitProne(b.pos.x, -b.pos.z, -Math.sin(b.yaw), Math.cos(b.yaw), b.pos.y);
+            b.pos.x = f.x; b.pos.z = -f.y;
+          }
           const a = b.ai; // lepaskan klaim barang/kendaraan milik bot yang tersingkir
           if (a.item) { if (a.item.claim === b) a.item.claim = null; a.item = null; }
           if (a.veh) { if (a.veh.claim === b) a.veh.claim = null; a.veh = null; }

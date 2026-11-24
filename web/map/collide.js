@@ -202,7 +202,7 @@ export function createCollider(D, inArea, homes) {
       span(Math.min(ax, bx) - pad, Math.min(ay, by) - pad, Math.max(ax, bx) + pad, Math.max(ay, by) + pad, (c) => c.s.push(k));
     }
   });
-  let stamp = 0;
+  let stamp = 0, touched = false; // touched: resolve terakhir mendorong badan (dipakai step untuk memanggil guard)
   const q = { x: 0, y: 0 };
   // sungai & kanal (garis + lebar ≥ 3 m): potongan ≤ 4 m menjadi poligon air (bisa direnangi; padat untuk pejalan, bot,
   // kendaraan), kecuali di persilangan jalan (jembatan, sama dengan bridges() di world.js)
@@ -309,13 +309,15 @@ export function createCollider(D, inArea, homes) {
           if (G.s === stamp) continue;
           G.s = stamp;
           if (x < G.x0 - r || x > G.x1 + r || y < G.y0 - r || y > G.y1 + r || !blocksAgent(G, x, y, ay, swim)) continue;
-          const inside = pipF(x, y, G.pts), d = closest(x, y, G.pts, q);
+          const inside = pipF(x, y, G.pts);
+          if (inside && G.stair) continue; // di dalam tapak tangga (jatuh lewat lubang, lompat): jangan dilempar ke tepi terdekat (sering ke luar rumah); step() & guard() menahan masuknya
+          const d = closest(x, y, G.pts, q);
           if (!inside && d >= r) continue;
           if (d < 1e-7) { x += 1e-3; moved = true; continue; }
           const s = inside ? -1 : 1;
           x = q.x + (x - q.x) / d * s * r;
           y = q.y + (y - q.y) / d * s * r;
-          moved = true;
+          moved = true; touched = true;
           if (G.b >= 0) { lastTouch.b = G.b; lastTouch.t = performance.now(); }
         }
         for (let k = 0; k < ct.length; k++) {
@@ -330,9 +332,59 @@ export function createCollider(D, inArea, homes) {
     }
     return { x, y };
   }
-  // Gerak satu langkah dengan tabrakan + tepi kawasan (meluncur per sumbu kalau keluar).
+  // Ruas pusat badan (x0,y0)→(x1,y1) memotong sisi poligon padat (dinding, sekat, pintu tertutup, perabot, pagar; bukan air)
+  // yang titik awalnya tidak berada di dalamnya? = badan melompati / didorong menembus benda padat. Pola loop sama dengan
+  // resolve (tanpa alokasi). Keluar dari poligon tempat pusat sudah berada (tertanam) tetap boleh.
+  function crossed(x0, y0, x1, y1, ay = 0) {
+    const lx = Math.min(x0, x1), hx = Math.max(x0, x1), ly = Math.min(y0, y1), hy = Math.max(y0, y1);
+    if (hx - lx < 1e-9 && hy - ly < 1e-9) return false;
+    stamp++;
+    for (let cx = Math.floor(lx / CELL); cx <= Math.floor(hx / CELL); cx++) for (let cy = Math.floor(ly / CELL); cy <= Math.floor(hy / CELL); cy++) {
+      const c = cells.get(key(cx, cy));
+      if (!c) continue;
+      const cp = c.p;
+      for (let k = 0; k < cp.length; k++) {
+        const G = polys[cp[k]];
+        if (G.s === stamp) continue;
+        G.s = stamp;
+        if (G.b === -1 || hx < G.x0 || lx > G.x1 || hy < G.y0 || ly > G.y1) continue;
+        if (!blocksAgent(G, x0, y0, ay, false) || !blocksAgent(G, x1, y1, ay, false)) continue;
+        const a = G.pts, n = a.length >> 1, dx = x1 - x0, dy = y1 - y0;
+        let hit = false;
+        for (let i = 0, j = n - 1; i < n && !hit; j = i++) {
+          const ax = a[2 * j], ayy = a[2 * j + 1], ex = a[2 * i] - ax, ey = a[2 * i + 1] - ayy, den = dx * ey - dy * ex;
+          if (Math.abs(den) < 1e-12) continue;
+          const t = ((ax - x0) * ey - (ayy - y0) * ex) / den, u = ((ax - x0) * dy - (ayy - y0) * dx) / den;
+          if (t > 1e-6 && t <= 1 && u >= 0 && u <= 1) hit = true;
+        }
+        if (hit && !pipF(x0, y0, a)) return true;
+      }
+    }
+    return false;
+  }
+  // penjaga: p hasil resolve/dorongan dari (x0, y0); kalau ruasnya menembus benda padat → geser per sumbu yang tidak
+  // menembus, atau tetap di (x0, y0). Untuk dorongan kendaraan, rebah (fitProne), dan step().
+  function guard(x0, y0, p, ay = 0, r = 0.32, swim = false) {
+    if (!crossed(x0, y0, p.x, p.y, ay)) return p;
+    for (const [tx, ty] of [[p.x, y0], [x0, p.y]]) {
+      const q2 = resolve(tx, ty, r, swim, ay);
+      if (!crossed(x0, y0, q2.x, q2.y, ay)) return q2;
+    }
+    return { x: x0, y: y0 };
+  }
+  // Gerak satu langkah dengan tabrakan + tepi kawasan (meluncur per sumbu kalau keluar). Langkah > 0,15 m (frame
+  // tersendat: dt 0,05 × lari 6,9 m/dtk = 0,35 m, lebih dari tebal dinding 0,2 / sekat 0,12) dibagi ≤ 4 potong yang
+  // masing-masing di-resolve; potongan yang menyentuh benda dijaga guard() (dulu pusat yang sudah melewati tengah dinding
+  // tipis didorong ke tepi seberang = tembus).
   function step(x0, y0, x1, y1, r = 0.32, swim = false, ay = 0) {
-    let p = resolve(x1, y1, r, swim, ay);
+    const L = Math.hypot(x1 - x0, y1 - y0), n = L > 0.15 ? Math.min(4, Math.ceil(L / 0.15)) : 1;
+    let px = x0, py = y0, p = null;
+    for (let k = 1; k <= n; k++) {
+      touched = false;
+      p = resolve(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, r, swim, ay);
+      if (touched || n > 1) p = guard(px, py, p, ay, r, swim);
+      px = p.x; py = p.y;
+    }
     if (!inArea(p.x, p.y)) {
       const a = resolve(x1, y0, r, swim, ay), b = resolve(x0, y1, r, swim, ay);
       p = inArea(a.x, a.y) ? a : inArea(b.x, b.y) ? b : { x: x0, y: y0 };
@@ -382,7 +434,7 @@ export function createCollider(D, inArea, homes) {
       }
       if (!moved) break;
     }
-    if ((x !== x0 || y !== y0) && (blocked(x, y, 0.3, ay) || Math.hypot(x - x0, y - y0) > 1.2)) return { x: x0, y: y0 };
+    if ((x !== x0 || y !== y0) && (blocked(x, y, 0.3, ay) || Math.hypot(x - x0, y - y0) > 1.2 || crossed(x0, y0, x, y, ay))) return { x: x0, y: y0 }; // geser menyeberang dinding: tolak
     return { x, y };
   }
   function viewSpot(sp, tx, ty) { // mundur beberapa meter dari gedung supaya fasadnya kelihatan
@@ -606,5 +658,5 @@ export function createCollider(D, inArea, homes) {
     }
     return -1;
   }
-  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, liftSpot, addLayer, addFurnLayer, removeLayer, lastTouch, inArea, addObstacles, fitProne };
+  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, liftSpot, addLayer, addFurnLayer, removeLayer, lastTouch, inArea, addObstacles, fitProne, crossed, guard };
 }
