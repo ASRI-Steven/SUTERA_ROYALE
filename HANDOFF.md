@@ -1272,8 +1272,8 @@ Rancangan lengkap tiap alur (audit, angka, kriteria lulus, milestone) ada di `do
 > | 6 | Bangunan | M5 | §38 | Selesai; pose `TUCK` perlu dilihat Steven |
 >
 > Skin, Senjata, dan Kostum masuk main **sebelum** gerbang visualnya disetujui (atas permintaan Jason), jadi tampilannya masih
-> bisa berubah menurut catatan Steven. Worktree `.wt/<alur>` dan branch `wip/<alur>` yang sekarang ada hanya di mesin Jason
-> (kecuali `wip/skinv2` yang juga di origin) dan semuanya sudah sama dengan / tertinggal dari main: mulai alur baru dari main.
+> bisa berubah menurut catatan Steven. Worktree `.wt/<alur>` dan branch `wip/<alur>` sesi ini SUDAH DIHAPUS (lokal dan
+> `origin/wip/skinv2`) karena semuanya sudah termuat di main; yang tersisa hanya `main`. Mulai alur baru dari main.
 > Alat uji lama `.wt/_tools/` versi Steven tidak ada; penggantinya (server uji + pengendali CDP berframe manual, alat audit
 > tata letak) ada di luar repo di mesin Jason dan bisa hilang.
 Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum diuji, jangan digabung apa adanya)**. Langkah pertama tiap alur: `git merge main` di worktree-nya.
