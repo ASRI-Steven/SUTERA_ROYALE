@@ -341,6 +341,11 @@ function planHouse(i, pts, area, h, { roadDist, occupied, neighborOcc }) {
       const px = e.a[0] + e.ux * s, py = e.a[1] + e.uy * s;
       if (H.parts.some((p) => Math.hypot(p.a[0] - px, p.a[1] - py) < (lv >= 2 ? 0.8 : 1.2) || Math.hypot(p.b[0] - px, p.b[1] - py) < (lv >= 2 ? 0.8 : 1.2))) continue;
       if (occupied(px - e.nx * 1.0, py - e.ny * 1.0, i) || (!lv && occupied(px - e.nx * 2.0, py - e.ny * 2.0, i))) continue; // di luar pintu harus kosong
+      { // lorong selebar badan (±0,35 m) sejauh 1,5 m (pintu mungil: 1 m) di luar pintu juga kosong (dulu hanya satu titik 1 m)
+        let blk = false;
+        for (const v of lv >= 3 ? [0.45, 1.0] : [0.45, 1.0, 1.5]) for (const w of [-0.35, 0.35]) if (!blk && occupied(px - e.nx * v + e.ux * w, py - e.ny * v + e.uy * w, i)) blk = true;
+        if (blk) continue;
+      }
       return { e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, x: px, y: py };
     }
     return null;
