@@ -78,8 +78,9 @@ export const CHAR_SKINS = [
 // th (tema): coat = berpernis (MeshPhysicalMaterial), tracer/flash = warna HDR [r, g, b], flame = nyala moncong beranimasi
 // ({ style: fire|plasma|glint|spirit|arc|frost|glow, c1, c2 }),
 // glow = pendar isi ulang/periksa/cabut, voice = suara tembakan (audio.js VOICES), kill = efek kill (killfx.js),
-// emblem = lambang tema (dulu spanduk kill), color/color2 = warna tema (toko)
-const G = (id, name, rarity, col, desc, fx, th = {}) => ({ id, name, rarity, col, price: fx ? PRICE[rarity] : 0, desc, fx, kind: 'weapon', th });
+// emblem = lambang tema (dulu spanduk kill), color/color2 = warna tema (toko), killAnim = senjata beranimasi saat kill
+// (weapons.js killPulse; bawaan = skin yang punya pendar, yaitu semua epik/legendaris)
+const G = (id, name, rarity, col, desc, fx, th = {}) => ({ id, name, rarity, col, price: fx ? PRICE[rarity] : 0, desc, fx, kind: 'weapon', th: th.glow && th.killAnim === undefined ? { ...th, killAnim: true } : th });
 export const GUN_SKINS = [
   G('gun_default', 'Baja Standar', 'biasa', 'taktis', 'Tampilan pabrik: baja hitam dan polimer.', 0, { color: '#d29f52' }),
   G('gun_karbon', 'Karbon Hitam', 'biasa', 'taktis', 'Anyaman serat karbon berpernis; kilau seratnya berubah mengikuti sudut pandang.', GUN_FX.karbon, { coat: true, color: '#b8c0c8' }),
@@ -126,7 +127,8 @@ export function skinFeatures(s) {
     const th = s.th || {};
     if (th.glow) f.push(['anim', 'Animasi & pendar']);
     if (th.voice) f.push(['sound', 'Suara tembakan khusus']);
-    if (th.kill) f.push(['kill', 'Denting kill khusus']);
+    if (th.killAnim) f.push(['kill', 'Animasi kill']);
+    else if (th.kill) f.push(['kill', 'Denting kill khusus']);
     if (th.tracer) f.push(['tracer', th.flash ? 'Pelacak & kilatan khusus' : 'Pelacak berwarna']);
     if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
   } else {
@@ -139,7 +141,7 @@ export function skinFeatures(s) {
 // tema senjata yang dipakai pemain (efek kill, suara). Skin tanpa efek khusus: ledakan cahaya warna temanya.
 export function gunTheme(id = profile.equipped && profile.equipped.weapon) {
   const s = BY.get(id) || GUN_SKINS[0], th = s.th || {};
-  return { id: s.id, name: s.name, rarity: s.rarity, voice: th.voice || null, kill: th.kill || 'burst', emblem: th.emblem || 'std', color: th.color || '#d29f52', color2: th.color2 || '#fff1c8' };
+  return { id: s.id, name: s.name, rarity: s.rarity, voice: th.voice || null, killAnim: !!th.killAnim, kill: th.kill || 'burst', emblem: th.emblem || 'std', color: th.color || '#d29f52', color2: th.color2 || '#fff1c8' };
 }
 
 // Dua bentuk, satu sumber (warna pakaian & perlengkapan + nomor pola fx; warna kulit & rambut TIDAK pernah ikut skin):
@@ -258,7 +260,7 @@ export function applyEquipped(char, vm, base = DEFAULT_OUTFIT) {
   setVmArms(o === base ? {} : { sleeve: o.sleeve || o.shirt, glove: o.glove, cuff: o.cuff, fx: o.fx, cuffGlow: cs && cs.cuffGlow });
   if (vm && vm.gunRoots) for (const g of vm.gunRoots()) applyGunSkin(g, gid);
   if (char && char.parts) for (const k in char.parts) if (k.startsWith('gun_')) for (const m of char.parts[k]) applyGunSkin(m, gid);
-  setSkinFx({ tracer: th.tracer || null, flash: th.flash || null, flame: th.flame || null, glow: !!th.glow, cue: th.voice ? (ev) => audio.skinCue(ev) : null });
+  setSkinFx({ tracer: th.tracer || null, flash: th.flash || null, flame: th.flame || null, glow: !!th.glow, killAnim: !!th.killAnim, color: th.color || null, cue: th.voice ? (ev) => audio.skinCue(ev) : null });
   audio.setShotVoice(th.voice || null);
   setCharAura(char, cs && cs.aura);
   if (vm && vm.compile && R0) { try { vm.compile(R0, warmRT()); } catch (e) { console.warn('Kompilasi shader skin gagal:', e.message); } }
