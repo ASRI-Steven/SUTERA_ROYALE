@@ -1421,3 +1421,33 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
 - **Kekurangan (untuk gerbang visual)**: jarik Batik meregang seperti tenda saat lari (paling mencolok; menunggu pegas/kain M3);
   dodot Garuda meregang dan lutut menembus saat jongkok; sayap Garuda tipis dari samping; Operator Malam terlalu seragam gelap;
   motif parang kasar dari dekat. M3–M6 belum dimulai.
+
+## 42. Tata letak M3 — tembok keliling (24 Nov) — SUDAH di main, `?v=202611242231`; M4/M5 belum (menggantikan status "DRAF" di §40)
+
+- **Hasil**: `tools/tidy_layout.mjs --stages roads,buildings,walls` menghasilkan `D.walls` + `props.walls`/`props.gates`: 12 kompleks,
+  20,1 km tembok; gerbang jalan 93 (k0 20, k1 55 [29 polos], k2 18 [1 polos]) + 124 pintu pejalan kaki (k3). Bangun ulang ±95 dtk:
+  `node tools/tidy_layout.mjs data/build/alsut-map.raw.json web/data/alsut-map.json --stages roads,buildings,walls --props data/build/alsut-props.raw.json web/data/alsut-props.json --context data/build/alsut-context.raw.json web/data/alsut-context.json`
+- **Di bawah sasaran rancangan** (20 kompleks, ±25 km, 140 gerbang): klaster berdempetan menyatu jadi satu kompleks (memisahnya =
+  tembok ganda berdempetan); apartemen belum ditembok (M5); sisi batas peta dan sisi air tidak ditembok (keliling total 32,2 km).
+  9 rumah dikeluarkan dari kompleks (1582–1589, 1721); T3b menggeser 2 rumah (1678, 1734) dan membuang 4 (flag 8: 1680, 5440,
+  1672, 1679) dekat ruko 1669 → total flag 8 kini 10, flag 32 78.
+- **Generator** `tools/tidy/walls.mjs`: raster 1 m, kontur marching squares, penampang jalan disnap utuh dalam/luar, zona bebas
+  pintu rumah lewat `tools/tidy/doors.mjs` (memuat `interiors.js`/`collide.js` asli dengan stub `three`) → **mengubah
+  `interiors.js`/`collide.js` = bangun ulang + audit ulang tembok**.
+- **Audit tembok** (draf → akhir): A8 tembus 43 → 0 dari 79.719; A9 89 → 0; A10 gagal 1 → 0 (206 lolos); A11 2 → 0; A12 5 → 0
+  (terdekat 1,72 m); A13 7 → 0; A14 1 → 0 dari 187; tembok di aspal 183 → 0; di gedung 14 → 0. Audit M2 diulang, tetap lolos.
+  **Alat audit diubah** (bukan kriterianya): A8 kini menghitung langkah `col.step` yang memotong sumbu tembok (v1 salah di dua
+  tembok berdekatan); A9 memakai ring kompleks dan benih luar > 4,5 m dari batas peta; titik ≤ 1,0 m dari bukaan terdaftar tidak
+  dihitung "di aspal"; garis batas–batas < 14 m dikecualikan dari A13.
+- **K1**: `bots.js buildGraph` — sambungan ujung buntu kini mensyaratkan `clearPath`. `doorThink` tidak disentuh.
+- **Diuji di browser**: uji asap (diulang setelah digabung dengan Kostum M2) 0 galat konsol; pemain tertahan tembok 16/16; lewat
+  gerbang/pintu 29/32 (gagal: k1 (548,441) arah keluar — pemain tidak bergerak dari titik awal uji; k3 (−639,401) dua arah — 2,4 m
+  di luar pintu ada dinding belakang gedung 5313/5314, harus berbelok); gapura Asri pindah ke (−448,−720). Simulasi bot 8 menit
+  (2 run per sisi): bot diam ≥ 20 dtk 1,1–1,4 % (main 0,3–0,8 %), lintas masuk/keluar kompleks tetap terjadi. Muat 5,62 → 5,75 dtk,
+  ms/frame setara, rintangan 5.573 → 9.107. Tidak ada uji ulang setelah cap `?v=`.
+- **Kekurangan**: `envProps.stats.dropped` 6 → 14 (4 pos jaga + 4 palang gerbang terbuang; batas rancangan ≤ 12, BELUM ditelusuri);
+  bot diam sedikit naik (sampel kecil); sebagian pintu k3 membuka ke gang sempit (belum dihitung); gerbang servis k2 (−665,−625)
+  berpotongan tembok pendek + satu daun miring; puntung tembok di persimpangan (−574,721); tembok rapat ke kanopi ruko 1669;
+  garis tembok berkelok kecil mengikuti raster. Belum diuji: kendaraan melewati gerbang, pertandingan penuh, perangkat nyata;
+  uji jalan hanya 16 bukaan (sisanya dibuktikan A10 di node).
+- **Berikutnya**: M4 tanam ulang pohon, M5 (termasuk tembok apartemen).
