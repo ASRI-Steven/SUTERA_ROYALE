@@ -1,0 +1,237 @@
+{
+ "version": 1,
+ "id": "char_garuda",
+ "name": "Garuda Emas",
+ "bones": [
+  "hips",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "armL",
+  "foreL",
+  "handL",
+  "armR",
+  "foreR",
+  "handR",
+  "thighL",
+  "shinL",
+  "footL",
+  "thighR",
+  "shinR",
+  "footR"
+ ],
+ "variants": {
+  "m1": {
+   "glb": "m1.glb",
+   "lods": [
+    "m1_lod0",
+    "m1_lod1"
+   ],
+   "tris": [
+    17390,
+    6497
+   ],
+   "verts": [
+    10999,
+    4836
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 1500,
+    "matcreator_mc-bodysuit-2021": 2799,
+    "matcreator_mc-scifi-armor_helios": 5200,
+    "eye": 172,
+    "helm": 648,
+    "paruh": 56,
+    "helm_pita": 40,
+    "jambul": 144,
+    "sayap_bulu": 1080,
+    "sayap_rangka": 300,
+    "dodot": 1456,
+    "dodot_ekor": 176,
+    "sabuk": 224,
+    "sabuk_kepala": 96
+   },
+   "glbBytes": 655428,
+   "albedo": "m1_albedo.webp",
+   "normal": "m1_normal.webp",
+   "orm": "m1_orm.webp",
+   "texBytes": 463604
+  },
+  "f1": {
+   "glb": "f1.glb",
+   "lods": [
+    "f1_lod0",
+    "f1_lod1"
+   ],
+   "tris": [
+    17390,
+    6498
+   ],
+   "verts": [
+    10955,
+    4765
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 1500,
+    "matcreator_mc-bodysuit-2021": 2800,
+    "matcreator_mc-scifi-armor_helios": 5199,
+    "eye": 172,
+    "helm": 648,
+    "paruh": 56,
+    "helm_pita": 40,
+    "jambul": 144,
+    "sayap_bulu": 1080,
+    "sayap_rangka": 300,
+    "dodot": 1456,
+    "dodot_ekor": 176,
+    "sabuk": 224,
+    "sabuk_kepala": 96
+   },
+   "glbBytes": 651752,
+   "albedo": "f1_albedo.webp",
+   "normal": "f1_normal.webp",
+   "orm": "f1_orm.webp",
+   "texBytes": 448820
+  },
+  "m2": {
+   "glb": "m2.glb",
+   "lods": [
+    "m2_lod0",
+    "m2_lod1"
+   ],
+   "tris": [
+    17390,
+    6496
+   ],
+   "verts": [
+    11010,
+    4829
+   ],
+   "detail": {
+    "head": 3500,
+    "hand": 1499,
+    "matcreator_mc-bodysuit-2021": 2799,
+    "matcreator_mc-scifi-armor_helios": 5200,
+    "eye": 172,
+    "helm": 648,
+    "paruh": 56,
+    "helm_pita": 40,
+    "jambul": 144,
+    "sayap_bulu": 1080,
+    "sayap_rangka": 300,
+    "dodot": 1456,
+    "dodot_ekor": 176,
+    "sabuk": 224,
+    "sabuk_kepala": 96
+   },
+   "glbBytes": 655552,
+   "albedo": "m2_albedo.webp",
+   "normal": "m2_normal.webp",
+   "orm": "m2_orm.webp",
+   "texBytes": 459890
+  },
+  "f2": {
+   "glb": "f2.glb",
+   "lods": [
+    "f2_lod0",
+    "f2_lod1"
+   ],
+   "tris": [
+    17389,
+    6498
+   ],
+   "verts": [
+    10973,
+    4785
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 1500,
+    "matcreator_mc-bodysuit-2021": 2799,
+    "matcreator_mc-scifi-armor_helios": 5199,
+    "eye": 172,
+    "helm": 648,
+    "paruh": 56,
+    "helm_pita": 40,
+    "jambul": 144,
+    "sayap_bulu": 1080,
+    "sayap_rangka": 300,
+    "dodot": 1456,
+    "dodot_ekor": 176,
+    "sabuk": 224,
+    "sabuk_kepala": 96
+   },
+   "glbBytes": 652964,
+   "albedo": "f2_albedo.webp",
+   "normal": "f2_normal.webp",
+   "orm": "f2_orm.webp",
+   "texBytes": 443220
+  }
+ },
+ "hideHair": true,
+ "hideHelmet": true,
+ "hideVest": true,
+ "hidePack": true,
+ "glove": "#5a0f1a",
+ "far": {
+  "shirt": "#d9a23a",
+  "sleeve": "#d9a23a",
+  "pants": "#6e1220",
+  "glove": "#5a0f1a",
+  "cuff": "#d9a23a",
+  "inner": "#6e1220"
+ },
+ "thumb": "thumb.webp",
+ "springs": [],
+ "mech": [],
+ "emis": null,
+ "fp": null,
+ "fit": {
+  "m1": {
+   "matcreator_mc-scifi-armor_helios": {
+    "pushed": 0.448,
+    "deepest_mm": 23.1
+   }
+  },
+  "f1": {
+   "matcreator_mc-scifi-armor_helios": {
+    "pushed": 0.4537,
+    "deepest_mm": 15.9
+   }
+  },
+  "m2": {
+   "matcreator_mc-scifi-armor_helios": {
+    "pushed": 0.444,
+    "deepest_mm": 23.0
+   }
+  },
+  "f2": {
+   "matcreator_mc-scifi-armor_helios": {
+    "pushed": 0.4535,
+    "deepest_mm": 13.6
+   }
+  }
+ },
+ "credits": [
+  {
+   "asset": "matcreator_mc-bodysuit-2021",
+   "author": "MakeHuman community",
+   "license": "CC0",
+   "pack": "suits02_cc0",
+   "url": "http://files.makehumancommunity.org/asset_packs/suits02/suits02_cc0.zip",
+   "use": "geometri pakaian (warna & motif dibuat ulang)"
+  },
+  {
+   "asset": "matcreator_mc-scifi-armor_helios",
+   "author": "MakeHuman community",
+   "license": "CC0",
+   "pack": "suits02_cc0",
+   "url": "http://files.makehumancommunity.org/asset_packs/suits02/suits02_cc0.zip",
+   "use": "geometri pakaian (warna & motif dibuat ulang)"
+  }
+ ],
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
+}

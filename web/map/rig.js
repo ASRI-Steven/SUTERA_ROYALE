@@ -803,6 +803,25 @@ function bodyMaterial3(map, normalMap, orm) {
   m.customProgramCacheKey = () => 'char3fx';
   return m;
 }
+// Material kostum (tools/blender/costumes.py): atlas kostum sendiri — albedo sudah berwarna (bukan netral berpola sfChar),
+// ORM = AO / kekasaran / LOGAM (kanal B; pada tubuh v3 kanal itu topeng kulit). Kulit yang tersisa (wajah, leher, tangan)
+// ada di mesh yang sama dan tetap diwarnai palet karakter lewat aSlot (0 = kulit, 1 = tangan/sarung tangan, 7 = tetap).
+// Satu program untuk semua kostum ('cos3'); dua sisi, karena kain terbuka (jarik, dodot, sayap) terlihat dari dalam.
+function costumeMaterial(map, normalMap, orm) {
+  const m = new THREE.MeshStandardMaterial({ map, normalMap, roughnessMap: orm, aoMap: orm, metalnessMap: orm, roughness: 1, metalness: 1, envMapIntensity: 0.85, aoMapIntensity: 1, side: THREE.DoubleSide });
+  m.normalScale.set(1, -1);
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aSlot;\nvarying vec3 vTint;\nvarying float vSkinK;')
+      .replace('#include <skinning_vertex>', '#include <skinning_vertex>\n\tvTint = texelFetch( boneTexture, ivec2( ' + PAL0 + ' + int( aSlot ), int( aRow ) ), 0 ).rgb;\n\tvSkinK = aSlot < 0.5 ? 1.0 : 0.0;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTint;\nvarying float vSkinK;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.rgb *= vTint;')
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n\treflectedLight.indirectDiffuse *= mix( vec3( 1.0 ), vec3( 1.2, 1.04, 0.97 ), vSkinK );');
+  };
+  m.customProgramCacheKey = () => 'cos3';
+  return m;
+}
 const SHADOW_MAT3 = new THREE.MeshBasicMaterial({ colorWrite: false });
 const GEAR_MAT3 = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.3 }); // helm, rompi, ransel
 
@@ -846,6 +865,7 @@ export function setCharacterEnv(env) {
   for (const m of V3.hairMats) { m.envMap = env; m.needsUpdate = true; }
   for (const d of defs3()) if (d.mat.isMeshStandardMaterial) { d.mat.envMap = env; d.mat.needsUpdate = true; }
   for (const m of SOLO_MATS3) { m.envMap = env; m.needsUpdate = true; }
+  for (const m of COS_MATS) { m.envMap = env; m.needsUpdate = true; }
 }
 export function characterVariants() { return V3 ? V3.variants.map((v) => ({ key: v.key, female: v.female, hair: v.hair.length })) : []; }
 const variantIndex = (key) => { const i = V3.variants.findIndex((v) => v.key === key); return i < 0 ? 0 : i; };
@@ -859,6 +879,54 @@ function defs3() {
     V3.defs = L;
   }
   return V3.defs;
+}
+
+// ---------- Kostum (tools/blender/costumes.py → game/assets/costumes/<id>/) ----------
+// Kostum = mesh ber-kulit pengganti tubuh v3 (pakaian bermodel + kulit yang tersisa, 17 tulang yang sama) + atlasnya sendiri.
+// Dimuat saat dibutuhkan saja (unduhan awal game tidak bertambah), di-cache per 'id|varian'. Batas waktu 8 dtk; gagal → null
+// (satu console.warn per kostum) dan pemanggil tetap memakai tampilan lama (palet + pola).
+// asset: { id, variant, meta (costume.json), lods: [geo0, geo1], mat }
+const COSTUMES = new Map(), COS_META = new Map(), COS_MATS = [], COS_WARNED = new Set();
+const COS_TIMEOUT = 8000;
+export function loadCostume(id, variantKey, base = 'game/assets/costumes/') {
+  if (!V3 || !id) return Promise.resolve(null);
+  const key = id + '|' + variantKey;
+  if (COSTUMES.has(key)) return COSTUMES.get(key);
+  const dir = base + id + '/';
+  const work = (async () => {
+    if (!COS_META.has(id)) COS_META.set(id, fetch(dir + 'costume.json').then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }));
+    const meta = await COS_META.get(id), mv = meta.variants && meta.variants[variantKey];
+    if (meta.version !== 1 || !mv) throw new Error('varian ' + variantKey + ' tidak ada');
+    if (!meta.bones || meta.bones.length !== NB3 || meta.bones.some((b, i) => b !== V3.bones[i])) throw new Error('kerangka tidak cocok');
+    const tl = new THREE.TextureLoader();
+    const tex = (f, srgb) => tl.loadAsync(dir + f).then((t) => { t.flipY = false; if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; });
+    const [gltf, map, normalMap, orm] = await Promise.all([new GLTFLoader().loadAsync(dir + mv.glb), tex(mv.albedo, true), tex(mv.normal), tex(mv.orm)]);
+    const lods = mv.lods.map((name) => {
+      const o = gltf.scene.getObjectByName(name);
+      if (!o || !o.geometry) throw new Error('mesh ' + name + ' tidak ada');
+      const g = o.geometry;
+      if (g.getAttribute('_slot')) { g.setAttribute('aSlot', g.getAttribute('_slot')); g.deleteAttribute('_slot'); }
+      return g;
+    });
+    const mat = costumeMaterial(map, normalMap, orm);
+    if (ENV3) mat.envMap = ENV3;
+    COS_MATS.push(mat);
+    return { id, variant: variantKey, meta, lods, mat };
+  })();
+  const p = Promise.race([work, new Promise((_, rej) => setTimeout(() => rej(new Error('batas waktu ' + COS_TIMEOUT / 1000 + ' dtk')), COS_TIMEOUT))]).catch((e) => {
+    if (!COS_WARNED.has(id)) { COS_WARNED.add(id); console.warn('Kostum ' + id + ' tidak dimuat (' + e.message + '), pakai tampilan lama'); }
+    COSTUMES.delete(key); COS_META.delete(id); // boleh dicoba lagi nanti (mis. jaringan pulih)
+    return null;
+  });
+  COSTUMES.set(key, p);
+  return p;
+}
+// mesh sementara (di luar adegan) untuk mengompilasi program shader kostum di latar sebelum dipasang (game/skins.js equipCostume)
+export function costumeProbe(asset) {
+  const g = instGeo3(asset.lods[0], 1, BODY_ATTR); g.instanceCount = 1;
+  const m = new THREE.SkinnedMesh(g, asset.mat);
+  m.skeleton = new SkinStore(1); m.frustumCulled = false; m.boundingSphere = FAR_SPHERE3; m.receiveShadow = true;
+  return m;
 }
 
 // ---------- Satu karakter (pemain orang ketiga) ----------
@@ -884,23 +952,47 @@ function buildCharacter3(outfit, gear, look) {
     o.userData.tint = d.tint || null;
     o.receiveShadow = true;
     o.visible = !!gear[d.name];
+    o.userData.want = o.visible; // keinginan pemanggil (setGear); kostum boleh menyembunyikan tanpa melupakannya
     rig.b[d.bone].add(o);
     (parts[d.name] || (parts[d.name] = [])).push(o);
   }
-  return {
-    rig, root: rig.root, parts, v3: true,
+  // kostum: geometri tubuh & pembuat bayangan ditukar di tempat (rig, senjata, posisi, baris tekstur tulang tetap)
+  const geo0 = [body.geometry, shadow.geometry];
+  let cur = outfit, cos = null;
+  const hidden = (name) => !!cos && ((cos.meta.hideHair && name === 'hair') || (cos.meta.hideHelmet && /^helmet/.test(name)) || (cos.meta.hideVest && /^vest/.test(name)) || (cos.meta.hidePack && name === 'pack'));
+  const show = (name) => { for (const o of parts[name] || []) o.visible = o.userData.want && !hidden(name); };
+  // palet saat berkostum: kulit ikut karakter; tangan = sarung tangan kostum (atau kulit bila kostumnya bertangan telanjang); tanpa pola sfChar
+  const palette = () => writePalette3(store.data, 0, cos ? { ...cur, glove: cos.meta.glove || cur.skin, fx: 0 } : cur);
+  const C = {
+    rig, root: rig.root, parts, v3: true, variant: v.key, costume: null,
     // nama biasa: nyala/mati. 'helmet' / 'vest': on = tingkat (0–3) → bagian helmet1..3 / vest1..3
     setGear(name, on) {
-      if (parts[name]) { for (const o of parts[name]) o.visible = !!on; return; }
+      if (parts[name]) { for (const o of parts[name]) o.userData.want = !!on; show(name); return; }
       const lv = on === true ? 1 : on | 0;
-      for (let k = 1; k <= 3; k++) { const P = parts[name + k]; if (P) for (const o of P) o.visible = lv === k; }
+      for (let k = 1; k <= 3; k++) { const P = parts[name + k]; if (P) { for (const o of P) o.userData.want = lv === k; show(name + k); } }
     },
     // ganti pakaian (mis. skin): palet tubuh + warna bagian kaku yang ikut warna pakaian (rambut, helm/rompi, ransel)
     setOutfit(o) {
-      writePalette3(store.data, 0, o);
+      cur = o;
+      palette();
       for (const k in parts) for (const m of parts[k]) { const t = m.userData.tint; if (t && o[t]) m.material.color.set(o[t]).multiplyScalar(t === 'hair' ? 1 / V3.neutral : 1); }
     },
+    // pasang kostum hasil loadCostume (varian harus sama dengan karakter ini), atau null = kembali ke tubuh v3 + palet
+    setCostume(asset) {
+      if (asset && asset.variant !== v.key) asset = null;
+      if (asset === cos) return;
+      for (const m of [body, shadow]) if (!geo0.includes(m.geometry)) m.geometry.dispose(); // hanya pembungkus instans; atribut milik aset tetap
+      cos = asset; C.costume = asset;
+      if (asset) {
+        const g = instGeo3(asset.lods[0], 1, BODY_ATTR), gs = instGeo3(asset.lods[Math.min(1, asset.lods.length - 1)], 1, SHADOW_ATTR);
+        g.instanceCount = gs.instanceCount = 1;
+        body.geometry = g; body.material = asset.mat; shadow.geometry = gs;
+      } else { body.geometry = geo0[0]; body.material = v.mat; shadow.geometry = geo0[1]; }
+      palette();
+      for (const k in parts) show(k);
+    },
   };
+  return C;
 }
 
 // ---------- Kerumunan (bot) ----------

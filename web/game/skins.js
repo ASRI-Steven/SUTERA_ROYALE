@@ -8,7 +8,7 @@
 // Harga menurut kelangkaan: biasa 300, langka 800, epik 1800, legendaris 4000 koin; bawaan 0.
 // ID lama (char_default … char_garuda, gun_default … gun_garuda) tetap sama → profil lama (dimiliki & dipakai) tetap sah.
 import * as THREE from 'three';
-import { buildCharacter } from '../map/rig.js';
+import { buildCharacter, loadCostume, costumeProbe } from '../map/rig.js';
 import { vmSkinned, setVmArms, gunPreview, setSkinFx, SF_G0 } from './weapons.js';
 import { CHAR_FX, GUN_FX, GUN_SKIN_GLSL, SF_U, AURA_VS_PARS, AURA_VS_BEGIN, AURA_FS } from './skinfx.js';
 import { profile } from './profile.js';
@@ -34,12 +34,14 @@ export const DEFAULT_OUTFIT = { shirt: '#503EBA', sleeve: '#503EBA', pants: '#2b
 
 // ---------- Karakter ----------
 // outfit: warna slot (shirt/sleeve/pants/glove/cuff/inner) + perlengkapan (gear = helm & rompi, pack = ransel); fx = pola (skinfx.js)
-// x: { aura: { style 0 api emas · 1 api roh · 2 medan energi, c1, c2 } selubung aura legendaris, cuffGlow: manset menyala }
+// x: { aura: { style 0 api emas · 1 api roh · 2 medan energi, c1, c2 } selubung aura legendaris, cuffGlow: manset menyala,
+//   costume: true = sudah punya kostum bermodel (game/assets/costumes/<id>/, tools/blender/costumes.py). Ini data rilis, bukan
+//   flag uji: kostum dirilis bertahap; outfit/fx/aura tetap dipakai sebagai cadangan (kostum gagal dimuat, kerumunan bot) }
 const C = (id, name, rarity, col, desc, fx, outfit, x = {}) => ({ id, name, rarity, col, price: outfit ? PRICE[rarity] : 0, desc, fx, outfit, kind: 'character', ...x });
 export const CHAR_SKINS = [
   C('char_default', 'Rekrut Sutera', 'biasa', 'taktis', 'Seragam bawaan regu Sutera: ungu dengan manset emas.', 0, null),
   C('char_malam', 'Operator Malam', 'biasa', 'taktis', 'Taktis hitam arang dengan panel pelindung dan garis emas tipis.', CHAR_FX.malam,
-    { shirt: '#1b1c20', sleeve: '#1b1c20', pants: '#15161a', glove: '#0e0e11', cuff: '#D29F52', inner: '#2a2b30', gear: '#1f2126', pack: '#17181c' }),
+    { shirt: '#1b1c20', sleeve: '#1b1c20', pants: '#15161a', glove: '#0e0e11', cuff: '#D29F52', inner: '#2a2b30', gear: '#1f2126', pack: '#17181c' }, { costume: true }),
   C('char_kabut', 'Kabut Kota', 'biasa', 'taktis', 'Loreng digital abu-abu dua ukuran piksel dengan panel bahu & lutut gelap.', CHAR_FX.kabut,
     { shirt: '#8a8e93', sleeve: '#8a8e93', pants: '#8a8e93', glove: '#3a3d42', cuff: '#5d6167', inner: '#2c2e33', gear: '#6a6e74', pack: '#4b4f55' }),
   C('char_gurun', 'Debu Merapi', 'biasa', 'taktis', 'Loreng digital abu vulkanik dan pasir, serasi dengan skin senjata Debu Merapi.', CHAR_FX.gurun,
@@ -55,7 +57,7 @@ export const CHAR_SKINS = [
   C('char_ondel', 'Ondel-ondel', 'langka', 'panggung', 'Jaket merah berbunga emas delapan kelopak, dalaman gading berpita kembang kelapa.', CHAR_FX.ondel,
     { shirt: '#c41a20', sleeve: '#c41a20', pants: '#141214', glove: '#141214', cuff: '#e8b445', inner: '#f1e8d2', gear: '#3a2a20', pack: '#7a1418' }),
   C('char_batik', 'Batik Parang', 'epik', 'wastra', 'Jaket parang sogan-krem; kilau emas berjalan menyusuri garis parangnya.', CHAR_FX.batik,
-    { shirt: '#6b3e1e', sleeve: '#6b3e1e', pants: '#231c1a', glove: '#3a2416', cuff: '#D29F52', inner: '#e6d3a3', gear: '#3a2416', pack: '#6b3e1e' }),
+    { shirt: '#6b3e1e', sleeve: '#6b3e1e', pants: '#231c1a', glove: '#3a2416', cuff: '#D29F52', inner: '#e6d3a3', gear: '#3a2416', pack: '#6b3e1e' }, { costume: true }),
   C('char_neon', 'Neon Kota', 'epik', 'neo', 'Setelan gelap dengan garis cahaya yang berdenyut mengalir, berganti toska dan magenta.', CHAR_FX.neon,
     { shirt: '#0c0d14', sleeve: '#0c0d14', pants: '#0c0d14', glove: '#08080c', cuff: '#22e6ff', inner: '#15161f', gear: '#11121a', pack: '#0c0d14' }, { cuffGlow: '#22e6ff' }),
   C('char_empu', 'Empu Pamor', 'epik', 'pusaka', 'Beskap nila-hitam berlapis garis pamor perak yang berkilau pelan, kerah & manset emas.', CHAR_FX.empu,
@@ -67,7 +69,7 @@ export const CHAR_SKINS = [
   C('char_kencana', 'Kencana', 'epik', 'kencana', 'Marmer gading berurat emas dengan kilau emas yang menyapu pelan.', CHAR_FX.kencana,
     { shirt: '#f3efe7', sleeve: '#f3efe7', pants: '#f3efe7', glove: '#f3efe7', cuff: '#e3b24e', inner: '#efe6d4', gear: '#e9e2cf', pack: '#e3b24e' }),
   C('char_garuda', 'Garuda Emas', 'legendaris', 'pusaka', 'Putih upacara berhias bulu garuda emas yang berkilau bergelombang, berselubung aura & serbuk cahaya emas.', CHAR_FX.garuda,
-    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' } }),
+    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' }, costume: true }),
   C('char_warok', 'Warok Barong', 'legendaris', 'panggung', 'Hitam warok, dalaman loreng merah-putih, mata bulu merak berpelangi di bahu & punggung, aura toska-emas.', CHAR_FX.warok,
     { shirt: '#0b0a0c', sleeve: '#0b0a0c', pants: '#0b0a0c', glove: '#0b0a0c', cuff: '#d6a446', inner: '#f1ede4', gear: '#141218', pack: '#0b0a0c' }, { aura: { style: 1, c1: '#0fbf9a', c2: '#ffb830' } }),
   C('char_reaktor', 'Reaktor Sutera', 'legendaris', 'neo', 'Zirah keramik putih & grafit dengan kanal energi biru yang mengalir, inti dada berdenyut, dan aura plasma.', CHAR_FX.reaktor,
@@ -134,6 +136,7 @@ export function skinFeatures(s) {
     if (th.tracer) f.push(['tracer', th.flash ? 'Pelacak & kilatan khusus' : 'Pelacak berwarna']);
     if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
   } else {
+    if (s.costume) f.push(['model', 'Kostum bermodel']);
     if (RARITY[s.rarity].rank >= 2 || s.fx === CHAR_FX.samudra) f.push(['anim', 'Pola beranimasi']);
     if (s.cuffGlow) f.push(['glow', 'Manset menyala']);
     if (s.aura) f.push(['aura', 'Aura api / energi beranimasi']);
@@ -250,6 +253,26 @@ export function setCharAura(char, a) {
   char.aura = { key, dispose() { if (shell.parent) shell.parent.remove(shell); } };
 }
 
+// ---------- Kostum bermodel ----------
+// Pasang kostum skin `id` ke karakter (hasil buildCharacter v3) tanpa menahan frame: tampilan cadangan (palet + pola, aura)
+// sudah dipasang pemanggil lebih dulu; di sini kostum dimuat (map/rig.js loadCostume, di-cache), program shadernya
+// dikompilasi di latar lewat mesh sementara, baru mesh tubuh ditukar di tempat dan aura cadangan dilepas.
+// Skin tanpa kostum / id tak dikenal → kostum dilepas. Gagal dimuat → tampilan cadangan tetap. look: { variant } (bawaan =
+// varian karakter itu). → Promise<boolean> (true = kostum terpasang)
+export function equipCostume(char, id, look = null) {
+  if (!char || !char.setCostume) return Promise.resolve(false);
+  const tok = (char.cosTok = (char.cosTok || 0) + 1), s = BY.get(id);
+  if (!s || !s.costume) { char.setCostume(null); return Promise.resolve(false); }
+  return loadCostume(id, (look && look.variant) || char.variant).then(async (asset) => {
+    if (!asset || char.cosTok !== tok) return false;
+    if (SCENE && CAM) await compileSkinAsync(costumeProbe(asset), CAM, SCENE);
+    if (char.cosTok !== tok) return false; // sudah berganti skin lagi selagi menunggu
+    char.setCostume(asset);
+    setCharAura(char, null);
+    return !!char.costume;
+  }).catch((e) => { console.warn('Kostum ' + id + ' gagal dipasang:', e.message); return false; });
+}
+
 // ---------- Di dalam game ----------
 // Pasang skin yang sedang dipakai (profile.equipped) ke pemain: tubuh orang ketiga (+ aura legendaris), lengan orang pertama,
 // semua senjata, efek senjata (pelacak, kilatan, partikel, pendar), suara tembakan; lalu kompilasi shader view-model di muka.
@@ -270,6 +293,7 @@ export function applyEquipped(char, vm, base = DEFAULT_OUTFIT) {
     hook: shaped ? SFX.hook : null, brass: shaped ? SFX.brass() : null });
   audio.setShotVoice(th.voice || null);
   setCharAura(char, cs && cs.aura);
+  equipCostume(char, cid); // kostum bermodel menyusul (tidak menahan); sampai siap / bila gagal: palet + aura di atas
   if (vm && vm.compile && R0) { try { vm.compile(R0, warmRT()); } catch (e) { console.warn('Kompilasi shader skin gagal:', e.message); } }
   if (char && char.aura && SCENE && CAM) compileSkinAsync(char.root, CAM, SCENE); // selubung aura: siap sebelum orang ketiga pertama (terjun)
 }
@@ -430,8 +454,11 @@ async function renderThumb(id, size) {
   if (!url.startsWith('data:image/webp')) url = CV2.toDataURL('image/png');
   return url;
 }
-export function skinThumb(id, size = 256) {
-  const key = id + '@' + size;
+// Kostum bermodel: gambar toko pra-render (thumb.webp hasil tools/blender/costumes.py) → cukup URL-nya, tanpa memuat kostum.
+// fallback = true: paksa render runtime (dipakai lobi bila berkas thumb tidak bisa dimuat).
+export function skinThumb(id, size = 256, fallback = false) {
+  const key = id + '@' + size, cs = BY.get(id);
+  if (cs && cs.costume && !fallback) return Promise.resolve('game/assets/costumes/' + id + '/thumb.webp');
   if (THUMBS.has(key)) return Promise.resolve(THUMBS.get(key));
   // satu per satu dengan jeda (tidak menahan frame); gagal → '' dan boleh dicoba lagi nanti
   const p = chain.then(() => new Promise((res) => setTimeout(async () => {

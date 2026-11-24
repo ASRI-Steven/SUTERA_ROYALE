@@ -1,0 +1,221 @@
+{
+ "version": 1,
+ "id": "char_batik",
+ "name": "Batik Parang",
+ "bones": [
+  "hips",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "armL",
+  "foreL",
+  "handL",
+  "armR",
+  "foreR",
+  "handR",
+  "thighL",
+  "shinL",
+  "footL",
+  "thighR",
+  "shinR",
+  "footR"
+ ],
+ "variants": {
+  "m1": {
+   "glb": "m1.glb",
+   "lods": [
+    "m1_lod0",
+    "m1_lod1"
+   ],
+   "tris": [
+    16448,
+    5732
+   ],
+   "verts": [
+    9800,
+    3838
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 4438,
+    "male_casualsuit01": 3000,
+    "eye": 172,
+    "blangkon": 768,
+    "blangkon_wiron": 216,
+    "jarik": 2399,
+    "jarik_wiron": 660,
+    "stagen": 480,
+    "epek": 192,
+    "timang": 24,
+    "keris_warangka": 92,
+    "keris_pendok": 60,
+    "keris_hulu": 80,
+    "selop_sol_L": 88,
+    "selop_atas_L": 96,
+    "selop_sol_R": 88,
+    "selop_atas_R": 96
+   },
+   "glbBytes": 574844,
+   "albedo": "m1_albedo.webp",
+   "normal": "m1_normal.webp",
+   "orm": "m1_orm.webp",
+   "texBytes": 493456
+  },
+  "f1": {
+   "glb": "f1.glb",
+   "lods": [
+    "f1_lod0",
+    "f1_lod1"
+   ],
+   "tris": [
+    16278,
+    5676
+   ],
+   "verts": [
+    9657,
+    3762
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 4268,
+    "male_casualsuit01": 2999,
+    "eye": 172,
+    "blangkon": 768,
+    "blangkon_wiron": 216,
+    "jarik": 2400,
+    "jarik_wiron": 660,
+    "stagen": 480,
+    "epek": 192,
+    "timang": 24,
+    "keris_warangka": 92,
+    "keris_pendok": 60,
+    "keris_hulu": 80,
+    "selop_sol_L": 88,
+    "selop_atas_L": 96,
+    "selop_sol_R": 88,
+    "selop_atas_R": 96
+   },
+   "glbBytes": 566476,
+   "albedo": "f1_albedo.webp",
+   "normal": "f1_normal.webp",
+   "orm": "f1_orm.webp",
+   "texBytes": 486034
+  },
+  "m2": {
+   "glb": "m2.glb",
+   "lods": [
+    "m2_lod0",
+    "m2_lod1"
+   ],
+   "tris": [
+    16392,
+    5713
+   ],
+   "verts": [
+    9766,
+    3833
+   ],
+   "detail": {
+    "head": 3500,
+    "hand": 4381,
+    "male_casualsuit01": 3000,
+    "eye": 172,
+    "blangkon": 768,
+    "blangkon_wiron": 216,
+    "jarik": 2399,
+    "jarik_wiron": 660,
+    "stagen": 480,
+    "epek": 192,
+    "timang": 24,
+    "keris_warangka": 92,
+    "keris_pendok": 60,
+    "keris_hulu": 80,
+    "selop_sol_L": 88,
+    "selop_atas_L": 96,
+    "selop_sol_R": 88,
+    "selop_atas_R": 96
+   },
+   "glbBytes": 573144,
+   "albedo": "m2_albedo.webp",
+   "normal": "m2_normal.webp",
+   "orm": "m2_orm.webp",
+   "texBytes": 496122
+  },
+  "f2": {
+   "glb": "f2.glb",
+   "lods": [
+    "f2_lod0",
+    "f2_lod1"
+   ],
+   "tris": [
+    16438,
+    5724
+   ],
+   "verts": [
+    9729,
+    3788
+   ],
+   "detail": {
+    "head": 3500,
+    "hand": 4427,
+    "male_casualsuit01": 3000,
+    "eye": 172,
+    "blangkon": 768,
+    "blangkon_wiron": 216,
+    "jarik": 2399,
+    "jarik_wiron": 660,
+    "stagen": 480,
+    "epek": 192,
+    "timang": 24,
+    "keris_warangka": 92,
+    "keris_pendok": 60,
+    "keris_hulu": 80,
+    "selop_sol_L": 88,
+    "selop_atas_L": 96,
+    "selop_sol_R": 88,
+    "selop_atas_R": 96
+   },
+   "glbBytes": 570860,
+   "albedo": "f2_albedo.webp",
+   "normal": "f2_normal.webp",
+   "orm": "f2_orm.webp",
+   "texBytes": 485040
+  }
+ },
+ "hideHair": true,
+ "hideHelmet": true,
+ "hideVest": false,
+ "hidePack": false,
+ "glove": null,
+ "far": {
+  "shirt": "#6b3e1e",
+  "sleeve": "#6b3e1e",
+  "pants": "#5a3115",
+  "glove": null,
+  "cuff": "#D29F52",
+  "inner": "#e6d3a3"
+ },
+ "thumb": "thumb.webp",
+ "springs": [],
+ "mech": [],
+ "emis": null,
+ "fp": null,
+ "fit": {
+  "m1": {},
+  "f1": {},
+  "m2": {},
+  "f2": {}
+ },
+ "credits": [
+  {
+   "asset": "male_casualsuit01",
+   "author": "MakeHuman community",
+   "license": "CC0",
+   "pack": "makehuman_system_assets_cc0",
+   "url": "http://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip",
+   "use": "geometri pakaian (warna & motif dibuat ulang)"
+  }
+ ],
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
+}

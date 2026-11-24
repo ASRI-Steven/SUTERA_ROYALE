@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { buildCharacter, characterVariants } from '../map/rig.js';
 import { profile, saveProfile, owns, buy, equip, setName, ensureSquad, setMate, partySlots, setParty } from './profile.js';
-import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, previewCharacter, setCharAura, gunTheme, compileSkinAsync, applyGunSkinAsync, warmSkinCache, warmState } from './skins.js';
+import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, applyGunSkin, skinThumb, skinFeatures, collectionOf, previewWeapon, previewCharacter, setCharAura, equipCostume, gunTheme, compileSkinAsync, applyGunSkinAsync, warmSkinCache, warmState } from './skins.js';
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
 import { tickSkins } from './skinfx.js';
@@ -96,6 +96,7 @@ function createStage({ scene, camera, col, sunDir, sfx = null }) {
   const memberOf = (i) => (i === 0 ? { ...ME_LOOK, skin: profile.equipped.character } : ensureSquad()[i - 1]);
   function dispose(ch) {
     if (ch.aura) { ch.aura.dispose(); ch.aura = null; }
+    ch.cosTok = (ch.cosTok || 0) + 1; // kostum yang masih dimuat untuk karakter ini dibatalkan
     g.remove(ch.root);
     ch.root.traverse((o) => { if (o.geometry && o.geometry.isInstancedBufferGeometry) o.geometry.dispose(); if (o.isSkinnedMesh && o.skeleton && o.skeleton.dispose) o.skeleton.dispose(); });
   }
@@ -117,6 +118,7 @@ function createStage({ scene, camera, col, sunDir, sfx = null }) {
     ch.root.updateMatrixWorld(true);
     const skn = skinById(skinId || m.skin);
     setCharAura(ch, skn && skn.aura); // legendaris: serbuk cahaya mengitari badan
+    equipCostume(ch, skn ? skn.id : '', look); // kostum bermodel menyusul setelah dimuat & dikompilasi (cadangan: palet + aura di atas)
     members[i] = { ch, yaw: yaw0 + sl2[2], pose: { speed: 0, armed: !!sl2[3], aim: false, pitch: 0, moveYaw: 0, gunKind: sl2[3] || null }, gun: sl2[3], spin: 0 };
   }
   let gunTok = 0;
@@ -377,11 +379,12 @@ export function createLobby(o) {
       </div></div>`;
   }
   function thumb(s) { return `<div class="lb-thumb r-${s.rarity}" data-thumb="${s.id}" style="--rc:${rar(s).color}"><span class="lb-ph">${ic(s.id.startsWith('gun_') ? 'gun' : 'koleksi')}</span></div>`; }
-  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura' };
+  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura', model: 'user' };
   function fillThumbs(root) {
     for (const el of root.querySelectorAll('[data-thumb]')) {
       const id = el.dataset.thumb;
-      Promise.resolve().then(() => skinThumb(id, 256)).then((url) => { if (url && el.isConnected) { const im = new Image(); im.alt = ''; im.src = url; im.onload = () => { el.appendChild(im); el.classList.add('has'); }; } }).catch(() => { /* placeholder tetap */ });
+      Promise.resolve().then(() => skinThumb(id, 256)).then((url) => { if (url && el.isConnected) { const im = new Image(); im.alt = ''; im.src = url; im.onload = () => { el.appendChild(im); el.classList.add('has'); };
+        im.onerror = () => { if (im.dataset.fb) return; im.dataset.fb = '1'; skinThumb(id, 256, true).then((u2) => { if (u2) im.src = u2; }); }; } }).catch(() => { /* placeholder tetap */ });
     }
   }
   function skinCard(s, mode) { // mode: 'shop' | 'own'

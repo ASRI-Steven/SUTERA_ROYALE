@@ -1,0 +1,253 @@
+{
+ "version": 1,
+ "id": "char_malam",
+ "name": "Operator Malam",
+ "bones": [
+  "hips",
+  "spine",
+  "chest",
+  "neck",
+  "head",
+  "armL",
+  "foreL",
+  "handL",
+  "armR",
+  "foreR",
+  "handR",
+  "thighL",
+  "shinL",
+  "footL",
+  "thighR",
+  "shinR",
+  "footR"
+ ],
+ "variants": {
+  "m1": {
+   "glb": "m1.glb",
+   "lods": [
+    "m1_lod0",
+    "m1_lod1"
+   ],
+   "tris": [
+    13449,
+    5269
+   ],
+   "verts": [
+    9000,
+    4293
+   ],
+   "detail": {
+    "head": 3500,
+    "hand": 1500,
+    "male_casualsuit01": 3600,
+    "shoes03": 1299,
+    "culturalibre_hero-heroine_hood_1": 900,
+    "eye": 172,
+    "nvg_strap": 84,
+    "nvg": 208,
+    "nvg_lens": 80,
+    "carrier": 612,
+    "carrier_tepi": 540,
+    "carrier_kantong": 162,
+    "carrier_tanda": 12,
+    "sabuk_taktis": 192,
+    "sabuk_gesper": 12,
+    "kargo_L": 24,
+    "kargo_tali_R": 124,
+    "kargo_R": 36,
+    "lutut_L": 84,
+    "lutut_tali_L": 112,
+    "lutut_R": 84,
+    "lutut_tali_R": 112
+   },
+   "glbBytes": 543072,
+   "albedo": "m1_albedo.webp",
+   "normal": "m1_normal.webp",
+   "orm": "m1_orm.webp",
+   "texBytes": 214080
+  },
+  "f1": {
+   "glb": "f1.glb",
+   "lods": [
+    "f1_lod0",
+    "f1_lod1"
+   ],
+   "tris": [
+    13446,
+    5271
+   ],
+   "verts": [
+    8969,
+    4289
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 1499,
+    "male_casualsuit01": 3599,
+    "shoes03": 1299,
+    "culturalibre_hero-heroine_hood_1": 900,
+    "eye": 172,
+    "nvg_strap": 84,
+    "nvg": 208,
+    "nvg_lens": 80,
+    "carrier": 612,
+    "carrier_tepi": 540,
+    "carrier_kantong": 162,
+    "carrier_tanda": 12,
+    "sabuk_taktis": 192,
+    "sabuk_gesper": 12,
+    "kargo_L": 24,
+    "kargo_tali_R": 124,
+    "kargo_R": 36,
+    "lutut_L": 84,
+    "lutut_tali_L": 112,
+    "lutut_R": 84,
+    "lutut_tali_R": 112
+   },
+   "glbBytes": 541940,
+   "albedo": "f1_albedo.webp",
+   "normal": "f1_normal.webp",
+   "orm": "f1_orm.webp",
+   "texBytes": 214188
+  },
+  "m2": {
+   "glb": "m2.glb",
+   "lods": [
+    "m2_lod0",
+    "m2_lod1"
+   ],
+   "tris": [
+    13448,
+    5269
+   ],
+   "verts": [
+    9004,
+    4295
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 1500,
+    "male_casualsuit01": 3600,
+    "shoes03": 1299,
+    "culturalibre_hero-heroine_hood_1": 900,
+    "eye": 172,
+    "nvg_strap": 84,
+    "nvg": 208,
+    "nvg_lens": 80,
+    "carrier": 612,
+    "carrier_tepi": 540,
+    "carrier_kantong": 162,
+    "carrier_tanda": 12,
+    "sabuk_taktis": 192,
+    "sabuk_gesper": 12,
+    "kargo_L": 24,
+    "kargo_tali_R": 124,
+    "kargo_R": 36,
+    "lutut_L": 84,
+    "lutut_tali_L": 112,
+    "lutut_R": 84,
+    "lutut_tali_R": 112
+   },
+   "glbBytes": 543256,
+   "albedo": "m2_albedo.webp",
+   "normal": "m2_normal.webp",
+   "orm": "m2_orm.webp",
+   "texBytes": 214298
+  },
+  "f2": {
+   "glb": "f2.glb",
+   "lods": [
+    "f2_lod0",
+    "f2_lod1"
+   ],
+   "tris": [
+    13448,
+    5267
+   ],
+   "verts": [
+    8952,
+    4271
+   ],
+   "detail": {
+    "head": 3499,
+    "hand": 1499,
+    "male_casualsuit01": 3600,
+    "shoes03": 1300,
+    "culturalibre_hero-heroine_hood_1": 900,
+    "eye": 172,
+    "nvg_strap": 84,
+    "nvg": 208,
+    "nvg_lens": 80,
+    "carrier": 612,
+    "carrier_tepi": 540,
+    "carrier_kantong": 162,
+    "carrier_tanda": 12,
+    "sabuk_taktis": 192,
+    "sabuk_gesper": 12,
+    "kargo_L": 24,
+    "kargo_tali_R": 124,
+    "kargo_R": 36,
+    "lutut_L": 84,
+    "lutut_tali_L": 112,
+    "lutut_R": 84,
+    "lutut_tali_R": 112
+   },
+   "glbBytes": 540808,
+   "albedo": "f2_albedo.webp",
+   "normal": "f2_normal.webp",
+   "orm": "f2_orm.webp",
+   "texBytes": 212576
+  }
+ },
+ "hideHair": true,
+ "hideHelmet": true,
+ "hideVest": true,
+ "hidePack": false,
+ "glove": "#0e0e11",
+ "far": {
+  "shirt": "#1b1c20",
+  "sleeve": "#1b1c20",
+  "pants": "#15161a",
+  "glove": "#0e0e11",
+  "cuff": "#1b1c20",
+  "inner": "#1f2126"
+ },
+ "thumb": "thumb.webp",
+ "springs": [],
+ "mech": [],
+ "emis": null,
+ "fp": null,
+ "fit": {
+  "m1": {},
+  "f1": {},
+  "m2": {},
+  "f2": {}
+ },
+ "credits": [
+  {
+   "asset": "male_casualsuit01",
+   "author": "MakeHuman community",
+   "license": "CC0",
+   "pack": "makehuman_system_assets_cc0",
+   "url": "http://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip",
+   "use": "geometri pakaian (warna & motif dibuat ulang)"
+  },
+  {
+   "asset": "shoes03",
+   "author": "MakeHuman community",
+   "license": "CC0",
+   "pack": "makehuman_system_assets_cc0",
+   "url": "http://files.makehumancommunity.org/asset_packs/makehuman_system_assets/makehuman_system_assets_cc0.zip",
+   "use": "geometri pakaian (warna & motif dibuat ulang)"
+  },
+  {
+   "asset": "culturalibre_hero-heroine_hood_1",
+   "author": "culturalibre",
+   "license": "CC-0",
+   "pack": "masks01_cc0",
+   "url": "http://files.makehumancommunity.org/asset_packs/masks01/masks01_cc0.zip",
+   "use": "geometri pakaian (warna & motif dibuat ulang)"
+  }
+ ],
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
+}
