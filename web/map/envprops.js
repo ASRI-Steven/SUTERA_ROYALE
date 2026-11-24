@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { wallPlan, WALL } from './walls.js';
 
 const ASSET = 'game/assets/env/';
 const M = 0.1;
@@ -910,8 +911,30 @@ export function createEnvProps(W, A, col, homes) {
   };
   for (const g of D.gates || []) {
     const gx = g.x * M, gy = g.y * M, ga = g.a / 10 * Math.PI / 180, ux = Math.cos(ga), uy = Math.sin(ga), nx = -uy, ny = ux, half = g.h * M;
-    if (!inArea(gx, gy)) continue;
+    if (!inArea(gx, gy) || g.p) continue; // p = bukaan polos: hanya ujung tembok ber-pilaster (walls.js)
     use(gx, gy);
+    if (g.k === 3) { // pintu pejalan kaki: ambang atas di antara dua pilaster
+      boxTo(fr, gx, gy, WALL.LINTEL_Z0, WALL.POST_H - 0.08, nx, ny, half, 0.16, WALLC, PB_PL, S_PLASTER);
+      boxTo(fr, gx, gy, WALL.POST_H - 0.08, WALL.POST_H + 0.04, nx, ny, half + 0.06, 0.2, WHITE, PB_PL, S_PLASTER);
+      gates++; continue;
+    }
+    if (g.k === 2) { // gerbang servis: daun pintu geser besi, digambar terbuka (menempel sisi dalam tembok, tanpa tabrakan)
+      const lw = Math.min(2.6, half), ox = gx + nx * (half + 0.35 + lw) + ux * 0.32, oy = gy + ny * (half + 0.35 + lw) + uy * 0.32;
+      boxTo(fr, ox, oy, 0.12, 1.95, nx, ny, lw, 0.035, TRIM, PB_TRIM);
+      for (const z of [0.12, 1.0, 1.9]) boxTo(fr, ox, oy, z, z + 0.07, nx, ny, lw, 0.05, GOLD, PB_GOLD);
+      gates++; continue;
+    }
+    if (g.k === 1) { // gerbang samping: dua pilar 3,2 m tanpa balok (tabrakan: walls.js)
+      for (const sd of [1, -1]) {
+        const px = gx + nx * sd * half, py = gy + ny * sd * half;
+        boxTo(fr, px, py, 0, 0.8, ux, uy, 0.76, 0.76, STONE, PB_ST, S_STONE, stoneUV, 1.5);
+        boxTo(fr, px, py, 0.8, 2.9, ux, uy, 0.62, 0.62, PLASTER, PB_PL, S_PLASTER);
+        boxTo(fr, px, py, 2.9, 3.05, ux, uy, 0.74, 0.74, WHITE, PB_PL, S_PLASTER);
+        boxTo(fr, px, py, 3.05, 3.2, ux, uy, 0.2, 0.2, TRIM, PB_TRIM);
+        boxTo(fr, px, py, 3.2, 3.5, ux, uy, 0.18, 0.18, [1, 0.86, 0.6], [255, 60, 0, 40], FX.glow);
+      }
+      gates++; continue;
+    }
     const PW = 1.3, PH = 6.8, BZ0 = 5.5, BZ1 = 6.7;
     for (const sd of [1, -1]) {
       const px = gx + nx * sd * half, py = gy + ny * sd * half;
@@ -962,6 +985,23 @@ export function createEnvProps(W, A, col, homes) {
     }
     gates++;
   }
+  // tembok keliling kompleks (alsut-props.json walls; logika & tabrakan: walls.js). Gaya ramping: kaki batu, badan plester
+  // dan tutup = satu kotak per potong ≤ 24 m; pilaster di tiap belokan/ujung + pilaster hias tiap ±4,5 m.
+  const WP = wallPlan(D);
+  for (const sg of WP.segs) {
+    const L = Math.hypot(sg.bx - sg.ax, sg.by - sg.ay), cx = (sg.ax + sg.bx) / 2, cy = (sg.ay + sg.by) / 2;
+    use(cx, cy);
+    boxTo(fr, cx, cy, 0, 0.5, sg.ux, sg.uy, L / 2 + 0.05, 0.17, STONE, PB_ST, S_STONE);
+    boxTo(fr, cx, cy, 0.5, WALL.H, sg.ux, sg.uy, L / 2 + 0.05, 0.12, WALLC, PB_PL, S_PLASTER);
+    boxTo(fr, cx, cy, WALL.H, WALL.CAP, sg.ux, sg.uy, L / 2 + 0.07, 0.18, WHITE, PB_PL, S_PLASTER);
+  }
+  for (const q of [...WP.posts, ...WP.deco]) {
+    use(q.x, q.y);
+    boxTo(fr, q.x, q.y, 0, 2.45, q.ux, q.uy, 0.24, 0.24, STONE, PB_ST, S_STONE, stoneUV, 1.2);
+    boxTo(fr, q.x, q.y, 2.45, WALL.POST_H, q.ux, q.uy, 0.28, 0.28, WHITE, PB_PL, S_PLASTER);
+  }
+  for (const o of WP.obstacles) obstacles.push(o);
+  wallM += WP.wallM;
   const statics = [];
   for (const c of chunks.values()) for (const m of [mkStatic(c.fr, uni, true, 'fences'), mkStatic(c.nt, netMat, false, 'fencenets')]) if (m) statics.push({ m, c: m.boundingSphere.center, r: m.boundingSphere.radius });
 

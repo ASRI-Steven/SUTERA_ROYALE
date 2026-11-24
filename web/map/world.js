@@ -953,7 +953,8 @@ float cnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
   const clusterLines = overlay(ribbonGeo(D.clusters.map((c) => ({ pts: V2(c.r), w: 1.0, y: 0.1, color: C('#ebe6da'), closed: true }))), { opacity: 0.75 });
   // Jalan: trotoar → aspal per kelas → kerb → marka → zebra cross di simpang jalan besar.
   const roadsByClass = {}, walks = [], marks = [], curbs = [], zebras = [];
-  const roadList = D.roads.r.map((r, i) => ({ cls: D.classes[D.roads.c[i]], pts: V2(r), w: D.roads.w[i] * M }));
+  // sw = lebar trotoar per sisi: D.roads.s (dm, tools/tidy_layout.mjs: 0 di jalan yang disempitkan) bila ada, selain itu bawaan kelas
+  const roadList = D.roads.r.map((r, i) => ({ cls: D.classes[D.roads.c[i]], pts: V2(r), w: D.roads.w[i] * M, sw: D.roads.s ? D.roads.s[i] * M : (SIDEWALK[D.classes[D.roads.c[i]]] || 0) })).filter((R) => R.pts.length >= 2);
   const vkey = (p) => Math.round(p.x * 2) + ',' + Math.round(p.y * 2);
   const vcount = new Map();
   for (const R of roadList) for (const p of R.pts) vcount.set(vkey(p), (vcount.get(vkey(p)) || 0) + 1);
@@ -969,15 +970,15 @@ float cnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 *
     return null;
   };
   const white = C(real ? '#d9d7d0' : '#f2f2ee'), curbC = C(real ? '#a9a59b' : '#e6e2d9');
-  for (const { cls, pts, w } of roadList) {
+  for (const { cls, pts, w, sw } of roadList) {
     (roadsByClass[cls] ||= []).push({ pts, w, y: 0.12, color: real ? C('#ffffff').multiplyScalar(cls === 'pedestrian' ? 1.0 : ROAD_K[cls] || 1) : C(ROAD_COLOR[cls] || '#5c5f65') });
-    if (SIDEWALK[cls]) walks.push({ pts, w: w + SIDEWALK[cls] * 2, y: 0.11, color: real ? C('#ffffff') : C('#d5cfc3') });
+    if (sw) walks.push({ pts, w: w + sw * 2, y: 0.11, color: real ? C('#ffffff') : C('#d5cfc3') });
     let total = 0;
     for (let i = 0; i < pts.length - 1; i++) total += pts[i].distanceTo(pts[i + 1]);
     const big = w >= 7 && DASHED.has(cls), trim = Math.max(5, w * 1.1) + (big ? 4 : 0);
     if (DASHED.has(cls)) marks.push({ pts, w: 0.25, off: 0, dash: 3, gap: 5, trim, y: 0.14, color: white });
     if (EDGE_LINES.has(cls) && w > 7) for (const s of [1, -1]) marks.push({ pts, w: 0.2, off: s * (w / 2 - 0.6), dash: 1, gap: 0, trim, y: 0.14, color: white });
-    if (SIDEWALK[cls]) for (const s of [1, -1]) curbs.push({ pts, w: 0.32, off: s * (w / 2), dash: 1, gap: 0, trim: w * 0.55, y: 0.13, color: curbC });
+    if (sw) for (const s of [1, -1]) curbs.push({ pts, w: 0.32, off: s * (w / 2), dash: 1, gap: 0, trim: w * 0.55, y: 0.13, color: curbC });
     if (big && total > trim * 2 + 6) {
       [pts, pts.slice().reverse()].forEach((P) => {
         if ((vcount.get(vkey(P[0])) || 0) < 2) return; // ujung yang bukan simpang: tanpa zebra
