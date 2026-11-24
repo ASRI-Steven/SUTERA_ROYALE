@@ -83,6 +83,30 @@ export function isHall(D, i) {
   m.set(i, r);
   return r;
 }
+// Tinggi rumah tapak mengikuti rencananya (game; buildWorld memanggil ini sebelum gedung dibangun). Tinggi di data peta
+// sintetis (6 m × 0,85–1,15) → semua rumah tampak 2 lantai walau tidak punya lantai atas/tangga. Sekarang:
+// - jenis 0 setinggi ≥ 11 m yang bukan aula → jenis 3 (lobi + lift + atap: semua lantai terjangkau lift);
+// - rumah yang direncanakan TANPA lantai atas → 3,6–4,3 m (satu baris jendela; plafon tetap 3,0 m);
+// - rumah berlantai atas tetap (≥ 6,2 m).
+// Rencana disimpan (PLANS) dan dipakai ulang planHomes (tanpa biaya ganda).
+const PLANS = new WeakMap();
+export function fitHouseHeights(D) {
+  const B = D.buildings, S = siteOf(D), cache = new Map();
+  for (let i = 0; i < B.r.length; i++) if (B.k[i] === 0 && B.h[i] * M >= 11 && !isHall(D, i)) B.k[i] = 3;
+  for (let i = 0; i < B.r.length; i++) {
+    if (B.k[i] !== 0 || isHall(D, i)) continue;
+    const n = B.r[i].length >> 1;
+    if (n < 3 || n > 160) continue;
+    const pts = footOf(D, i), area = Math.abs(signedArea(pts)), h = B.h[i] * M;
+    const H = planHouse(i, pts, area, h, S);
+    cache.set(i, H);
+    if (H && !H.up && h > 4.3) {
+      const h2 = 3.6 + 0.7 * Math.min(1, Math.max(0, (h - 5.1) / 1.8));
+      B.h[i] = h2 / M; H.h = h2; H.ceil = Math.min(3.0, h2 - 0.35);
+    }
+  }
+  PLANS.set(D, cache);
+}
 export function planHomes(D) {
   const B = D.buildings, homes = new Map(), site = siteOf(D);
   planAll(D, B, homes, site);
@@ -177,7 +201,7 @@ function planAll(D, B, homes, site) {
     const fst = kind === 2 ? 2 : kind === 1 && area > 3000 ? 4 : kind === 0 ? 0 : 1;
     site.fst = fst;
     const H = kind === 2 || kind === 3 ? planTower(i, pts, area, h, site, D.roofs && D.roofs.get(i), kind)
-      : kind === 0 ? (area > 1500 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site)
+      : kind === 0 ? (PLANS.get(D) && PLANS.get(D).has(i) ? PLANS.get(D).get(i) : (area > 1500 && planShop(i, pts, area, h, site, true)) || planHouse(i, pts, area, h, site))
         : planShop(i, pts, area, h, site);
     if (H) { H.fst = fst; H.blind = (D.blind && D.blind.get(i)) || null; homes.set(i, H); } // sisi tanpa jendela (menempel gedung lain, world.js)
   }
@@ -333,8 +357,10 @@ function planHouse(i, pts, area, h, { roadDist, occupied, neighborOcc }) {
   const types = roomTypes(H);
   H.rooms.forEach((r, k) => { r.type = types[k]; });
   const li = types.indexOf('living');
-  if (h >= 6.2 && !NO_UP.has(i)) { const occ = neighborOcc(i); for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, occ); } } // tangga dulu (prioritas), kamar mandi menyesuaikan
+  if (h >= 6.2) { const occ = neighborOcc(i); for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, occ); } } // tangga dulu (prioritas), kamar mandi menyesuaikan
+  const av0 = H.avoid, pn0 = H.parts.length;
   planBath(H, types);
+  if (H.up && H.bath && !upperReach(H, H.up)) { H.parts.length = pn0; H.bath = null; H.avoid = av0; } // kamar mandi menutup jalan di lantai atas: batal (tangga tetap)
   planPorch(H, d1, roadDist, occupied);
   for (const d of H.doors) { // daun pintu berengsel di ujung celah: lingkaran ayun di dalam bebas perabot
     d.leaves = d.s1 - d.s0 >= 1.3 ? 2 : 1;
@@ -342,7 +368,20 @@ function planHouse(i, pts, area, h, { roadDist, occupied, neighborOcc }) {
   }
   H.furn = furnish(H, H.rooms, types, H.avoid || [], 0);
   if (H.bath) H.furn.push(...H.bath.fix);
-  if (H.up) { H.up.furn = furnish(H, H.rooms, H.up.types, H.up.avoid, 1); if (H.bath) H.up.furn.push(...H.bath.fix); }
+  if (H.up) {
+    H.up.furn = furnish(H, H.rooms, H.up.types, H.up.avoid, 1);
+    if (H.bath) H.up.furn.push(...H.bath.fix);
+    const rectsOf = (L) => L.filter((f) => f.h > 0.3 && f.kind !== 'rug').map(furnitureRect);
+    if (!upperReach(H, H.up, rectsOf(H.up.furn))) { // perabot menutup jalan: buang yang dekat ambang sekat / bordes, lalu yang terbesar
+      const hot = [H.up.stair.land, ...H.parts.filter((p) => p.g1 > p.g0).map((p) => lerp2(p.a, p.b, (p.g0 + p.g1) / 2 / p.len))];
+      H.up.furn = H.up.furn.filter((f) => (H.bath && H.bath.fix.includes(f)) || hot.every((q) => Math.hypot(f.x - q[0], f.y - q[1]) > 1.6 + Math.max(f.w, f.d) / 2));
+      for (let g = 0; g < 6 && !upperReach(H, H.up, rectsOf(H.up.furn)); g++) {
+        const big = H.up.furn.filter((f) => !(H.bath && H.bath.fix.includes(f)) && f.h > 0.3).sort((a, b) => b.w * b.d - a.w * a.d)[0];
+        if (!big) break;
+        H.up.furn = H.up.furn.filter((f) => f !== big && !(f.kind === 'rug' && Math.hypot(f.x - big.x, f.y - big.y) < 2));
+      }
+    }
+  }
   for (const d of H.doors) planSwing(H, d, occupied);
   return H;
 }
@@ -445,13 +484,51 @@ function roomTypes(H) {
 // lantai 2: tangga lurus menempel dinding luar di ruang tamu (pendekatan & pendaratan di ruang yang sama, jauh dari pintu
 // dan celah sekat). Pelat lantai 2 = denah dikurangi lubang tangga (3 potong yang pas dengan dinding).
 // occ(x, y): titik di tapak gedung lain (dinding tetangga yang menjorok ke dalam rumah ini menutup jalur tangga)
-// Rumah non-persegi yang lantai atasnya < 85 % terjangkau dari bordes tangga (mis. kamar mandi menutup bordes) tetap satu
-// lantai. Daftar dari .wt/_tools/audit-lantai.mjs (23 Nov) dan terikat pada data/alsut-map.json: audit ulang kalau peta dibangun ulang.
-const NO_UP = new Set([2464, 2466, 2488, 4049, 5295, 5447, 5448, 5449, 5452, 5454, 5455, 5462]);
+// Keterjangkauan lantai atas dari bordes (raster 0,3 m): bebas = di dalam denah, ≥ 0,5 m dari dinding luar, di luar lubang
+// tangga, ≥ 0,36 m dari bagian padat sekat (ambang = lewat) dan perabot (rects). Lulus: ≥ 90 % sel bebas terjangkau dan
+// tiap ruang punya sel terjangkau. Menggantikan daftar NO_UP (dulu terikat data peta).
+function upperReach(H, up, rects = null) {
+  const G = 0.3, S = up.stair, hole = S.rect, land = S.land;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const p of H.pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  const nx = Math.ceil((x1 - x0) / G) + 1, ny = Math.ceil((y1 - y0) / G) + 1;
+  if (nx * ny > 40000) return true; // rumah sangat besar: tidak diuji (sekat berambang lebar)
+  const solid = [];
+  for (const p of up.parts || H.parts) {
+    const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len, at = (t) => [p.a[0] + ux * t, p.a[1] + uy * t];
+    if (p.g1 > p.g0) { solid.push([p.a, at(p.g0)], [at(p.g1), p.b]); } else solid.push([p.a, p.b]);
+  }
+  const st = new Int8Array(nx * ny);
+  let free = 0;
+  for (let b = 0; b < ny; b++) for (let a = 0; a < nx; a++) {
+    const q = [x0 + a * G, y0 + b * G];
+    if (!pip(q[0], q[1], H.pts) || pip(q[0], q[1], hole)) continue;
+    if (H.edges.some((e) => segDist(q, e.a, e.b) < 0.5) || solid.some((s2) => segDist(q, s2[0], s2[1]) < 0.36) || segDist(q, hole[0], hole[1]) < 0.3 || segDist(q, hole[1], hole[2]) < 0.4 || segDist(q, hole[2], hole[3]) < 0.4 || segDist(q, hole[3], hole[0]) < 0.4) continue;
+    if (rects && rects.some((r) => pip(q[0], q[1], r))) continue;
+    st[b * nx + a] = 2; free++;
+  }
+  if (!free) return false;
+  const q = [];
+  let bd = 1e9, s0 = -1;
+  for (let k = 0; k < nx * ny; k++) if (st[k] === 2) { const d = Math.hypot(x0 + (k % nx) * G - land[0], y0 + Math.floor(k / nx) * G - land[1]); if (d < bd) { bd = d; s0 = k; } }
+  if (bd > 1.0) return false;
+  st[s0] = 1; q.push(s0);
+  for (let h = 0; h < q.length; h++) { const k = q[h], a = k % nx; for (const n of [a > 0 ? k - 1 : -1, a < nx - 1 ? k + 1 : -1, k - nx, k + nx]) if (n >= 0 && n < nx * ny && st[n] === 2) { st[n] = 1; q.push(n); } }
+  if (q.length < 0.9 * free) return false;
+  for (const r of H.rooms) { // tiap ruang punya sel terjangkau
+    let ok = false, any = false;
+    for (let k = 0; k < nx * ny && !ok; k++) if (st[k] && pip(x0 + (k % nx) * G, y0 + Math.floor(k / nx) * G, r)) { any = true; if (st[k] === 1) ok = true; }
+    if (any && !ok) return false;
+  }
+  return true;
+}
 function planUpper(H, li, occ = null) {
+  for (const RUN of [HOUSE.run, 3.6, 3.0]) { if (H.up) return; planUpperRun(H, li, occ, RUN); } // tangga 4,4 → 3,6 → 3,0 m
+}
+function planUpperRun(H, li, occ, RUN) {
   const rect = isRect(H.edges, 0.1); // segi empat: pelat 3 potong pas dinding; denah lain: pelat = denah dikurangi lubang tangga
   if (H.h < 6.2 || li < 0) return;
-  const room = H.rooms[li], T = HOUSE.wall, SW = HOUSE.stairW, RUN = HOUSE.run, F = HOUSE.floor2, VM = T + SW / 2;
+  const room = H.rooms[li], T = HOUSE.wall, SW = HOUSE.stairW, F = HOUSE.floor2, VM = T + SW / 2;
   const gaps = H.parts.map((p) => lerp2(p.a, p.b, (p.g0 + p.g1) / 2 / p.len));
   const inR = (p) => pip(p[0], p[1], room);
   const order = H.edges.map((e, k) => k).sort((p, q) => hash(H.i, p * 7.3) - hash(H.i, q * 7.3));
@@ -484,7 +561,7 @@ function planUpper(H, li, occ = null) {
         rail.push(dir > 0 ? [P(lo - 0.1, T), P(lo, T), P(lo, T + SW + 0.1), P(lo - 0.1, T + SW + 0.1)] : [P(hi, T), P(hi + 0.1, T), P(hi + 0.1, T + SW + 0.1), P(hi, T + SW + 0.1)]);
         const bp = P(bot, VM), ring = [];
         for (let s = lo + 0.4; s < hi; s += 0.8) { const c = P(s, VM); ring.push({ x: c[0], y: c[1], r: 0.75 }); }
-        H.up = {
+        const up = {
           floor: F, ceil: Math.min(H.h - 0.25, 6.4), plate, rail,
           render: rect ? null : [{ contour: H.pts, hole: [P(lo, T), P(hi, T), P(hi, T + SW), P(lo, T + SW)] }], // lantai atas digambar sebagai denah berlubang
           stair: { rect: [P(lo, T), P(hi, T), Q(hi, T + SW), Q(lo, T + SW)], ax: bp[0], ay: bp[1], ux: e.ux * dir, uy: e.uy * dir, len: RUN, h1: F, e, lo, hi, dir, ap, land },
@@ -492,6 +569,8 @@ function planUpper(H, li, occ = null) {
           avoid: [...ring, { x: land[0], y: land[1], r: 1.0 }],
           furn: [],
         };
+        if (!upperReach(H, up)) continue; // lantai atas tidak terjangkau dari bordes: kandidat berikutnya
+        H.up = up;
         H.avoid = [...(H.avoid || []), ...ring, { x: ap[0], y: ap[1], r: 1.0 }];
         return;
       }
@@ -1724,3 +1803,5 @@ export function createInteriors(scene, W, homes, col = null, furn = null) {
     },
   };
 }
+// jumlah baris jendela fasad rumah (aturan shader world.js & collide.js winOk: baris k ada bila 3,3k + 2,574 ≤ plafon teratas)
+export function houseWinRows(H) { const top = H.up ? H.up.ceil : H.ceil; let k = 0; while (3.3 * k + 2.574 <= top + 0.01 && 3.3 * k + 1.188 < H.h) k++; return k; }

@@ -9,7 +9,7 @@ const fract = (v) => v - Math.floor(v);
 const houseWindow = (u, v) => { if (v <= 0.8) return false; const fx = fract(u / 3.6), fy = fract(v / 3.3); return fx >= 0.3 && fx <= 0.7 && fy >= 0.36 && fy <= 0.78; }; // = shader world.js
 // jendela sah: sel jendela utuh di dalam sisi dinding (≥ 0,3 m dari sudut) dan, di lantai dasar, tidak menumpuk pintu
 // (± 0,2 m) — aturan yang sama dipakai shader world.js (tampilan) dan interiors.js (lubang dinding dalam, kusen, gorden)
-const winOk = (W, u, v) => { const w0 = Math.floor(u / 3.6) * 3.6 + 1.08, w1 = w0 + 1.44; if (w0 < W.u0 + 0.3 || w1 > W.u1 - 0.3) return false; if (v < 3.3) for (const d of W.doors) if (w0 < d[1] + 0.2 && w1 > d[0] - 0.2) return false; return true; };
+const winOk = (W, u, v) => { if (W.top !== undefined && 3.3 * Math.floor(v / 3.3) + 2.574 > W.top + 0.01) return false; const w0 = Math.floor(u / 3.6) * 3.6 + 1.08, w1 = w0 + 1.44; if (w0 < W.u0 + 0.3 || w1 > W.u1 - 0.3) return false; if (v < 3.3) for (const d of W.doors) if (w0 < d[1] + 0.2 && w1 > d[0] - 0.2) return false; return true; };
 // jendela di pita lantai atas yang sedang terbuka (D.bands, world.js setFloorBand) menurut gaya fasad gedung (H.fst):
 // 2 menara, 1 ruko/gedung publik, 4 mal, 0 rumah (jendela sah) — rumus sama dengan shader world.js & interiors.js
 const bandWin = (W, u, v) => {
@@ -26,7 +26,7 @@ const rampH = (S, x, y) => clampF(((x - S.ax) * S.ux + (y - S.ay) * S.uy) / S.le
 function blocksAgent(G, x, y, ay, swim) {
   if (swim && G.b === -1) return false;
   if (G.b === -1) return ay < 0.5; // air: padat untuk pejalan
-  if (G.z0 > ay + 1.9 || G.h < ay + 0.35) return false; // di atas kepala / di bawah lutut (lantai lain)
+  if (G.z0 > ay + 1.9 || G.h < ay + (G.floor !== undefined ? 0.45 : 0.35)) return false; // di atas kepala / di bawah lutut (lantai lain); tepi pelat lantai: langkah naik 0,45 m (puncak tangga curam 3,0 m)
   if (G.stair && ay >= rampH(G.stair, x, y) - 0.45) return false; // sedang menaiki tangga
   return true;
 }
@@ -177,7 +177,7 @@ export function createCollider(D, inArea, homes) {
       // sudut cekung: dinding diperpanjang sampai titik temu sisi dalamnya (e.x0/e.x1, interiors.js edgesOf) — tanpa celah
       let s = doors.length && doors[0].s0 < 0.05 ? 0 : -(e.x0 || 0);
       const end = doors.length && doors[doors.length - 1].s1 > e.len - 0.05 ? e.len : e.len + (e.x1 || 0);
-      const win = H.kind || (H.blind && H.blind.has(e.j)) ? null : { ax: e.a[0], ay: e.a[1], ux: e.ux, uy: e.uy, u0: e.u0, u1: e.u0 + e.len, doors: doors.map((d) => [d.u0, d.u1]) }; // toko/aula/menara: kaca padat; sisi menempel gedung lain: tanpa jendela; jendela terpotong sudut / menumpuk pintu: tidak ada (winOk)
+      const win = H.kind || (H.blind && H.blind.has(e.j)) ? null : { ax: e.a[0], ay: e.a[1], ux: e.ux, uy: e.uy, u0: e.u0, u1: e.u0 + e.len, doors: doors.map((d) => [d.u0, d.u1]), top: H.up ? H.up.ceil : H.ceil }; // toko/aula/menara: kaca padat; sisi menempel gedung lain: tanpa jendela; jendela terpotong sudut / menumpuk pintu: tidak ada (winOk)
       // ruko/aula/menara: kaca lantai atas yang sedang terbuka (pita D.bands) bisa ditembus — lihat bandWin
       const bw = H.kind && !(H.blind && H.blind.has(e.j)) ? { st: H.fst | 0, ax: e.a[0], ay: e.a[1], ux: e.ux, uy: e.uy, u0: e.u0, u1: e.u0 + e.len, doors: [] } : null;
       const ex = win ? { win } : bw ? { bw } : {};
