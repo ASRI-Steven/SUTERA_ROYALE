@@ -488,39 +488,60 @@ function roomTypes(H) {
 // tangga, ≥ 0,36 m dari bagian padat sekat (ambang = lewat) dan perabot (rects). Lulus: ≥ 90 % sel bebas terjangkau dan
 // tiap ruang punya sel terjangkau. Menggantikan daftar NO_UP (dulu terikat data peta).
 function upperReach(H, up, rects = null) {
-  const G = 0.3, S = up.stair, hole = S.rect, land = S.land;
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const p of H.pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
-  const nx = Math.ceil((x1 - x0) / G) + 1, ny = Math.ceil((y1 - y0) / G) + 1;
-  if (nx * ny > 40000) return true; // rumah sangat besar: tidak diuji (sekat berambang lebar)
-  const solid = [];
-  for (const p of up.parts || H.parts) {
-    const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len, at = (t) => [p.a[0] + ux * t, p.a[1] + uy * t];
-    if (p.g1 > p.g0) { solid.push([p.a, at(p.g0)], [at(p.g1), p.b]); } else solid.push([p.a, p.b]);
+  const G = 0.3, S = up.stair, hole = S.rect, land = S.land, parts = up.parts || H.parts;
+  // sel dalam kotak batas segmen/poligon (± m) → fn(k, q); hanya sel yang masih bebas
+  const around = (B, st, pts, m, fn) => {
+    let lx = 1e9, ly = 1e9, hx = -1e9, hy = -1e9;
+    for (const p of pts) { lx = Math.min(lx, p[0]); ly = Math.min(ly, p[1]); hx = Math.max(hx, p[0]); hy = Math.max(hy, p[1]); }
+    const a0 = Math.max(0, Math.floor((lx - m - B.x0) / G)), a1 = Math.min(B.nx - 1, Math.ceil((hx + m - B.x0) / G)), b0 = Math.max(0, Math.floor((ly - m - B.y0) / G)), b1 = Math.min(B.ny - 1, Math.ceil((hy + m - B.y0) / G));
+    for (let b = b0; b <= b1; b++) for (let a = a0; a <= a1; a++) { const k = b * B.nx + a; if (st[k]) fn(k, [B.x0 + a * G, B.y0 + b * G]); }
+  };
+  let B = H._reach; // raster dasar (denah, jarak dinding & sekat, ruang) disimpan per rumah: kandidat tangga hanya beda lubangnya
+  if (!B || B.pn !== parts.length) {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const p of H.pts) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+    const nx = Math.ceil((x1 - x0) / G) + 1, ny = Math.ceil((y1 - y0) / G) + 1;
+    B = H._reach = { pn: parts.length, x0, y0, nx, ny, big: nx * ny > 40000, base: null, room: null };
+    if (!B.big) {
+      const base = B.base = new Uint8Array(nx * ny), room = B.room = new Int16Array(nx * ny).fill(-1);
+      const all = new Uint8Array(nx * ny).fill(1);
+      H.rooms.forEach((r, ri) => around(B, all, r, 0, (k, q) => { if (room[k] < 0 && pip(q[0], q[1], r)) { room[k] = ri; base[k] = 1; } }));
+      const clear = (a, b2, m) => around(B, base, [a, b2], m, (k, q) => { if (segDist(q, a, b2) < m) base[k] = 0; });
+      for (const e of H.edges) clear(e.a, e.b, 0.5);
+      for (const p of parts) {
+        const ux = (p.b[0] - p.a[0]) / p.len, uy = (p.b[1] - p.a[1]) / p.len, at = (t) => [p.a[0] + ux * t, p.a[1] + uy * t];
+        if (p.g1 > p.g0) { clear(p.a, at(p.g0), 0.36); clear(at(p.g1), p.b, 0.36); } else clear(p.a, p.b, 0.36);
+      }
+    }
   }
-  const st = new Int8Array(nx * ny);
-  let free = 0;
-  for (let b = 0; b < ny; b++) for (let a = 0; a < nx; a++) {
-    const q = [x0 + a * G, y0 + b * G];
-    if (!pip(q[0], q[1], H.pts) || pip(q[0], q[1], hole)) continue;
-    if (H.edges.some((e) => segDist(q, e.a, e.b) < 0.5) || solid.some((s2) => segDist(q, s2[0], s2[1]) < 0.36) || segDist(q, hole[0], hole[1]) < 0.3 || segDist(q, hole[1], hole[2]) < 0.4 || segDist(q, hole[2], hole[3]) < 0.4 || segDist(q, hole[3], hole[0]) < 0.4) continue;
-    if (rects && rects.some((r) => pip(q[0], q[1], r))) continue;
-    st[b * nx + a] = 2; free++;
+  if (B.big) return true; // rumah sangat besar: tidak diuji (sekat berambang lebar)
+  const { x0, y0, nx, ny } = B, st = new Int8Array(nx * ny);
+  for (let k = 0; k < nx * ny; k++) st[k] = B.base[k] << 1;
+  around(B, st, hole, 0.4, (k, q) => { if (pip(q[0], q[1], hole) || segDist(q, hole[0], hole[1]) < 0.3 || segDist(q, hole[1], hole[2]) < 0.4 || segDist(q, hole[2], hole[3]) < 0.4 || segDist(q, hole[3], hole[0]) < 0.4) st[k] = 0; });
+  if (rects) for (const r of rects) around(B, st, r, 0, (k, q) => { if (pip(q[0], q[1], r)) st[k] = 0; });
+  let free = 0, bd = 1.0, s0 = -1;
+  const la = (land[0] - x0) / G, lb = (land[1] - y0) / G;
+  for (let k = 0; k < nx * ny; k++) if (st[k] === 2) free++;
+  for (let b = Math.max(0, Math.floor(lb - 4)); b <= Math.min(ny - 1, Math.ceil(lb + 4)); b++) for (let a = Math.max(0, Math.floor(la - 4)); a <= Math.min(nx - 1, Math.ceil(la + 4)); a++) { // sel bebas terdekat bordes (≤ 1 m)
+    if (st[b * nx + a] !== 2) continue;
+    const d = Math.hypot(a - la, b - lb) * G;
+    if (d < bd) { bd = d; s0 = b * nx + a; }
   }
-  if (!free) return false;
-  const q = [];
-  let bd = 1e9, s0 = -1;
-  for (let k = 0; k < nx * ny; k++) if (st[k] === 2) { const d = Math.hypot(x0 + (k % nx) * G - land[0], y0 + Math.floor(k / nx) * G - land[1]); if (d < bd) { bd = d; s0 = k; } }
-  if (bd > 1.0) return false;
-  st[s0] = 1; q.push(s0);
-  for (let h = 0; h < q.length; h++) { const k = q[h], a = k % nx; for (const n of [a > 0 ? k - 1 : -1, a < nx - 1 ? k + 1 : -1, k - nx, k + nx]) if (n >= 0 && n < nx * ny && st[n] === 2) { st[n] = 1; q.push(n); } }
-  if (q.length < 0.9 * free) return false;
-  for (const r of H.rooms) { // tiap ruang punya sel terjangkau
-    let ok = false, any = false;
-    for (let k = 0; k < nx * ny && !ok; k++) if (st[k] && pip(x0 + (k % nx) * G, y0 + Math.floor(k / nx) * G, r)) { any = true; if (st[k] === 1) ok = true; }
-    if (any && !ok) return false;
+  if (!free || s0 < 0) return false;
+  const q = new Int32Array(free);
+  let qn = 1;
+  q[0] = s0; st[s0] = 1;
+  for (let h = 0; h < qn; h++) {
+    const k = q[h], a = k % nx;
+    if (a > 0 && st[k - 1] === 2) { st[k - 1] = 1; q[qn++] = k - 1; }
+    if (a < nx - 1 && st[k + 1] === 2) { st[k + 1] = 1; q[qn++] = k + 1; }
+    if (k >= nx && st[k - nx] === 2) { st[k - nx] = 1; q[qn++] = k - nx; }
+    if (k + nx < nx * ny && st[k + nx] === 2) { st[k + nx] = 1; q[qn++] = k + nx; }
   }
-  return true;
+  if (qn < 0.9 * free) return false;
+  const seen = new Int8Array(H.rooms.length); // tiap ruang punya sel terjangkau
+  for (let k = 0; k < nx * ny; k++) if (st[k] && B.room[k] >= 0) seen[B.room[k]] |= st[k] === 1 ? 2 : 1;
+  return !seen.some((v) => v === 1);
 }
 function planUpper(H, li, occ = null) {
   for (const RUN of [HOUSE.run, 3.6, 3.0]) { if (H.up) return; planUpperRun(H, li, occ, RUN); } // tangga 4,4 → 3,6 → 3,0 m
