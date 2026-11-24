@@ -29,6 +29,7 @@ import { createGovernor } from './governor.js';
 import { matchHooks } from './hooks.js';
 import { initSkins } from './skins.js';
 import { createKillFx } from './killfx.js';
+import { createAirFx } from './airfx.js';
 import { createSkinFx } from './fxlib.js';
 import { createLobby } from './lobby.js';
 import { profile, partySlots } from './profile.js';
@@ -186,6 +187,7 @@ function start(D, realAssets, envAssets, furnAssets) {
   }
   const sfx = createSkinFx({ scene, camera }); // efek skin berbentuk (Skin v2, game/fxlib.js): tembak, isi ulang, kill di senjata, finisher
   const kills = createKillFx({ scene, hud, sfx }); // kill pemain: denting beruntun bertema skin senjata (game/killfx.js)
+  const airfx = createAirFx(scene); // garis angin & awan saat terjun (game/airfx.js)
 
   // ---------- Pertempuran ----------
   const BLAST = { def: { short: 'Ledakan' } }, NADE_HIT = { def: { short: 'Granat' } };
@@ -924,6 +926,7 @@ function start(D, realAssets, envAssets, furnAssets) {
       squadTick(dt); // yang tumbang: darah berkurang / kemajuan pemulihan
       nades.update(dt, now);
       view = player.update(dt, now);
+      airfx.update(dt, camera, me.pos, me.alive && (me.state === 'fall' || me.state === 'chute'), !post || !post.tier.post);
       if (me.alive) { // statistik pertandingan (ringkasan untuk misi)
         if (me.state === 'ground') stat.onFootM += me.moveSpeed * dt; else if (me.state === 'drive' && me.vehicle) stat.drivenM += Math.abs(me.vehicle.speed) * dt;
         const hs = me.heals.band + me.heals.kit;

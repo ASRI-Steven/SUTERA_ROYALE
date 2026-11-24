@@ -359,7 +359,7 @@ export function createBots(ctx, n = 50) {
   }
   // rekan pemain di udara: formasi di samping-depan pemain, keadaan mengikuti pemain
   // (terjun bebas / payung); begitu pemain mendarat → titik mendarat bebas 4–8 m darinya, lalu turun seperti biasa
-  const airT = new THREE.Vector3();
+  const airT = new THREE.Vector3(), FORM_SWAY = [0.5, 0.3, 0.4]; // amplitudo goyangan formasi (m): samping, naik-turun, maju-mundur
   function allyAir(b, dt) {
     const P = PLAYER, a = b.ai;
     if (!P || P.state === 'plane') return true;
@@ -370,7 +370,10 @@ export function createBots(ctx, n = 50) {
       if (!a.airOff) a.airOff = new THREE.Vector3().subVectors(b.pos, P.pos);
       airT.set(sn * ahead + cs * side, -0.8 - k * 0.5, cs * ahead - sn * side);
       a.airOff.lerp(airT, 1 - Math.exp(-dt * 1.5));
+      // goyangan formasi: tiap rekan hanyut pelan di sekitar slotnya (fase per slot), supaya tidak tampak terpaku ke pemain
+      const wt = b.airT || 0, ws = FORM_SWAY[0] * Math.sin(0.7 * wt + k * 2.1), wa = FORM_SWAY[2] * Math.sin(0.5 * wt + k * 1.3);
       b.pos.copy(P.pos).add(a.airOff);
+      b.pos.x += sn * wa + cs * ws; b.pos.y += FORM_SWAY[1] * Math.sin(0.9 * wt + k * 3.4); b.pos.z += cs * wa - sn * ws;
       b.yaw = P.yaw;
       b.state = P.state;
       a.land = null;
@@ -1358,7 +1361,7 @@ export function createBots(ctx, n = 50) {
   // ---------- Pintu rumah (col.doors): bot membuka pintu tertutup di depannya (steer), menutupnya di think ----------
   let camRef = null;
   const doorsOf = new Map(); // indeks gedung → pintu rumahnya (dibuat saat pertama diminta)
-  const houseDoors = (bi) => { let L = doorsOf.get(bi); if (!L) { L = col.doors.filter((D) => D.b === bi); doorsOf.set(bi, L); } return L; };
+  const houseDoors = (bi) => { let L = doorsOf.get(bi); if (!L) { L = col.doors.filter((D) => D.b === bi && !D.bath); doorsOf.set(bi, L); } return L; };
   function doorSound(D, open) {
     if (!camRef) return;
     const dx = D.x - camRef.x, dz = -D.y - camRef.z, d = Math.hypot(dx, dz);
@@ -1367,20 +1370,87 @@ export function createBots(ctx, n = 50) {
     audio.houseDoor(open, (1 - d / 35) ** 2, -Math.sin(Math.atan2(dx, dz) - yaw), muffled);
   }
   function shut(b, D, now) { if (D.open && col.setDoor(D, false, agents, now)) { doorSound(D, false); return true; } return false; }
-  function doorThink(b, now) {
-    const a = b.ai, x = b.pos.x, y = -b.pos.z;
-    // bertahan / memulihkan diri di dalam rumah: tutup pintu rumah itu yang ≤ 6 m
-    if ((a.mode === 'hold' || b.healEnd) && Math.abs(b.pos.y) < 0.5 && now - (a.shutAt || -99) > 4) {
-      const bi = col.inBuilding(x, y);
-      if (bi >= 0) { a.shutAt = now; for (const D of houseDoors(bi)) if (D.open && Math.hypot(D.x - x, D.y - y) < 6) shut(b, D, now); }
+  // Menutup pintu dengan nalar (bukan sekadar peluang):
+  //  - hanya pintu dalam jangkauan tangan (DOOR_REACH), tidak pernah yang baru saja digerakkan (anti buka-tutup beruntun);
+  //  - tidak mengunci rekan di seberang / rekan yang sedang berjalan ke celah (yang terakhir lewat yang menutup), dan tidak
+  //    menutup pintu yang akan dilewatinya lagi atau yang sedang dipakainya menembak;
+  //  - memutus garis tembak: sedang mengobati / isi ulang / kabur / baru tertembak dan ancamannya terlihat lewat celah;
+  //  - bertahan / memulihkan diri di dalam rumah: pintu rumah itu yang terjangkau;
+  //  - setelah lewat (pintu yang dibukanya ATAU yang sudah terbuka): peluang menurut keadaan — masuk rumah untuk menjarah
+  //    lebih sering daripada keluar, kabur hampir selalu, mengejar lawan / dikejar zona tidak pernah.
+  const DOOR_REACH = 3.0;
+  const TUCK_R = { pistol: 0.7, revolver: 0.7 }; // jarak dinding saat senjata mulai ditarik (laras panjang 0,95 m)
+  const doorMid = (D, o) => { o[0] = D.x + D.nx * D.T / 2; o[1] = D.y + D.ny * D.T / 2; return o; }, dm = [0, 0];
+  const doorSideOf = (D, x, y) => Math.sign((x - D.x) * D.nx + (y - D.y) * D.ny - D.T / 2); // +1 = sisi dalam (arah n)
+  function throughDoor(D, x, y, tx, ty) { // ruas (x,y) → (tx,ty) menembus celah pintu D?
+    doorMid(D, dm);
+    const v0 = (x - dm[0]) * D.nx + (y - dm[1]) * D.ny, v1 = (tx - dm[0]) * D.nx + (ty - dm[1]) * D.ny;
+    if (v0 * v1 >= 0) return false;
+    const t = v0 / (v0 - v1), u = (x + (tx - x) * t - dm[0]) * D.ux + (y + (ty - y) * t - dm[1]) * D.uy;
+    return Math.abs(u) < D.w / 2 + 0.1;
+  }
+  function doorBusy(b, D, now, cover = false) { // alasan untuk TIDAK menutup pintu D sekarang
+    if (now - D.at < 1.2) return true;
+    const a = b.ai, x = b.pos.x, y = -b.pos.z, sb = doorSideOf(D, x, y);
+    doorMid(D, dm);
+    const mx = dm[0], my = dm[1];
+    for (const o of agents) {
+      if (o === b || o.team !== b.team || !o.alive || o.state !== 'ground' || Math.abs(o.pos.y - D.z) > 1.5) continue;
+      const ox = o.pos.x - mx, oy = -o.pos.z - my, d = Math.hypot(ox, oy);
+      if (d > 14 || d < 0.01) continue;
+      const to = o.vel ? -(ox * o.vel.x + oy * o.vel.y) / d : 0; // laju rekan menuju celah
+      if (d < 7 ? Math.sign(ox * D.nx + oy * D.ny) !== sb || to > 1 : to > 2.5) return true; // rekan di seberang / sedang menuju pintu ini
     }
-    // baru melewati pintu yang dibukanya sendiri (≥ 1,6 m di seberangnya): kadang ditutup lagi (bot hati-hati)
+    if (cover) return false;
+    { const dx = mx - x, dy = my - y, d = Math.hypot(dx, dy); if (d > 0.01 && (b.vel.x * dx + b.vel.y * dy) / d > 0.8) return true; } // ia sendiri sedang berjalan kembali ke pintu
+    if (a.goal && (a.nav || a.route) && throughDoor(D, x, y, a.goal[0], a.goal[1])) return true; // tujuannya di seberang pintu ini
+    { const N = a.nav; if (N && N.kind === 'local' && N.pts) { if (N.i < N.pts.length && throughDoor(D, x, y, N.pts[N.i][0], N.pts[N.i][1])) return true; for (let i = Math.max(1, N.i), n = Math.min(N.pts.length, i + 8); i < n; i++) if (throughDoor(D, N.pts[i - 1][0], N.pts[i - 1][1], N.pts[i][0], N.pts[i][1])) return true; } } // jalurnya lewat pintu ini lagi
+    if (a.mode === 'follow') { const Lf = leaderOf(b); if (Lf && Math.abs(Lf.pos.y - D.z) < 1.5 && Math.hypot(Lf.pos.x - mx, -Lf.pos.z - my) < 25 && Math.sign((Lf.pos.x - mx) * D.nx + (-Lf.pos.z - my) * D.ny) !== sb) return true; } // pemimpin yang diikutinya di seberang
+    if (a.mode === 'fight' && a.target && a.losOk && throughDoor(D, x, y, a.target.pos.x, -a.target.pos.z)) return true; // sedang menembak lewat celah
+    return false;
+  }
+  function shutChance(b, D, side, now) {
+    const a = b.ai;
+    if (D.bath || a.mode === 'zone' || a.mode === 'revive' || a.mode === 'toVeh' || a.mode === 'toRide' || zoneUrgent(b)) return 0;
+    if (a.mode === 'flee' || (now - a.hurtAt < 5 && a.mode !== 'fight')) return Math.max(0.3, SKILL.wary);
+    if (a.mode === 'fight') return 0; // mengejar / bermanuver: pintu dibiarkan
+    return SKILL.wary * (side > 0 ? (a.mode === 'loot' ? 0.75 : 0.6) : 0.25); // masuk (sisi dalam) vs keluar
+  }
+  function doorThink(b, now) {
+    const a = b.ai, x = b.pos.x, y = -b.pos.z, z = b.pos.y;
+    const N = col.doorNear(x, y, z, DOOR_REACH);
+    if (N && N.open) {
+      const dN = Math.hypot(doorMid(N, dm)[0] - x, dm[1] - y);
+      // pintu terbuka yang sedang dilewati (dibuka siapa pun): diingat sisi datangnya
+      if (!N.bath && a.doorLast !== N && dN < 1.3) { a.doorLast = N; a.doorSide = doorSideOf(N, x, y); }
+      if (now - (a.shutAt || -99) > 3) {
+        // memutus garis tembak lewat celah
+        const thr = a.target && a.target.alive ? a.target : a.hurtBy && a.hurtBy.alive && now - a.hurtAt < 4 ? a.hurtBy : null;
+        const wantCover = thr && thr.team !== b.team && (!!b.healEnd || !!b.reloadEnd || a.mode === 'flee' || (now - a.hurtAt < 2.5 && b.hp < 60));
+        if (wantCover && throughDoor(N, x, y, thr.pos.x, -thr.pos.z)) {
+          a.shutAt = now;
+          if (Math.random() < 0.35 + 0.65 * SKILL.wary && !doorBusy(b, N, now, true) && shut(b, N, now)) { if (a.doorLast === N) a.doorLast = null; return; }
+        }
+        // bertahan / memulihkan diri: pintu rumah tempatnya berada (kamar mandi: hanya bila ia di dalamnya)
+        else if (a.mode === 'hold' || b.healEnd) {
+          a.shutAt = now - 1; // dicoba lagi 2 dtk lagi
+          if (N.bath ? b.healEnd && doorSideOf(N, x, y) > 0 && dN < 2.4 : col.inBuilding(x, y) === N.b) {
+            for (const D of N.bath ? [N] : houseDoors(N.b)) if (D.open && Math.abs(D.z - z) < 1.2 && Math.hypot(doorMid(D, dm)[0] - x, dm[1] - y) < DOOR_REACH + 0.4 && !doorBusy(b, D, now)) shut(b, D, now);
+          }
+        }
+      }
+    }
+    // baru melewati pintu (≥ 1,6 m di seberangnya): diputuskan sekali, ditutup begitu tidak ada alasan menahannya
     const L = a.doorLast;
     if (L && L.open) {
-      const v = (x - L.x) * L.nx + (y - L.y) * L.ny;
-      if (Math.abs(v - L.T / 2) >= 1.6 && Math.sign(v - L.T / 2) !== a.doorSide) { a.doorLast = null; if (Math.hypot(L.x - x, L.y - y) < 4 && Math.random() < SKILL.wary * 0.4) shut(b, L, now); }
-      else if (Math.hypot(L.x - x, L.y - y) > 8) a.doorLast = null;
-    } else a.doorLast = null;
+      const v = (x - L.x) * L.nx + (y - L.y) * L.ny - L.T / 2, dL = Math.hypot(L.x - x, L.y - y);
+      if (dL > 8 || Math.abs(L.z - z) > 1.5) { a.doorLast = null; a.doorP = null; }
+      else if (Math.abs(v) >= 1.6 && Math.sign(v) !== a.doorSide) {
+        if (!a.doorP || a.doorP.D !== L) a.doorP = { D: L, yes: Math.random() < shutChance(b, L, Math.sign(v), now) };
+        if (!a.doorP.yes || dL > DOOR_REACH + 1) { a.doorLast = null; a.doorP = null; }
+        else if (!doorBusy(b, L, now)) { shut(b, L, now); a.doorLast = null; a.doorP = null; }
+      }
+    } else { a.doorLast = null; a.doorP = null; }
   }
   function think(b, now) {
     const a = b.ai;
@@ -1957,6 +2027,8 @@ export function createBots(ctx, n = 50) {
           p.heal = (!!b.healEnd || !!b.reviving) && b.alive;
           p.healKind = b.healEnd ? b.ai.healKind : null; // pose per jenis obat (rig.js): perban / P3K
           p.gunKind = b.cur >= 0 && b.weapons[b.cur] ? b.weapons[b.cur].kind : null;
+          // menempel dinding: sinar pendek dari dada searah hadap → senjata ditarik (rig.js TUCK); hanya bot dekat kamera
+          p.tuck = p.armed && d < 60 && b.state === 'ground' && !p.prone ? clamp((TUCK_R[p.gunKind] || 0.95) - col.ray(rx, -rz, ry + (p.crouch ? 0.85 : 1.25), Math.sin(b.yaw), -Math.cos(b.yaw), 0, 1), 0, 0.4) / 0.4 : 0;
           p.sit = driving ? (b.sitKind || 'car') : null;
           p.recline = driving ? (b.sitRecline || 0) : 0;
           p.steer = driving && b.ai.veh ? b.ai.veh.steerN || 0 : 0;

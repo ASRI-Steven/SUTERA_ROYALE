@@ -801,7 +801,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const puffs = pointPool(camera, 24, false, 0.0, 70, 30);
   let postOn = true, sunGlare = 0;
   const scopeMask = new THREE.Vector4(), _eye = new THREE.Vector3();
-  const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0, fistK: 0, guard: 0, guardT: 0, punch: null, punchSide: -1 };
+  const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0, fistK: 0, guard: 0, guardT: 0, punch: null, punchSide: -1, tuck: 0 };
   const v = new THREE.Vector3();
   // ---------- efek skin senjata (setSkinFx): warna kilatan, nyala moncong beranimasi, pendar isi ulang/periksa/cabut, panas ----------
   // Hanya MEMBACA keadaan animasi (st.flashT, st.act, st.inspect, st.swap, st.ads); dipanggil sekali per frame dari update().
@@ -2002,6 +2002,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       st.t += dt * (1 + o.moving * (o.sprint ? 2.2 : 1.3));
       st.ads += ((o.ads ? 1 : 0) - st.ads) * k(16);
       st.sprint += ((o.sprint ? 1 : 0) - st.sprint) * k(9);
+      st.tuck += ((o.tuck || 0) - st.tuck) * k(11); // menempel dinding: senjata ditarik, moncong naik (player.js)
       st.kick = Math.max(0, st.kick - dt * 9);
       st.swap = Math.max(0, st.swap - dt * 4);
       st.swayX += (Math.max(-1, Math.min(1, -o.mdx * 0.02)) - st.swayX) * k(10);
@@ -2088,13 +2089,13 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         const hip = [0.17, -0.2, -0.52], adsP = [-E.x, -E.y, -(O ? reliefOf(O) : IRON_D) - E.z];
         const sw = st.swap > 0 ? 1 - backOut(1 - st.swap) : 0, low = Math.max(lower, out); // naik: sedikit lewat lalu diam
         const spr = st.sprint * (rA || hA ? 0.35 : 1); // berlari sambil beraksi: pose lari dikurangi
-        const ka = 1 - a * 0.4;
+        const ka = 1 - a * 0.4, tk = st.tuck * (1 - a) * (1 - spr * 0.6);
         pBase.set(
-          hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + spr * 0.04 + low * 0.06,
-          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3],
-          hip[2] + (adsP[2] - hip[2]) * a + spx[0] * ka + low * 0.08,
+          hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + spr * 0.04 + low * 0.06 - tk * 0.03,
+          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3] - tk * 0.05,
+          hip[2] + (adsP[2] - hip[2]) * a + spx[0] * ka + low * 0.08 + tk * 0.13,
         );
-        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] - sw * 0.7 - low * 1.1 - spr * 0.25, spr * 0.75 + st.swayX * 0.06 + sw * 0.25, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5));
+        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] - sw * 0.7 - low * 1.1 - spr * 0.25 + tk * 0.6, spr * 0.75 + st.swayX * 0.06 + sw * 0.25 + tk * 0.3, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5 - tk * 0.12));
         mBase.compose(pBase, qBase, ONE);
         if (aPos.x || aPos.y || aPos.z || aRot.x || aRot.y || aRot.z) { mBase.multiply(mAct.compose(aPos, qAct, ONE)); mBase.decompose(G.g.position, G.g.quaternion, _v3); }
         else { G.g.position.copy(pBase); G.g.quaternion.copy(qBase); }

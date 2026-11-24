@@ -836,13 +836,13 @@ export function createPlayer(ctx) {
       const dist = me.state === 'dead' ? 5 : lc ? (st.landCam < 0.25 ? 0.3 : LAND.camD) : hor ? 2.6 : 6.5;
       right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
       const pivot = tmp.set(p.x, p.y + (me.state === 'dead' ? 0.6 : st.prone && hor ? 0.75 : 1.6), p.z);
-      let d = dist;
+      let d = dist, wall = false;
       { // jangan menembus dinding (sinar tepat, aman untuk dinding tipis rumah)
         tmp2.copy(fwd).multiplyScalar(-dist).addScaledVector(right, hor ? 0.6 : 0);
         const len = tmp2.length(), t = col.ray(pivot.x, -pivot.z, pivot.y, tmp2.x / len, -tmp2.z / len, tmp2.y / len, len);
-        if (t < len) d = Math.max(0.12, (t - 0.3) * dist / len); // mepet dinding/tangga: kamera boleh sangat dekat (karakter disembunyikan), tidak menembus ke balik dinding
+        if (t < len) wall = true, d = Math.max(0.12, (t - 0.3) * dist / len); // mepet dinding/tangga: kamera boleh sangat dekat (karakter disembunyikan), tidak menembus ke balik dinding
       }
-      st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (lc ? 5 : d < st.camD ? 30 : 5))) : d;
+      st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (d < st.camD && (wall || !lc) ? 30 : 5))) : d; // kamera baru mendarat bergerak pelan, KECUALI terhalang dinding (dulu ikut pelan → sempat menembus ke dalam rumah)
       camera.position.copy(pivot).addScaledVector(fwd, -st.camD).addScaledVector(right, hor ? 0.6 * st.camD / dist : 0);
       if (st.swim && !st.dive && camera.position.y < 0.5) camera.position.y = 0.5; // berenang: kamera tetap di atas permukaan air
       if (st.swim && st.dive) { const bed = -col.waterDepth(camera.position.x, -camera.position.z); if (camera.position.y < bed + 0.35) camera.position.y = bed + 0.35; } // menyelam: kamera tidak menembus dasar
@@ -1101,11 +1101,16 @@ export function createPlayer(ctx) {
       else {
         const sn = Math.sin(L.yaw), cs = Math.cos(L.yaw), x0 = me.pos.x, z0 = me.pos.z;
         if (!st.folOff) st.folOff = new THREE.Vector3().subVectors(me.pos, L.pos);
-        folT.set(-sn * 5 + cs * 3.5, 1.2, -cs * 5 - sn * 3.5);
+        // slot di belakang-kiri pemimpin + goyangan formasi pelan (sama seperti rekan bot, bots.js allyAir)
+        const wt = st.airT, ws = 3.5 + 0.5 * Math.sin(0.7 * wt), wa = -5 + 0.4 * Math.sin(0.5 * wt), ox = st.folOff.x, oz = st.folOff.z;
+        folT.set(sn * wa + cs * ws, 1.2 + 0.3 * Math.sin(0.9 * wt), cs * wa - sn * ws);
         st.folOff.lerp(folT, 1 - Math.exp(-dt * 1.5));
         me.pos.copy(L.pos).add(st.folOff);
         if (me.pos.y < 0.5) me.pos.y = 0.5;
-        if (dt > 0) me.vel.set((me.pos.x - x0) / dt, (me.pos.z - z0) / dt);
+        if (dt > 0) {
+          me.vel.set((me.pos.x - x0) / dt, (me.pos.z - z0) / dt);
+          st.aSide = clamp(((st.folOff.x - ox) * -cs + (st.folOff.z - oz) * sn) / dt / 6, -1, 1); // bergeser menyamping di formasi → badan miring
+        }
         me.yaw = L.yaw;
         if (L.state === 'chute' && me.state !== 'chute') audio.click();
         me.state = L.state;
@@ -1306,7 +1311,7 @@ export function createPlayer(ctx) {
         p.armed = me.cur >= 0 && !!me.weapons[me.cur] && !me.down && !st.revive;
         p.aim = st.ads || st.firing;
         p.guard = !p.armed && me.state === 'ground' && !st.swim && !me.down && ctx.now() - (me.lastPunch ?? -99) < 3; // habis meninju: kuda-kuda
-        p.pitch = st.pitch;
+        p.pitch = st.pitch; p.tuck = st.tuck || 0;
         p.dead = !me.alive;
         p.freefall = me.state === 'fall';
         p.chute = me.state === 'chute';
@@ -1377,8 +1382,10 @@ export function createPlayer(ctx) {
       const vfp = driving && st.vfp && st.vArmed && me.alive;
       const fp = (me.state === 'ground' && !st.tpp && !(st.landCam > 0) && me.alive) || vfp;
       const w = weapon();
+      // menempel dinding: sinar pendek dari mata searah pandang → senjata ditarik (vm tuck, pose.tuck); membidik / menembak: senjata kembali
+      st.tuck = w && me.state === 'ground' && me.alive && !st.swim && !st.ads && !st.firing && ctx.now() - me.lastShot > 0.3 ? clamp((/pistol|revolver/.test(w.inst.kind) ? 0.7 : 0.95) - col.ray(me.pos.x, -me.pos.z, me.pos.y + (st.prone ? 0.35 : st.crouch ? 1.0 : 1.5), Math.sin(st.yaw) * Math.cos(st.pitch), -Math.cos(st.yaw) * Math.cos(st.pitch), Math.sin(st.pitch), 1), 0, 0.4) / 0.4 : 0;
       const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
-      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, fov: camera.fov, zoom: w ? w.inst.zoom : 8, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
+      vm.update({ dt, tuck: fp ? st.tuck : 0, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, fov: camera.fov, zoom: w ? w.inst.zoom : 8, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
       st.mdx = st.mdy = 0;
       const targetFov = fp && st.ads && w ? adsFov(w.inst) : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : st.inAir && me.alive ? Math.min(89, st.airFov || 75) : 75; // kamera belakang: zoom bidik; di udara: FOV gaya terjun
       camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 14));
