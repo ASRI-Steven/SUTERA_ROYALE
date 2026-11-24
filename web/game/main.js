@@ -5,8 +5,8 @@ import { buildWorld, SKY, pip, M } from '../map/world.js';
 import { addContext } from '../map/context.js';
 import { createGrass } from '../map/grass.js';
 import { planHomes, createInteriors } from '../map/interiors.js';
-import { loadCharacterParts, setCharacterParts, addGearParts, setCharacterEnv } from '../map/rig.js';
-import { gunGeometry, loadWeaponModels } from './weapons.js';
+import { loadCharacterParts, setCharacterParts, addGearParts, setCharacterEnv, setGripPoints } from '../map/rig.js';
+import { gunGeometry, loadWeaponModels, worldGrips } from './weapons.js';
 import { loadPropModels } from './loot.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createCollider } from '../map/collide.js';
@@ -76,6 +76,7 @@ async function boot() {
   const furnA = await furnP;
   // model tiap senjata di tangan karakter (orang ketiga & bot); model senjata menghadap −Z, rig menghadap +Z
   addGearParts(Object.keys(WEAPONS).map((k) => ({ gear: 'gun_' + k, bone: 'gun', geo: gunGeometry(k).rotateY(Math.PI) })));
+  setGripPoints(worldGrips()); // tangan orang ketiga mengikuti titik pegangan model senjata (pelindung tangan, magasin)
   loadStep(25, 'Menyusun kota…');
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   try { start(D, real, env, furnA); } catch (e) { console.error(e); fail('Game gagal disiapkan: ' + e.message); }

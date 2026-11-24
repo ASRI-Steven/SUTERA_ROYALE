@@ -116,7 +116,7 @@ function createStage({ scene, camera, col, sunDir }) {
     ch.root.updateMatrixWorld(true);
     const skn = skinById(skinId || m.skin);
     setCharAura(ch, skn && skn.aura); // legendaris: serbuk cahaya mengitari badan
-    members[i] = { ch, yaw: yaw0 + sl2[2], pose: { speed: 0, armed: !!sl2[3], aim: false, pitch: 0, moveYaw: 0 }, gun: sl2[3], spin: 0 };
+    members[i] = { ch, yaw: yaw0 + sl2[2], pose: { speed: 0, armed: !!sl2[3], aim: false, pitch: 0, moveYaw: 0, gunKind: sl2[3] || null }, gun: sl2[3], spin: 0 };
   }
   let gunTok = 0;
   function gunSkin(ch, kind, id) { for (const o of ch.parts['gun_' + kind] || []) { try { applyGunSkin(o, id); } catch (e) { /* skin belum tersedia */ } } }

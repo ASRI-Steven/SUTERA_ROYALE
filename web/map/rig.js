@@ -140,6 +140,40 @@ const GRIP = { pistol: [[0, -0.07, -0.03], [0.025, -0.085, -0.01]], smg: [[0, -0
   ar: [[0, -0.085, -0.1], [0, -0.025, 0.26]], dmr: [[0, -0.085, -0.1], [0, -0.025, 0.3]], rifle: [[0, -0.085, -0.04], [0, -0.01, 0.3]],
   sniper: [[0, -0.085, -0.1], [0, -0.03, 0.34]], lmg: [[0, -0.085, -0.1], [0, -0.04, 0.24]], burst: [[0, -0.085, -0.1], [0, -0.025, 0.28]],
   pdw: [[0, -0.085, -0.07], [0, -0.03, 0.18]], revolver: [[0, -0.07, -0.03], [0.025, -0.085, -0.01]], dbs: [[0, -0.08, -0.1], [0, -0.03, 0.22]] };
+// Pegangan dari model senjata (game/weapons.js worldGrips → setGripPoints; tabel GRIP di atas hanya cadangan bila data tidak
+// ada, mis. halaman peta): per jenis { l: pusat telapak kiri (= titik <jenis>_guard orang pertama), r: pusat telapak kanan,
+// mag: puncak magasin | null, pis: gagang pistol } di ruang tulang senjata. Pergelangan = pusat telapak − R_tangan × PALM,
+// lalu tulang tangan diputar ke orientasi genggam (HQ) — bukan lagi menggantung searah lengan bawah.
+const PALM = [-0.025, -0.082, 0.015]; // pusat telapak kiri di ruang tulang handL (mesh v3 pose diam; kanan = cermin X)
+let GRIPS = null;
+export function setGripPoints(map) {
+  if (!map) return;
+  const V = (a) => (a ? new THREE.Vector3(a[0], a[1], a[2]) : null);
+  GRIPS = {};
+  for (const k in map) { const g = map[k]; if (g && g.l && g.r) GRIPS[k] = { l: V(g.l), r: V(g.r), mag: V(g.mag), pis: g.cls === 'pistol' }; }
+}
+// orientasi tangan di ruang senjata: n = arah hadap telapak, f = arah jari (pangkal → ujung), sisi ibu jari = n × f (kiri)
+// Mesh: jari ke −Y lokal, ibu jari +Z, telapak kiri menghadap −X lokal, kanan +X.
+function handQ(n, f, right) {
+  const N = new THREE.Vector3(...n).normalize(), F = new THREE.Vector3(...f);
+  F.addScaledVector(N, -F.dot(N)).normalize();
+  const X = right ? N.clone() : N.clone().negate(), Y = F.clone().negate(), Z = new THREE.Vector3().crossVectors(X, Y);
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(X, Y, Z));
+}
+const HQ = {
+  longL: handQ([-0.35, 1, 0], [-0.75, 0, 0.6], false), // menopang pelindung tangan dari bawah, jari melingkar ke sisi kanan
+  longR: handQ([1, 0, 0], [0, -0.34, 0.94], true), // telapak kanan di sisi kanan gagang, jari membungkus ke depan
+  pisL: handQ([-1, 0, 0], [0, -0.45, 0.89], false), // telapak kiri menutup tangan kanan dari sisi kiri
+  pisR: handQ([1, 0, 0], [0, -0.3, 0.95], true),
+};
+const _qh = new THREE.Quaternion(), _qf = new THREE.Quaternion(), _pv = new THREE.Vector3();
+// pergelangan (ruang dada) untuk pusat telapak p (ruang dada) dengan orientasi tangan q (ruang dada)
+function wristFor(p, q, right, out) { return out.copy(p).sub(_pv.set(right ? -PALM[0] : PALM[0], PALM[1], PALM[2]).applyQuaternion(q)); }
+// putar tulang tangan ke orientasi q (ruang dada) setelah IK lengan; w = bobot (0 = menggantung lurus)
+function aimHand(ua, fa, hand, q, w) {
+  _qf.copy(ua.quaternion).multiply(fa.quaternion).invert().multiply(q);
+  if (w > 0.999) hand.quaternion.copy(_qf); else hand.quaternion.identity().slerp(_qf, w);
+}
 
 // ---------- Animasi ----------
 // s: { speed m/s, moveYaw (arah gerak relatif hadap, rad), crouch, air, armed, aim, pitch (rad, + = ke atas),
@@ -165,6 +199,20 @@ function rl3Point(i, G, pis, gun, out) {
   else if (i === 2) out.set(0.03, my - 0.15, mz);
   else if (i === 4) out.set(0.025, my - 0.1, mz);
   else out.set(pis ? 0.005 : 0.045, pis ? g0[1] + 0.13 : g0[1] + 0.11, pis ? g0[2] + 0.02 : g0[2] + 0.08); // tuas kokang / slide
+  return out.applyQuaternion(gun.quaternion).add(gun.position);
+}
+// sama, dari data model (setGripPoints): titik = pusat telapak kiri (ruang dada)
+function rl3Palm(i, D, gun, out) {
+  if (i === 3) return out.set(0.1, 0.04, 0.24); // kantong rompi kiri (ruang dada)
+  const L = D.l, M = D.mag;
+  if (i === 0 || i === 7) out.copy(L);
+  else if (i === 6) { if (D.pis) out.set(0.02, 0.06, -0.03); else out.set(0.045, L.y + 0.01, Math.max(0.02, L.z - 0.24)); } // slide / tuas kokang
+  else {
+    if (D.pis) out.set(0.02, -0.13, 0.01); // dasar gagang
+    else if (M) out.set(M.x + 0.03, M.y - 0.08, M.z);
+    else out.set(0.03, L.y - 0.06, L.z * 0.55); // tanpa magasin (shotgun): di bawah lubang isi
+    if (i === 2) { out.y -= 0.15; out.x += 0.02; } else if (i === 4) out.y -= 0.1;
+  }
   return out.applyQuaternion(gun.quaternion).add(gun.position);
 }
 // obat & lempar (ruang dada; +X = kiri karakter, +Z = depan): target tangan
@@ -385,10 +433,31 @@ export class Rig {
     // ----- tangan menempel di senjata (IK): kanan di pegangan, kiri di penyangga; saat isi ulang tangan kiri mengikuti jalur
     //       magasin (rl3Point), saat melempar tangan kanan mengikuti ayunan granat
     const ikW = arm * (1 - m.dead) * (1 - m.fall) * (1 - m.chute) * (1 - m.heal) * (1 - m.swap * 0.8) * (1 - m.swim);
+    let hw = 0;
+    b.armL.position.z = 0;
     if (ikW > 0.01 && (!s.sit || s.armed)) { // duduk bersenjata (menembak dari kendaraan) juga
+      const D = GRIPS && GRIPS[s.gunKind];
       const G = GRIP[s.gunKind] || GRIP.rifle;
       _qc.copy(b.hips.quaternion).multiply(b.spine.quaternion).multiply(b.chest.quaternion).invert(); // ruang karakter → ruang dada
-      _t.set(G[0][0], G[0][1], G[0][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
+      if (D) {
+        hw = ikW;
+        // jangkauan lengan kiri (0,28 + 0,25 m): pelindung tangan senapan panjang di luar jangkauan → bahu kiri maju (maks.
+        // 4 cm), sisanya senjata ditarik ke belakang sepanjang larasnya; kedua tangan tetap di titiknya
+        _qh.copy(b.gun.quaternion).multiply(D.pis ? HQ.pisL : HQ.longL);
+        wristFor(_ra.copy(D.l).applyQuaternion(b.gun.quaternion).add(b.gun.position), _qh, false, _rb);
+        const ex = _rb.distanceTo(b.armL.position) - 0.515;
+        if (ex > 0) {
+          b.armL.position.z = Math.min(ex, 0.04) * ikW;
+          _rb.sub(b.armL.position); // v = pergelangan − bahu; geser d sepanjang −laras g: |v − d·g| = 0,515
+          _pv.set(0, 0, 1).applyQuaternion(b.gun.quaternion);
+          const gv = _pv.dot(_rb), disc = gv * gv - _rb.lengthSq() + 0.515 * 0.515;
+          const d = disc > 0 ? gv - Math.sqrt(disc) : gv;
+          if (d > 0) b.gun.position.addScaledVector(_pv, -d * ikW);
+        }
+        _qh.copy(b.gun.quaternion).multiply(D.pis ? HQ.pisR : HQ.longR);
+        wristFor(_ra.copy(D.r).applyQuaternion(b.gun.quaternion).add(b.gun.position), _qh, true, _t);
+      }
+      else _t.set(G[0][0], G[0][1], G[0][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
       if (thw > 0.01) { // ayunan granat (ruang dada): ditarik di belakang bahu → lepas di depan-atas → turun ke kiri
         if (m.thr > 0) {
           const a = clamp(thp / 0.3, 0, 1), c = clamp((thp - 0.3) / 0.35, 0, 1), e1 = a * a * (3 - 2 * a), e2 = c * c * (3 - 2 * c);
@@ -397,23 +466,28 @@ export class Rig {
         _t.lerp(_ht, thw);
       }
       _pole.set(-0.55, -1, -0.25).applyQuaternion(_qc);
-      solveArm(b.armR, b.foreR, _t, _pole, ikW);
-      _t.set(G[1][0], G[1][1], G[1][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
+      solveArm(b.armR, b.foreR, _t, _pole, ikW, 0.28, D ? 0.25 : 0.3);
+      if (D) aimHand(b.armR, b.foreR, b.handR, _qh, ikW * (1 - thw));
+      if (D) _t.copy(D.l).applyQuaternion(b.gun.quaternion).add(b.gun.position);
+      else _t.set(G[1][0], G[1][1], G[1][2]).applyQuaternion(b.gun.quaternion).add(b.gun.position);
       if (m.rl > 0.01) { // jalur magasin: kunci RL3_T, antar kunci smoothstep
         const u = m.rlu, pis = s.gunKind === 'pistol' || s.gunKind === 'revolver';
         let j = 0;
         while (j < RL3_T.length - 1 && u > RL3_T[j + 1]) j++;
-        if (j >= RL3_T.length - 1) rl3Point(7, G, pis, b.gun, _ra);
+        if (j >= RL3_T.length - 1) { if (D) rl3Palm(7, D, b.gun, _ra); else rl3Point(7, G, pis, b.gun, _ra); }
         else {
           const v = clamp((u - RL3_T[j]) / (RL3_T[j + 1] - RL3_T[j]), 0, 1), e = v * v * (3 - 2 * v);
-          rl3Point(j, G, pis, b.gun, _ra); rl3Point(j + 1, G, pis, b.gun, _rb);
+          if (D) { rl3Palm(j, D, b.gun, _ra); rl3Palm(j + 1, D, b.gun, _rb); } else { rl3Point(j, G, pis, b.gun, _ra); rl3Point(j + 1, G, pis, b.gun, _rb); }
           _ra.lerp(_rb, e);
         }
         _t.lerp(_ra, m.rl);
       }
+      if (D) { _qh.copy(b.gun.quaternion).multiply(D.pis ? HQ.pisL : HQ.longL); wristFor(_ra.copy(_t), _qh, false, _t); }
       _pole.set(0.45, -1, 0.05).applyQuaternion(_qc);
-      solveArm(b.armL, b.foreL, _t, _pole, ikW);
+      solveArm(b.armL, b.foreL, _t, _pole, ikW, 0.28, D ? 0.25 : 0.3);
+      if (D) aimHand(b.armL, b.foreL, b.handL, _qh, ikW);
     }
+    if (hw === 0) { b.handL.quaternion.identity(); b.handR.quaternion.identity(); }
     // ----- mengobati (IK, ruang dada): bawaan/perban = lengan kiri melintang di depan perut, tangan kanan memutarinya;
     //       P3K = kotak di depan perut lalu suntik ke lengan kiri; minum = tangan kanan ke mulut, tangan kiri lepas
     if (m.heal > 0.01 && m.dead < 0.99) {
