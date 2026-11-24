@@ -937,7 +937,7 @@ export function createPlayer(ctx) {
     const x0 = me.pos.x, y0 = -me.pos.z;
     const ay = me.grounded ? me.pos.y : st.floorY || 0; // tinggi kaki untuk tabrakan (lantai 2 / tangga)
     let r = col.step(x0, y0, x0 + me.vel.x * dt, y0 - me.vel.y * dt, RAD, true, ay); // pemain boleh masuk air (berenang)
-    if (ctx.vehicles) { const q = ctx.vehicles.pushOut(r.x, r.y, RAD); if (q.x !== r.x || q.y !== r.y) r = col.resolve(q.x, q.y, RAD, false, ay); } // tidak menembus kendaraan
+    if (ctx.vehicles) { const q = ctx.vehicles.pushOut(r.x, r.y, RAD); if (q.x !== r.x || q.y !== r.y) r = col.guard(r.x, r.y, col.resolve(q.x, q.y, RAD, false, ay), ay, RAD); } // tidak menembus kendaraan (dorongan yang menyeberang dinding ditolak)
     if ((st.prone || me.down) && !st.swim) { // tiarap / tumbang: kepala & kaki juga tidak menembus dinding (didorong halus, bukan melompat)
       const f = col.fitProne(r.x, r.y, Math.sin(st.yaw), -Math.cos(st.yaw), ay), k = Math.min(1, dt * 14);
       if (f.x !== r.x || f.y !== r.y) r = { x: r.x + (f.x - r.x) * k, y: r.y + (f.y - r.y) * k };
