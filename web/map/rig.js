@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { CHAR_SKIN_GLSL, SF_U } from '../game/skinfx.js';
+import { poseAir } from './rigair.js';
 
 const PI = Math.PI;
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -228,8 +229,10 @@ export class Rig {
     this.t = Math.random() * 10;
     this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, punch: 0, punchSide: 1, guard: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, rlu: 0, heal: 0, ht: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0, thr: 0, hold: 0 };
     this.cphase = 0;
+    this.A = null; // pose udara (map/rigair.js), dibuat saat pertama mengudara
   }
   pose(s, dt) {
+    if ((s.freefall || s.chute) && poseAir(this, s, dt, true)) return this.updateWorld(); // pose udara penuh: tanpa pose dasar
     const b = this.b, m = this.m;
     _kdt = dt;
     this.t += dt;
@@ -555,6 +558,7 @@ export class Rig {
         if (m.one > 0.01) b.armL.quaternion.premultiply(q.setFromAxisAngle(ax3.Y, -spT * m.one * (1 - m.rl))); // tangan kiri sopir tetap ke setir
       }
     }
+    if (s.freefall || s.chute || s.landT >= 0 || (this.A && this.A.on)) poseAir(this, s, dt, false);
     this.updateWorld();
   }
   // Matriks dunia semua tulang (induk → anak) tanpa penelusuran umum three.js. Anak non-tulang (mesh perlengkapan pada

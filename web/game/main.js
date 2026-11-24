@@ -536,7 +536,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     throwNade: (a, kind, o, v, cooked) => nades.throwNade(a, kind, o, v, cooked),
     nadeCook: (left) => nades.cook(left),
     nadeAim: (o, v) => nades.aim(o, v),
-    scene, camera, renderer, col, loot, combat, hud, agent: me, inArea, areaCenter: center, vehicles,
+    scene, camera, renderer, col, loot, combat, hud, agent: me, inArea, areaCenter: center, vehicles, agents,
     now: () => now,
     enterVehicle(v) {
       if (me.down) return;
@@ -781,6 +781,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     lobby.hide();
     hud.show(true);
     flight = makeFlight();
+    if (col.resetDoors) col.resetDoors(); // semua pintu rumah tertutup di awal pertandingan
     bots.setDifficulty(diff);
     bots.planJumps(flight.path, flight.dur);
     plane.visible = true;

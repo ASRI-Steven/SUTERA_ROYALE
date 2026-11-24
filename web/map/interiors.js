@@ -56,8 +56,40 @@ const isRect = (E, tol) => E.length === 4 && E.every((e, j) => Math.abs(e.ux * E
 const onEdge = (e) => (s, v) => [e.a[0] + e.ux * s + e.nx * v, e.a[1] + e.uy * s + e.ny * v];
 
 // ---------- Tata letak ----------
+// lingkungan perencanaan (jalan, tapak gedung lain) per peta — dibuat sekali, dipakai planHomes, isHall, fitHouseHeights
+const SITES = new WeakMap();
+function siteOf(D) {
+  let S = SITES.get(D);
+  if (!S) { S = makeSite(D); SITES.set(D, S); }
+  return S;
+}
+function footOf(D, i) {
+  const flat = D.buildings.r[i], n = flat.length >> 1, pts = [];
+  for (let j = 0; j < n; j++) pts.push([flat[2 * j] * M, flat[2 * j + 1] * M]);
+  if (signedArea(pts) < 0) pts.reverse();
+  return pts;
+}
+// gedung jenis 0 = aula (gudang/podium > 1500 m² yang denahnya bisa jadi aula), bukan rumah tapak — aturan sama dengan planHomes.
+// world.js memakai ini untuk atap: rumah tapak selalu beratap miring.
+const HALLS = new WeakMap();
+export function isHall(D, i) {
+  if (D.buildings.k[i] !== 0) return false;
+  let m = HALLS.get(D);
+  if (!m) HALLS.set(D, (m = new Map()));
+  if (m.has(i)) return m.get(i);
+  const pts = footOf(D, i), area = Math.abs(signedArea(pts)), S = siteOf(D);
+  let r = false;
+  if (area > 1500 && pts.length >= 3 && pts.length <= 160) { S.fst = 0; r = !!planShop(i, pts, area, D.buildings.h[i] * M, S, true); }
+  m.set(i, r);
+  return r;
+}
 export function planHomes(D) {
-  const B = D.buildings, homes = new Map();
+  const B = D.buildings, homes = new Map(), site = siteOf(D);
+  planAll(D, B, homes, site);
+  return finishHomes(homes);
+}
+function makeSite(D) {
+  const B = D.buildings;
   // ruas jalan per sel 50 m (untuk arah pintu depan)
   // jalan: "utama" = jalan perumahan ke atas (bukan jalan servis/gang belakang, tol, pejalan kaki) → arah pintu depan
   const MAIN = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'living_street']);
@@ -127,7 +159,9 @@ export function planHomes(D) {
       return false;
     };
   };
-  const site = { roadDist, occupied, heightUnder, neighborOcc };
+  return { roadDist, occupied, heightUnder, neighborOcc };
+}
+function planAll(D, B, homes, site) {
   for (let i = 0; i < B.r.length; i++) {
     const kind = B.k[i];
     if (kind > 3) continue; // 5 = kanopi terbuka (world.js canopyRoof): bisa dilewati, tanpa interior
@@ -147,6 +181,8 @@ export function planHomes(D) {
         : planShop(i, pts, area, h, site);
     if (H) { H.fst = fst; H.blind = (D.blind && D.blind.get(i)) || null; homes.set(i, H); } // sisi tanpa jendela (menempel gedung lain, world.js)
   }
+}
+function finishHomes(homes) {
   // menara di atas podium: pintu lobinya membuka ke dalam podium → kosongkan perabot podium di depan pintu itu
   for (const T of homes.values()) for (const d of T.kind === 'tower' ? T.doors : []) {
     if (!d.inner) continue;
@@ -300,10 +336,43 @@ function planHouse(i, pts, area, h, { roadDist, occupied, neighborOcc }) {
   if (h >= 6.2 && !NO_UP.has(i)) { const occ = neighborOcc(i); for (const ri of [li, ...H.rooms.keys()]) { if (ri >= 0 && !H.up) planUpper(H, ri, occ); } } // tangga dulu (prioritas), kamar mandi menyesuaikan
   planBath(H, types);
   planPorch(H, d1, roadDist, occupied);
+  for (const d of H.doors) { // daun pintu berengsel di ujung celah: lingkaran ayun di dalam bebas perabot
+    d.leaves = d.s1 - d.s0 >= 1.3 ? 2 : 1;
+    for (const s of d.leaves === 2 ? [d.s0, d.s1] : [d.s0]) { const p = onEdge(d.e)(s, HOUSE.wall + 0.45); (H.avoid || (H.avoid = [])).push({ x: p[0], y: p[1], r: 0.95 }); }
+  }
   H.furn = furnish(H, H.rooms, types, H.avoid || [], 0);
   if (H.bath) H.furn.push(...H.bath.fix);
   if (H.up) { H.up.furn = furnish(H, H.rooms, H.up.types, H.up.avoid, 1); if (H.bath) H.up.furn.push(...H.bath.fix); }
+  for (const d of H.doors) planSwing(H, d, occupied);
   return H;
+}
+// arah ayun daun pintu rumah (collide.js setDoor): busur 90° tiap daun diuji terhadap sekat, tangga, kamar mandi,
+// perabot (dalam) dan gedung lain / tiang teras (luar). d.swing: bit 1 boleh ke dalam, bit 2 boleh ke luar; keduanya
+// terhalang → ke dalam dengan sudut maksimum lebih kecil (d.maxA).
+function planSwing(H, d, occupied) {
+  const e = d.e, T = HOUSE.wall, lw = (d.s1 - d.s0) / d.leaves, P = onEdge(e);
+  const rects = H.furn.filter((f) => f.h > 0.05 && f.kind !== 'rug').map(furnitureRect);
+  if (H.up) rects.push(H.up.stair.rect);
+  if (H.bath) rects.push(H.bath.big);
+  const cols = H.porch ? [H.porch.s0 + 0.2, H.porch.s1 - 0.2].map((s) => P(s, -H.porch.D + 0.2)) : [];
+  const okPt = (q, inward) => {
+    if (inward) return pip(q[0], q[1], H.pts) && !H.parts.some((p) => segDist(q, p.a, p.b) < 0.1) && !rects.some((r) => pip(q[0], q[1], r));
+    return !occupied(q[0], q[1], H.i) && cols.every((c) => Math.hypot(c[0] - q[0], c[1] - q[1]) > 0.22) && !pip(q[0], q[1], H.pts);
+  };
+  const free = (side, A) => {
+    for (const [s, du] of d.leaves === 2 ? [[d.s0, 1], [d.s1, -1]] : [[d.s0, 1]]) {
+      const v0 = side > 0 ? T : 0;
+      for (let a = 0.26; a <= A + 1e-6; a += 0.26) for (let r = 0.25; r <= lw; r += 0.2) {
+        const q = P(s + du * Math.cos(a) * r, v0 + side * Math.sin(a) * r);
+        if (!okPt(q, side > 0)) return false;
+      }
+    }
+    return true;
+  };
+  const inn = free(1, Math.PI / 2), out = free(-1, Math.PI / 2);
+  d.swing = (inn ? 1 : 0) | (out ? 2 : 0);
+  d.maxA = Math.PI / 2;
+  if (!d.swing) { d.swing = 1; d.maxA = free(1, 1.31) ? 1.31 : 0.96; } // ±75° / 55°
 }
 // kamar mandi 2 × 1,7 m di pojok rumah (dapur dulu, lalu kamar): sekat L dengan pintu 0,9 m; shower di pojok, kloset & wastafel
 // menempel dinding luar. Sekat ikut H.parts (lantai atas mendapat kamar mandi di posisi yang sama).
@@ -464,12 +533,14 @@ function planShop(i, pts, area, h, { roadDist, occupied, fst, neighborOcc }, hal
   if (!ranges.length) return null;
   ranges.sort((p, q) => p.ops[0][0] - q.ops[0][0]);
   for (const r of ranges) { r.A = r.ops[0][0]; r.B = r.ops[r.ops.length - 1][1]; r.e = edges[r.k0]; }
-  for (const r of ranges) for (const [a, b] of r.ops) for (let k = r.k0; k <= r.k1; k++) { // bukaan bisa melewati sudut → potong per sisi
-    const e = edges[k], s0 = Math.max(a, e.u0) - e.u0, s1 = Math.min(b, e.u0 + e.len) - e.u0;
-    if (s1 - s0 < 0.02) continue;
+  for (const r of ranges) for (const [a, b] of r.ops) for (let k = r.k0; k <= r.k1; k++) { // bukaan yang melewati sudut ditiadakan
+    // (dulu dipotong per sisi → sisa celah 0,03–1,2 m yang tampak berlubang tapi tidak bisa dilewati); shader world.js memakai aturan sama
+    const e = edges[k], s0 = a - e.u0, s1 = b - e.u0;
+    if (s0 < -0.01 || s1 > e.len + 0.01) continue;
     const sm = (s0 + s1) / 2;
     H.doors.push({ e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, h: L.top, x: e.a[0] + e.ux * sm, y: e.a[1] + e.uy * sm });
   }
+  if (!H.doors.length) return null;
   H.open = { A: [ranges[0].A, ranges[0].B], B: ranges[1] ? [ranges[1].A, ranges[1].B] : [-9, -9], P: L.P, p: L.p, top: L.top };
   // kanopi: ruko = satu kanopi menerus sepanjang deret bukaan; aula = kanopi bertiang di tiap pintu masuk (per sisi)
   H.canopies = [];
@@ -1345,11 +1416,6 @@ export function createInteriors(scene, W, homes, col = null, furn = null) {
         if (up && !up.plate.every((pc) => !pip(x, y, pc))) lamp(x, y, up.ceil - 0.05, 0.22);
       }
     }
-    // daun pintu terbuka menempel ke dinding dalam (rumah)
-    if (house) for (const d of H.doors) {
-      const e = d.e, hx = e.a[0] + e.ux * d.s1 + e.nx * T, hy = e.a[1] + e.uy * d.s1 + e.ny * T, L = HOUSE.doorW * 0.5;
-      box(hx + e.nx * L / 2, hy + e.ny * L / 2, Math.atan2(e.ny, e.nx), L, 0.05, 0, HOUSE.doorH - 0.05, new THREE.Color(COL.door));
-    }
     // tangga, pagar tangga (panel miring), pagar lubang di lantai atas (aula: pagar kaca keliling atrium)
     if (up) {
       const stepC = new THREE.Color(H.kind === 'hall' ? '#c9c4bb' : COL.step), stepC2 = new THREE.Color(H.kind === 'hall' ? '#b7b2a8' : COL.step2), railC = new THREE.Color(COL.rail), F = up.floor;
@@ -1469,8 +1535,108 @@ export function createInteriors(scene, W, homes, col = null, furn = null) {
     if (xp.length) { const ex = mk(new Float32Array(xp), new Float32Array(xn), new Float32Array(xc), null, outMat); ex.castShadow = true; grp.add(ex); }
     return grp;
   }
+  // ---------- Daun pintu rumah (buka-tutup; keadaan di col.doors) ----------
+  // Satu InstancedMesh daun kayu prosedural (engsel di x = 0, lebar 0,85 m diskala per pintu, panel timbul kedua sisi,
+  // gagang). Slot dipesan saat interior rumah terbuka, dilepas saat ditutup; matriks hanya ditulis saat dipesan dan selama
+  // daun beranimasi. Rumah yang belum terbuka: shader fasad (world.js) menggambar daun tertutup / rongga gelap (terbuka).
+  const leaves = (() => {
+    if (!col || !col.doors || !col.doors.length) return null;
+    const pos = [], nor = [], clr = [];
+    const box = (x0, x1, y0, y1, z0, z1, k) => {
+      const F = [[[1, 0, 0], [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]]], [[-1, 0, 0], [[x0, y0, z1], [x0, y1, z1], [x0, y1, z0], [x0, y0, z0]]],
+        [[0, 1, 0], [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]]], [[0, -1, 0], [[x0, y0, z1], [x0, y0, z0], [x1, y0, z0], [x1, y0, z1]]],
+        [[0, 0, 1], [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]]], [[0, 0, -1], [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]]]];
+      for (const [n, q] of F) for (const v of [q[0], q[1], q[2], q[0], q[2], q[3]]) { pos.push(...v); nor.push(...n); clr.push(...k); }
+    };
+    const LW = 0.85, LH = 2.15, LT = 0.045, wood = [1, 1, 1], pan = [0.82, 0.82, 0.82], brass = [2.2, 2.3, 2.6];
+    box(0, LW, 0, LH, -LT / 2, LT / 2, wood);
+    for (const sd of [-1, 1]) {
+      const z0 = sd * LT / 2, z1 = z0 + sd * 0.012;
+      for (const [y0, y1] of [[0.2, 0.95], [1.1, 1.95]]) box(0.14, LW - 0.14, y0, y1, Math.min(z0, z1), Math.max(z0, z1), pan);
+      box(LW - 0.1, LW - 0.07, 0.98, 1.06, Math.min(z0, z0 + sd * 0.06), Math.max(z0, z0 + sd * 0.06), brass); // gagang
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(clr, 3));
+    const m = W.real ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0, envMap: W.real.env, envMapIntensity: 0.8 }) : new THREE.MeshLambertMaterial({ vertexColors: true });
+    const byB = new Map();
+    for (const D of col.doors) (byB.get(D.b) || byB.set(D.b, []).get(D.b)).push(D);
+    const L = { g, m, mesh: null, cap: 0, free: [], used: 0, live: new Set(), byB, LW, stamp: -1, last: performance.now(), shown: new Map() };
+    return L;
+  })();
+  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), p4 = new THREE.Vector3(), s4 = new THREE.Vector3(), c4 = new THREE.Color(), Y4 = new THREE.Vector3(0, 1, 0);
+  function leafMesh(need) {
+    const L = leaves;
+    if (L.mesh && need <= L.cap) return;
+    let cap = L.cap || 512;
+    while (cap < need) cap *= 2;
+    const old = L.mesh, mesh = new THREE.InstancedMesh(L.g, L.m, cap);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.count = old ? old.count : 0;
+    if (old) { mesh.instanceMatrix.array.set(old.instanceMatrix.array); mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3); mesh.instanceColor.array.set(old.instanceColor.array); scene.remove(old); old.dispose(); }
+    else mesh.setColorAt(0, c4.setRGB(1, 1, 1));
+    for (let k = L.cap; k < cap; k++) L.free.push(cap - 1 - (k - L.cap));
+    mesh.frustumCulled = false;
+    mesh.castShadow = !!W.real; mesh.receiveShadow = true;
+    scene.add(mesh);
+    L.mesh = mesh; L.cap = cap;
+  }
+  const ease = (t) => 1 - (1 - t) * (1 - t);
+  function leafPose(D) { // tulis matriks daun pintu D menurut D.t
+    const M = leaves.mesh, a = D.dir * ease(D.t) * D.maxA, lw = D.w / D.leaves;
+    for (let l = 0; l < D.slots.length; l++) {
+      const du = l === 0 ? 1 : -1, s = l === 0 ? 0 : D.w;
+      const hx = D.ax + D.ux * s + D.nx * D.T / 2, hy = D.ay + D.uy * s + D.ny * D.T / 2;
+      const vx = Math.cos(a) * D.ux * du + Math.sin(a) * D.nx, vy = Math.cos(a) * D.uy * du + Math.sin(a) * D.ny;
+      q4.setFromAxisAngle(Y4, Math.atan2(vy, vx));
+      M.setMatrixAt(D.slots[l], m4.compose(p4.set(hx, D.z + 0.02, -hy), q4, s4.set(lw / leaves.LW, 1, 1)));
+    }
+    M.instanceMatrix.needsUpdate = true;
+  }
+  function leavesOn(H, on) {
+    const L = leaves;
+    if (!L || H.kind) return;
+    const list = L.byB.get(H.i);
+    if (!list) return;
+    for (const D of list) {
+      if (on && !D.slots) {
+        leafMesh(L.used + D.leaves);
+        D.slots = [];
+        const wc = fract(Math.sin(H.i * 12.9898 + 3.1 * 78.233) * 43758.5453); // warna kayu per rumah = shader fasad h21(hbi, 3,1): (0,36, 0,23, 0,14) × (0,85 + 0,3·hash)
+        for (let l = 0; l < D.leaves; l++) {
+          const k = L.free.pop();
+          D.slots.push(k); L.used++;
+          if (k >= L.mesh.count) L.mesh.count = k + 1;
+          L.mesh.setColorAt(k, c4.setRGB(0.36, 0.23, 0.14).multiplyScalar(0.85 + 0.3 * wc));
+        }
+        L.mesh.instanceColor.needsUpdate = true;
+        D.t = D.open ? 1 : 0;
+        leafPose(D);
+        L.live.add(D);
+      } else if (!on && D.slots) {
+        for (const k of D.slots) { L.mesh.setMatrixAt(k, m4.makeScale(0, 0, 0)); L.free.push(k); L.used--; }
+        L.mesh.instanceMatrix.needsUpdate = true;
+        D.slots = null;
+        L.live.delete(D);
+      }
+    }
+  }
+  function leavesTick() { // animasi daun (t → open, 0,3 dtk) + keadaan pintu untuk fasad jauh
+    const L = leaves;
+    if (!L) return;
+    const t = performance.now(), dt = Math.min(0.1, (t - L.last) / 1000);
+    L.last = t;
+    if (L.stamp !== col.doorStamp) {
+      L.stamp = col.doorStamp;
+      if (W.setDoorState) for (const D of col.doors) { if (L.shown.get(D) !== D.open) { L.shown.set(D, D.open); W.setDoorState(D.b, D.k, D.open); } }
+      for (const D of col.doors) if (!D.slots) D.t = D.open; // rumah belum terbuka: tanpa animasi
+    }
+    for (const D of L.live) if (D.t !== D.open) { D.t = D.open ? Math.min(1, D.t + dt / 0.3) : Math.max(0, D.t - dt / 0.3); leafPose(D); }
+  }
   function setOpen(H, on) {
     if (W.setHouseOpen) W.setHouseOpen(H, on);
+    leavesOn(H, on);
     if (H.up && H.kind && W.setFloorBand) W.setFloorBand(H.i, on ? H.up.floor + 0.02 : 0, on ? H.up.ceil : 0); // ruko/aula: kaca lantai 2 berlubang selama terbuka
   }
   // ---------- Lantai menara (dicapai dengan lift): satu lantai terbuka pada satu waktu = lantai tempat kamera berada ----------
@@ -1527,6 +1693,7 @@ export function createInteriors(scene, W, homes, col = null, furn = null) {
       const fx = foot ? foot.x : x, fy = foot ? -foot.z : y, fz = foot ? foot.y : cam.y - 1.6;
       const hit = towers.length ? towerAt(fx, fy, fz) : null, T = hit ? hit[0] : null, k = hit ? hit[1] + 1 : 0; // k = nomor lantai di daftar T.floors (1…)
       if ((k ? T : null) !== flo.T || k !== flo.k) { closeFloor(); if (k) { flo.T = T; flo.k = k; } }
+      leavesTick();
       const t0 = performance.now();
       if (flo.T && !flo.shown && flo.T.flMesh) showFloor(); // templat sudah ada: langsung dipasang
       // Satu generator pada satu waktu: penampung verteks VP/VN/VC/VS + vn dipakai bersama dan buildGen mengosongkannya saat

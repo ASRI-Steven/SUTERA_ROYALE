@@ -442,8 +442,10 @@ export const GUN_FX = { none: 0, karbon: 1, rimba: 2, gurun: 3, senja: 4, naga: 
 // p, n = posisi & normal ruang objek senjata (m; laras ke −Z). col masuk = warna asli. vdn = |N·V|.
 // keluar: metal/rough (< 0 = biarkan), emis (HDR), hgt = relief 0..1 (< 0 = tanpa), coat = pernis 0..1 (< 0 = biarkan).
 // uSfG (view-model): x = pendar isi ulang/periksa/cabut, y = panas tembakan, z = kilat tembakan, w = posisi sapuan cahaya (z, m).
+// uSfK (view-model, animasi kill; model dunia tanpa uniform = 0): x amplop 0→1→0, y sapuan pegangan → moncong 0..1, z beruntun 0..1, w fase.
 export const GUN_SKIN_GLSL = SKIN_COMMON + `
 uniform vec4 uSfG;
+uniform vec4 uSfK;
 void sfGun(int cls, vec3 p, vec3 n, float vdn, inout vec3 col, inout float metal, inout float rough, inout vec3 emis, inout float hgt, inout float coat) {
 #ifdef SF_WORLD
   p.xz = -p.xz; n.xz = -n.xz; // model dunia diputar 180° (main.js addGearParts)
@@ -707,6 +709,41 @@ void sfGun(int cls, vec3 p, vec3 n, float vdn, inout vec3 col, inout float metal
   else if (cls == 1) { float e = sfAA(abs(fract(p.z * 30.0) - 0.5), 0.05), s = pow(fract(p.z * 5.0 + T * 3.5), 10.0); col = ${L('#1a1d22')}; metal = 1.0; rough = 0.25; emis = ${L('#2fd8ff')} * e * (0.3 + 3.0 * s + heat * 1.5) * gb; }
   else if (cls == 3) { col = ${L('#15171c')}; rough = 0.7; }
   else if (cls == 9) { col = ${L('#bff6ff')}; emis = ${L('#2fd8ff')} * (1.0 + 2.6 * pow(0.5 + 0.5 * sin(T * 6.2832 * 1.1), 6.0) + heat * 1.8) * gb; rough = 0.2; }
+#endif
+#if SF_GUN >= 11 // animasi kill (skin epik/legendaris): gelombang dari pegangan ke moncong, lalu pola khas skin menyala & surut
+  if (uSfK.x > 0.001) {
+    float ke = uSfK.x, zf = mix(0.24, -0.9, uSfK.y), lv = 1.0 + 0.6 * uSfK.z;
+    float front = exp(-pow((p.z - zf) * 16.0, 2.0)) * (1.0 - step(0.999, uSfK.y)), done = smoothstep(zf - 0.03, zf + 0.08, p.z);
+    vec3 kc; float k;
+#if SF_GUN == 20 // magma: lava membanjiri retakan, gelombang putih-panas, bara bertahan
+    float cr = 1.0 - smoothstep(0.0, 0.07, abs(sfN3(p * 34.0 + vec3(0.0, 0.0, uSfK.w)) - 0.5));
+    float em = step(0.82, sfH3(floor(p * 160.0) + floor(T * 6.0)));
+    k = front * 2.5 + done * ke * (2.2 * cr + 1.2 * em); kc = mix(${L('#ff4a10')}, ${L('#fff0c0')}, front + cr * 0.3);
+#elif SF_GUN == 21 // reaktor plasma: cincin pindai melesat, kanal meluap, kedip holo
+    float ring = exp(-pow((p.z - zf) * 34.0, 2.0)), chn = pow(0.5 + 0.5 * sin(p.z * 70.0 - T * 32.0), 6.0), fl = 0.75 + 0.25 * step(0.5, fract(T * 15.0 + uSfK.w));
+    k = (front * 1.0 + ring * 4.0 + done * ke * 1.8 * chn) * fl; kc = mix(${L('#2fd8ff')}, ${L('#e8fdff')}, ring);
+#elif SF_GUN == 18 // emas garuda: sapuan emas, bulu menyala berurutan
+    float fe = pow(0.5 + 0.5 * sin(p.z * 60.0 + uv.y * 40.0 - uSfK.y * 24.0), 5.0);
+    k = front * 2.5 + done * ke * 2.2 * fe; kc = mix(${L('#ffa424')}, ${L('#fff4c8')}, front);
+#elif SF_GUN == 19 // dadak merak: mata merak menyala bergiliran berpelangi
+    vec2 ce = floor(uv * 34.0); float on = pow(0.5 + 0.5 * sin(sfH2(ce) * 6.28 + T * 9.0), 4.0);
+    k = front * 2.0 + done * ke * 2.2 * on; kc = mix(sfHue(fract(sfH2(ce) + T * 0.7 + p.z)), vec3(1.0), front * 0.5) * 1.3;
+#elif SF_GUN == 12 // neon: ledakan warna menjalar di garis
+    float ln = sfAA(abs(fract(uv.y * 26.0) - 0.5), 0.09) + sfAA(abs(fract(p.z * 30.0 + T * 3.0) - 0.5), 0.05);
+    k = front * 2.0 + done * ke * 2.2 * ln; kc = sfHue(fract(p.z * 1.6 - T * 1.4 + uSfK.w)) * 1.3;
+#elif SF_GUN == 11 // kristal es: embun kristal mekar lalu surut
+    float kfz = smoothstep(0.82 - 0.3 * ke, 0.86 - 0.3 * ke, sfFbm(p * 48.0 + uSfK.w)) * ke;
+    col = mix(col, ${L('#eef8ff')}, kfz * done * 0.5);
+    k = front * 1.6 + done * kfz * 1.4 * ke; kc = mix(${L('#6fcfff')}, ${L('#ffffff')}, kfz);
+#elif SF_GUN == 15 // badai petir: kilat merambat membungkus senjata
+    float bt = sfAA(abs(sfN3(p * vec3(34.0, 34.0, 9.0) + vec3(0.0, 0.0, floor(T * 16.0) + uSfK.w)) - 0.5), 0.035) * step(0.35, fract(T * 11.0 + uSfK.w));
+    k = front * 2.0 + done * ke * 4.0 * bt; kc = mix(${L('#7f70ff')}, ${L('#f4f2ff')}, bt + front * 0.5);
+#else // skin beranimasi lain (songket, pamor, holo, mutiara): sapuan kilau diperkuat
+    float gl = pow(0.5 + 0.5 * sin(uv.x * 90.0 + uv.y * 70.0 + T * 5.0), 8.0);
+    k = front * 2.5 + done * ke * 1.4 * gl; kc = ${L('#fff0cc')};
+#endif
+    emis += kc * k * lv * sqrt(ke);
+  }
 #endif
 }
 `;

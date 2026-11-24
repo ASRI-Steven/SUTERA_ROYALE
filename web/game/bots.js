@@ -12,6 +12,7 @@
 // Digambar sebagai kerumunan instans (map/rig.js). Koordinat agen: dunia three.js (x, tinggi, z = −y data).
 import * as THREE from 'three';
 import { Rig, createCrowd, characterVariants } from '../map/rig.js';
+import { chuteShape, chuteCollapse } from './chutefx.js';
 import { WEAPONS } from './weapons.js';
 import { applyItem, TIER, propGeometry } from './loot.js';
 import { createNav } from './nav.js';
@@ -268,6 +269,7 @@ export function createBots(ctx, n = 50) {
   const chuteMat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, vertexColors: !!chuteGLB });
   chuteMat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += diffuseColor.rgb * 0.28;'); }; // tidak gelap dilihat dari bawah
   const chutes = new THREE.InstancedMesh(chuteGeo, chuteMat, n);
+  const chO = { vis: false, sx: 1, sy: 1, sz: 1, rx: 0 }, chE = new THREE.Euler();
   chutes.frustumCulled = false;
   scene.add(chutes);
   const cv = document.createElement('canvas');
@@ -384,6 +386,7 @@ export function createBots(ctx, n = 50) {
   function airStep(b, dt) {
     const a = b.ai, tx = a.land[0], ty = a.land[1], x = b.pos.x, y = -b.pos.z, d = Math.hypot(tx - x, ty - y);
     const chute = b.state === 'chute', hs = chute ? 11 : 24, vs = chute ? 9 : 50;
+    b.airD = d; // jarak ke titik mendarat (pose udara: melayang maju bila masih jauh)
     if (d > 1) { const k = Math.min(hs, d / Math.max(0.5, b.pos.y / vs)) * dt; b.pos.x += (tx - x) / d * Math.min(d, Math.max(k, hs * dt * 0.3)); b.pos.z -= (ty - y) / d * Math.min(d, Math.max(k, hs * dt * 0.3)); }
     b.yaw = Math.atan2(tx - x, -(ty - y));
     b.pos.y -= vs * dt;
@@ -391,6 +394,7 @@ export function createBots(ctx, n = 50) {
     if (b.pos.y <= 0) {
       const f = (ctx.inArea(b.pos.x, -b.pos.z) && col.findFree(b.pos.x, -b.pos.z, 30, 0.4, true)) || a.land; // tidak mendarat di dalam rumah
       b.pos.set(f[0], 0, -f[1]);
+      b.landAt = ctx.now(); b.landKind = chute ? 0 : 1; b.landChute = chute; // pose mendarat (map/rigair.js) & kanopi kempis
       b.state = 'ground';
       a.mode = 'loot';
       a.lootEnd = ctx.now() + SKILL.lootT;
@@ -789,9 +793,8 @@ export function createBots(ctx, n = 50) {
     const dn = Math.hypot(x - zn.x, y - zn.y) - zn.r;
     if (dn <= 0) return false;
     const need = dn / 5.5 + 10;
-    if (zone.mode === 'shrink') return -out / Math.max(1, (zone.from.r - zn.r) / Math.max(1, zone.dur)) < need;
-    const def = zone.def, ws = Math.max(def.speed, (zone.cur.r - zn.r) / def.maxDur);
-    return zone.timeLeft + -out / ws < need;
+    if (zone.mode === 'shrink') return -out / Math.max(1, zone.radialSpeed) < need;
+    return zone.timeLeft + -out / Math.max(0.5, zone.radialSpeed) < need;
   }
   // ---------- Pengawas: tujuan tak terjangkau / macet ----------
   // abandon: tujuan saat ini dibuang — barang, kendaraan, rekan tumbang, perlindungan dilewati sementara (makin sering
@@ -1352,11 +1355,39 @@ export function createBots(ctx, n = 50) {
   }
 
   // ---------- Keputusan (4× per detik) ----------
+  // ---------- Pintu rumah (col.doors): bot membuka pintu tertutup di depannya (steer), menutupnya di think ----------
+  let camRef = null;
+  const doorsOf = new Map(); // indeks gedung → pintu rumahnya (dibuat saat pertama diminta)
+  const houseDoors = (bi) => { let L = doorsOf.get(bi); if (!L) { L = col.doors.filter((D) => D.b === bi); doorsOf.set(bi, L); } return L; };
+  function doorSound(D, open) {
+    if (!camRef) return;
+    const dx = D.x - camRef.x, dz = -D.y - camRef.z, d = Math.hypot(dx, dz);
+    if (d > 35) return;
+    const yaw = ctx.viewYaw ? ctx.viewYaw() : 0, muffled = d > 2 && !col.los(camRef.x, -camRef.z, camRef.y, D.x - D.nx * 0.3, D.y - D.ny * 0.3, 1.4) && !col.los(camRef.x, -camRef.z, camRef.y, D.x + D.nx * 0.5, D.y + D.ny * 0.5, 1.4);
+    audio.houseDoor(open, (1 - d / 35) ** 2, -Math.sin(Math.atan2(dx, dz) - yaw), muffled);
+  }
+  function shut(b, D, now) { if (D.open && col.setDoor(D, false, agents, now)) { doorSound(D, false); return true; } return false; }
+  function doorThink(b, now) {
+    const a = b.ai, x = b.pos.x, y = -b.pos.z;
+    // bertahan / memulihkan diri di dalam rumah: tutup pintu rumah itu yang ≤ 6 m
+    if ((a.mode === 'hold' || b.healEnd) && Math.abs(b.pos.y) < 0.5 && now - (a.shutAt || -99) > 4) {
+      const bi = col.inBuilding(x, y);
+      if (bi >= 0) { a.shutAt = now; for (const D of houseDoors(bi)) if (D.open && Math.hypot(D.x - x, D.y - y) < 6) shut(b, D, now); }
+    }
+    // baru melewati pintu yang dibukanya sendiri (≥ 1,6 m di seberangnya): kadang ditutup lagi (bot hati-hati)
+    const L = a.doorLast;
+    if (L && L.open) {
+      const v = (x - L.x) * L.nx + (y - L.y) * L.ny;
+      if (Math.abs(v - L.T / 2) >= 1.6 && Math.sign(v - L.T / 2) !== a.doorSide) { a.doorLast = null; if (Math.hypot(L.x - x, L.y - y) < 4 && Math.random() < SKILL.wary * 0.4) shut(b, L, now); }
+      else if (Math.hypot(L.x - x, L.y - y) > 8) a.doorLast = null;
+    } else a.doorLast = null;
+  }
   function think(b, now) {
     const a = b.ai;
     if (a.mode === 'drive') { thinkDrive(b, now); return; }
     if (b.state === 'ground' && !nav.blockedAt(b.pos.x, -b.pos.z, lvOf(b))) { a.bcX = b.pos.x; a.bcY = -b.pos.z; a.bcH = b.pos.y; } // jejak titik bebas
     if (a.mode === 'ride') { thinkRide(b, now); return; }
+    if (col.setDoor && b.state === 'ground') doorThink(b, now);
     let enemy = perceive(b, now);
     const unarmed = !b.weapons.some(Boolean);
     // tangan kosong dan dipukul/ditembak dari jarak sangat dekat oleh yang tidak terlihat → berbalik melawan
@@ -1662,8 +1693,15 @@ export function createBots(ctx, n = 50) {
     sp.x += (mx - sp.x) * k;
     sp.y += (my - sp.y) * k;
     const ay = b.pos.y; // tinggi kaki (lantai 2 / tangga)
+    { // pintu rumah tertutup di arah gerak (jalan nav maupun bertarung/menghindar): dibuka dulu, tidak didorong
+      const mv = Math.hypot(mx, my), vx = mv > 0.5 ? mx / mv : sp.x, vy = mv > 0.5 ? my / mv : sp.y, vl = Math.hypot(vx, vy);
+      if (col.doorAhead && mv > 0.5 && vl > 0.1) {
+        const D = col.doorAhead(x, y, ay, vx / vl, vy / vl, a.stuckT > 0.4 ? 2.0 : 1.3);
+        if (D && col.setDoor(D, true, null, now, b)) { a.doorAt = now; a.doorLast = D; a.doorSide = Math.sign((x - D.x) * D.nx + (y - D.y) * D.ny - D.T / 2); doorSound(D, true); }
+      }
+    }
     let r = col.step(x, y, x + sp.x * dt, y + sp.y * dt, 0.35, false, ay);
-    if (V) { const q2 = V.pushOut(r.x, r.y, 0.35); if (q2.x !== r.x || q2.y !== r.y) r = col.resolve(q2.x, q2.y, 0.35, false, ay); } // tidak menembus kendaraan
+    if (V) { const q2 = V.pushOut(r.x, r.y, 0.35); if (q2.x !== r.x || q2.y !== r.y) r = col.guard(r.x, r.y, col.resolve(q2.x, q2.y, 0.35, false, ay), ay, 0.35); } // tidak menembus kendaraan (dorongan yang menyeberang dinding ditolak)
     const moved = Math.hypot(r.x - x, r.y - y);
     b.moveSpeed = moved / Math.max(dt, 1e-4);
     navMove = navMove && tx !== null;
@@ -1819,9 +1857,15 @@ export function createBots(ctx, n = 50) {
     // dt detik, now detik, flight = { t, pos(t) }, cam = posisi kamera
     update(dt, now, flight, cam) {
       budget = 4 + Math.round(n / 20); // jatah pencarian jalur/perlindungan per frame
+      camRef = cam || null;
       frameT0 = performance.now();
       for (const b of bots) {
         if (!b.alive && b.state === 'dead') {
+          if (b.corpseFit !== b.goneAt) { // mayat rebah telentang (±1,8 m, kepala di belakang): sekali didorong keluar dinding (tanpa menyeberanginya)
+            b.corpseFit = b.goneAt;
+            const f = col.fitProne(b.pos.x, -b.pos.z, -Math.sin(b.yaw), Math.cos(b.yaw), b.pos.y);
+            b.pos.x = f.x; b.pos.z = -f.y;
+          }
           const a = b.ai; // lepaskan klaim barang/kendaraan milik bot yang tersingkir
           if (a.item) { if (a.item.claim === b) a.item.claim = null; a.item = null; }
           if (a.veh) { if (a.veh.claim === b) a.veh.claim = null; a.veh = null; }
@@ -1829,6 +1873,7 @@ export function createBots(ctx, n = 50) {
           continue;
         }
         if (b.state === 'plane') {
+          b.airT = 0; b.chuteT = -1;
           if (b.ally && PLAYER && PLAYER.dropMode && PLAYER.dropMode !== 'lead') { // regu terjun menurut rencananya sendiri (pemain ikut, atau pemain turun sendiri)
             if (flight && flight.t >= b.ai.dropAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4 + (b.slot || 1) * 1.5; b.ai.land = b.ai.dropLand; b.ai.own = true; }
           }
@@ -1836,7 +1881,7 @@ export function createBots(ctx, n = 50) {
           else if (flight && flight.t >= b.ai.jumpAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4; }
           continue;
         }
-        if (b.state === 'fall' || b.state === 'chute') { if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; }
+        if (b.state === 'fall' || b.state === 'chute') { b.airT = (b.airT || 0) + dt; b.chuteT = b.state === 'chute' ? (b.chuteT >= 0 ? b.chuteT + dt : 0) : -1; if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; } // airT: waktu simulasi sejak terjun (pose udara)
         if (b.down) { downStep(b, dt, now); continue; }
         b.ai.next -= dt;
         if (b.ai.next <= 0) { b.ai.next = 0.25 + Math.random() * 0.1; think(b, now); }
@@ -1889,6 +1934,23 @@ export function createBots(ctx, n = 50) {
           p.freefall = b.state === 'fall';
           p.chute = b.state === 'chute';
           p.air = false;
+          if (p.freefall || p.chute) { // masukan pose udara (map/rigair.js); rekan formasi meniru gaya pemain
+            const own = !(b.ally && !b.ai.own && PLAYER && (PLAYER.state === 'fall' || PLAYER.state === 'chute')), PP = PLAYER && PLAYER.pose;
+            const seed = ((b.i * 0.6180339) % 1 + 1) % 1, at = b.airT || 0;
+            p.airT = at; p.chuteT = b.chuteT; p.airSeed = seed; p.airSide = own ? 0 : PP.airSide || 0;
+            p.airFwd = own ? (p.chute ? (b.pos.y < 12 ? -1 : (b.airD || 0) > 25 ? 1 : 0) : (b.airD || 0) > 40 ? 0.35 : 0) : PP.airFwd || 0;
+            p.airDive = own ? (seed > 0.7 && b.pos.y > 350 ? 0.4 : 0) : PP.airDive || 0;
+            const dy = b.pyaw == null || at < 0.3 || pdt <= 0 ? 0 : -wrap(b.yaw - b.pyaw) / pdt;
+            p.airTurn = clamp(dy, -3, 3);
+            p.airSpd = p.chute ? 12 : 52;
+            p.lookYaw = own || !PLAYER ? 0 : wrap(Math.atan2(PLAYER.pos.x - b.pos.x, PLAYER.pos.z - b.pos.z) - b.yaw);
+            b.pyaw = b.yaw;
+            p.landT = -1;
+          } else {
+            b.pyaw = null;
+            const lt = b.landAt != null && b.state === 'ground' ? now - b.landAt : -1;
+            p.landT = lt >= 0 && lt < (b.landKind ? 0.7 : 0.55) ? lt : -1; p.landKind = b.landKind | 0;
+          }
           p.prone = !driving && !!b.prone && b.alive;
           p.crouch = !driving && !p.prone && (b.crouch || !!b.healEnd || !!b.reviving);
           { const w0 = b.cur >= 0 && b.weapons[b.cur]; p.reload = b.reloadEnd && w0 ? 1 - (b.reloadEnd - now) / WEAPONS[w0.kind].reload : null; }
@@ -1904,10 +1966,14 @@ export function createBots(ctx, n = 50) {
         }
         const w = b.cur >= 0 && b.weapons[b.cur];
         crowd.put(b.i, b.rig, rx, ry, rz, d, posed, inF, w && b.alive && !b.down && (!driving || (b.ai.mode === 'ride' && b.ai.losOk)) ? w.kind : null, b.helmet, b.vest, true, b.longHair);
-        if (b.state === 'chute') {
-          chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromAxisAngle(UP, b.yaw), sv.set(1, 1, 1)));
+        if (b.state === 'chute' && chuteShape(b.chuteT >= 0 ? b.chuteT : 5, 11, 9, chO).vis) { // kanopi mengembang (game/chutefx.js), miring ikut ayunan badan
+          const A = b.rig.A;
+          chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromEuler(chE.set(chO.rx + (A ? 0.10 * A.cfw - 0.16 * A.cbr : 0), b.yaw, A ? 0.30 * A.bank : 0, 'YXZ')), sv.set(chO.sx, chO.sy, chO.sz)));
           b.chuteOn = true; chuteDirty = true;
-        } else if (b.chuteOn) { chutes.setMatrixAt(b.i, ZERO); b.chuteOn = false; chuteDirty = true; }
+        } else if (b.landChute && b.state === 'ground' && chuteCollapse(now - b.landAt, chO)) { // kanopi kempis setelah mendarat
+          chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromEuler(chE.set(chO.rx, b.yaw, 0, 'YXZ')), sv.set(chO.sx, chO.sy, chO.sz)));
+          b.chuteOn = true; chuteDirty = true;
+        } else if (b.chuteOn) { chutes.setMatrixAt(b.i, ZERO); b.chuteOn = false; b.landChute = false; chuteDirty = true; }
         if (blobs.visible) { // bayangan bulat (hanya tampilan non-realistis)
           if (b.state === 'ground' || b.state === 'dead') blobs.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, 0.17, b.pos.z), q.identity(), sv.set(1, 1, 1)));
           else blobs.setMatrixAt(b.i, ZERO);
