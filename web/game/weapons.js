@@ -619,7 +619,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const fk = killAnimTick(dt), live = KILL.t < 1.6 && SKIN.killAnim;
     if (!live || scoped || !G) { VM_K.value.x = 0; KILL.move = false; }
     if (KILL.move && KILL.t < 1 && st.ads < 0.1 && sk.kick < 0.08 && !st.act && !st.nade && !(st.swap > 0)) { // selebrasi: miring ±12° di sumbu laras, naik ±2 cm
-      KILL.move = false; spv[2] += (KILL.ph > 3.14 ? 1 : -1) * 6.5; spv[3] += 0.55; spv[4] -= 0.6;
+      KILL.move = false; spv[2] += (KILL.ph > 3.14 ? 1 : -1) * 13; spv[3] += 0.55; spv[4] -= 0.6;
     }
     if (KILL.t >= 1) KILL.move = false;
     const sOn = !!(live && KILL.shell && G && !scoped && KILL.t < 1.5);
