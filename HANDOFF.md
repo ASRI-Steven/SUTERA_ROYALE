@@ -1374,3 +1374,29 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
 - **Kekurangan (untuk gerbang visual)**: ADS besi Rajawali — blok popor/receiver menutup tengah-bawah layar; grip & pelindung picu
   P9 masih kasar; popor Garuda pelat sederhana; bayangan eye-box 4× saat bergerak mungkin terlalu kuat; retikel 2× pucat di latar
   terang; retikel 8× tidak diperbesar. M3 (delapan senjata sisanya), M4 (LOD1/model dunia), M5, `setGrip`: belum dimulai.
+
+## 40. Tata letak M2 (24 Nov, alat dibangun ulang dari rancangan) — SUDAH di main, `?v=202611242043`; M3 tembok keliling masih DRAF tidak aktif
+
+- **Alat**: `tools/tidy_layout.mjs` + `tools/tidy/{geom,layout,derive,walls}.mjs` (node tanpa dependensi). Masukan =
+  `data/build/alsut-*.raw.json` (salinan data SEBELUM dirapikan). Bangun ulang M2 (hasil identik byte dengan `web/data`):
+  `node tools/tidy_layout.mjs data/build/alsut-map.raw.json web/data/alsut-map.json --props data/build/alsut-props.raw.json web/data/alsut-props.json --context data/build/alsut-context.raw.json web/data/alsut-context.json`
+- **T1 jalan**: 239 jalan disempitkan ke lorong antar-fasad; `roads.s` = trotoar per jalan (dipakai `world.js`); 16 jalan servis
+  dipotong (1.824 → 1.825 jalan). **T2 gedung**: 788 pelanggar → 74 digeser (flag 32), 708 dipangkas (flag 16), 6 dibuang (flag 8,
+  cincin kosong, indeks tetap: #28, #3028, #3797, #3804, #3806, #5657).
+- **Audit** (sebelum → sesudah): gedung di aspal non-servis 701 → 0; pintu depan di aspal 663 → 0; gedung context di air 3 → 0;
+  5.014 gedung tak berflag identik dengan raw; geser terjauh 3,61 m. `planHomes`: tidak ada rumah kehilangan rencana/pintu; rumah
+  2 lantai 2.264 → 2.262; pintu tertutup tetangga 119 → 119. Audit bangunan DIULANG setelah digabung dengan Bangunan M5: tanpa
+  rencana 0, lantai atas tanpa tangga 0, gedung berflag yang kehilangan rencana/pintu 0.
+- **Diuji**: uji asap setelah digabung dengan Skin/Terjun/Bangunan/Senjata (muat → pertandingan → terjun → payung → mendarat →
+  berjalan, 0 galat konsol, `envProps.stats.dropped` 6); halaman twin memuat. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: tampilan 3D deret rumah terpangkas dari dekat (baru denah 2D), kinerja, bot & kendaraan di jalan yang
+  disempitkan, pertandingan penuh.
+- **Kekurangan**: ekstrak OSM tidak ada di mesin ini → props/context dirapikan lewat pasca-proses (`derive.mjs`),
+  `alsut-grass.json` BELUM dibangun ulang (topeng ilalang masih tapak lama), gedung context belum dipangkas/jalannya belum
+  disempitkan, `build_props.py` belum punya penjaga cincin kosong.
+- **M3 (tembok keliling) — DRAF, tidak aktif**: `tools/tidy/walls.mjs`, `web/map/walls.js`, dan cabang gerbang/tembok di
+  `envprops.js` sudah ada tetapi data tembok TIDAK ditulis ke `web/data` karena audit belum lolos: 11 kompleks (sasaran 20),
+  20,4 km, 82 gerbang jalan + 19 servis + 123 pintu pejalan; A8 43 bocor dari 78.588 uji, A9 89 titik, A11 2, A12 5, A13 7,
+  A14 1, ±90 m tembok di aspal, 14 titik di dalam gedung. Lanjutkan dengan `--stages roads,buildings,walls` ke folder keluaran
+  sampai audit tembok bersih, baru K1 di `bots.js buildGraph`, uji browser, lalu M4 (tanam ulang pohon) dan M5.
+- Alat audit/uji ada di luar repo (`_sr_out/tataletak/audit/` di mesin Jason) dan bisa hilang; bangun ulang dari rancangan bila perlu.
