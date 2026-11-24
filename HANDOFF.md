@@ -1257,6 +1257,25 @@ Rancangan lengkap tiap alur (audit, angka, kriteria lulus, milestone) ada di `do
 - **Optik + tampilan bidik M1** (`7056685`): `weapons.glb` v6 ber-Draco (1,9 MB; dekoder dari jsdelivr, gagal → model prosedural + overlay lama), node `opt_rds/holo/s2/s4/s8`, `mountOptic`, lensa ber-retikel (shader), mask di `postfx.js` (`uScope`), `weapons.json` v6, `gunPoints/weaponMeta/opticMeta/assembleGun`. Garuda bawaan titik merah, Petir holo.
 
 ### 35.2 BELUM SELESAI — lanjutkan dari sini (urut prioritas Steven)
+
+> **STATUS TERBARU (24 Nov malam, sesi Jason) — tabel di bawah ini sudah USANG, dipertahankan sebagai catatan asal.**
+> Branch WIP lama di tabel (`4e1db01`, `5cc34ee`, `7e55e92`, `2b58e1d`, `cffc563`) tidak pernah ada di origin; semua alur
+> **dibangun ulang dari main** dan sudah digabung + di-push ke `origin/main` (`b3f2118` + commit pembaruan HANDOFF ini).
+>
+> | # | Alur | Sudah di main | Bagian | Sisa |
+> |---|---|---|---|---|
+> | 1 | Skin v2 | M1 etalase Merak | §36 | **Gerbang visual Steven**, lalu M2 (konversi 11 skin lama), M3–M5 (skin & kostum baru) |
+> | 2 | Senjata | M2: tampilan bidik + Garuda, P9, Rajawali | §39 | **Gerbang visual Steven**, lalu M3 (8 senjata sisanya), M4 (LOD1/model dunia), M5 |
+> | 3 | Kostum | M2: fondasi + `char_malam`, `char_batik`, `char_garuda` | §41 | **Gerbang visual Steven**, lalu M3 (pegas/kain), M4–M6 |
+> | 4 | Tata letak | M2 (perapi jalan + gedung) dan M3 (tembok keliling) | §40, §42 | M4 (tanam ulang pohon), M5 (termasuk tembok apartemen) — tidak menunggu gerbang visual |
+> | 5 | Terjun | M5 | §37 | Selesai (kekurangan kecil di §37) |
+> | 6 | Bangunan | M5 | §38 | Selesai; pose `TUCK` perlu dilihat Steven |
+>
+> Skin, Senjata, dan Kostum masuk main **sebelum** gerbang visualnya disetujui (atas permintaan Jason), jadi tampilannya masih
+> bisa berubah menurut catatan Steven. Worktree `.wt/<alur>` dan branch `wip/<alur>` yang sekarang ada hanya di mesin Jason
+> (kecuali `wip/skinv2` yang juga di origin) dan semuanya sudah sama dengan / tertinggal dari main: mulai alur baru dari main.
+> Alat uji lama `.wt/_tools/` versi Steven tidak ada; penggantinya (server uji + pengendali CDP berframe manual, alat audit
+> tata letak) ada di luar repo di mesin Jason dan bisa hilang.
 Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum diuji, jangan digabung apa adanya)**. Langkah pertama tiap alur: `git merge main` di worktree-nya.
 
 | # | Alur | Worktree · branch · WIP | Rancangan | Keadaan | Langkah berikut |
@@ -1269,6 +1288,19 @@ Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum di
 | 6 | Bangunan M5 | `.wt/bangunan` (bersih) | `bangunan.md` | Ditunda | Pintu kamar mandi, `p.tuck` (laras tidak menembus dinding), bot menutup pintu lebih cerdas. |
 
 ### 35.3 Kekurangan yang diketahui di main
+
+> **STATUS TERBARU (24 Nov malam):** daftar di bawah ditulis sebelum §36–§42. Yang SUDAH BERES atau berubah:
+> - Animasi kill = sapuan cahaya; pola Merak kotak-kotak → diganti kipas bulu + finisher dan riak toska-emas (§36). Selubung kill
+>   ke-3+ dan biaya GPU: masih belum diukur.
+> - Tampilan bidik 2×/4× kasar → dipoles (§39). Model senjata: Garuda, P9, Rajawali dibangun ulang; delapan lainnya dan model
+>   dunia LOD kotak masih seperti semula.
+> - Terjun: mendarat di dek rendah, mode Hemat, dan payung saat "Ikut rekan" sudah diuji; awal guling diperhalus (§37). Karakter
+>   perempuan dari dekat dan atap menara tinggi: belum.
+> - Tata letak: ±760 gedung menimpa aspal → 0; tembok keliling sudah ada untuk 12 kompleks (§40, §42). Halaman depan gundul
+>   (tanam ulang pohon, M4): masih.
+> - Tangan orang pertama tanpa tulang jari, catatan bangunan per gedung (#5527, #1888, #2466), lama pertandingan, dan kematian
+>   bot karena zona: TIDAK disentuh sesi ini, masih berlaku.
+> Kekurangan baru dari pekerjaan sesi ini ada di butir "Kekurangan" tiap bagian §36–§42.
 - Animasi kill di senjata = sapuan cahaya saja (ditolak Steven); pola Merak kotak-kotak; selubung kill ke-3+ nyaris tak terlihat; biaya GPU belum diukur.
 - Tampilan bidik 2×/4× kasar (lihat no. 2); bidik per scope baru diuji di branch, belum diuji ulang di main gabungan.
 - Model senjata belum berubah (hanya optik); model dunia di tangan karakter masih LOD kotak.
@@ -1286,7 +1318,7 @@ Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum di
 - **Aturan Steven**: tidak ada flag/env khusus tes di kode; koin tak terbatas hanya lewat snippet console (`localStorage royale.profile.v1` → `coins`), bukan kode; ID & harga skin tetap; desain orisinal (tanpa IP/merek); "jangan terlalu terpaku pada map" = boleh menyimpang dari OSM demi tata letak masuk akal (indeks gedung/jalan tetap stabil); push hanya atas izin; jatah pemakaian terbatas → sedikit agen sekaligus, commit kecil per bagian yang lolos uji, berhenti segera bila diminta.
 - **Gerbang visual**: untuk karya yang dinilai dari tampilan (senjata, kostum, efek skin), tunjukkan lembar kontak ke Steven sebelum produksi massal; nilai sendiri gambarnya dengan jujur lebih dulu.
 
-## 36. Sesi 24 Nov (lanjutan) — Skin v2 M1 "etalase Merak" dibangun ulang dari main, MENUNGGU gerbang visual
+## 36. Sesi 24 Nov (lanjutan) — Skin v2 M1 "etalase Merak" dibangun ulang dari main — SUDAH di main, MENUNGGU gerbang visual
 
 Branch `wip/skinv2` yang disebut §35 tidak ada di origin (hanya `main` yang ter-push), jadi alur ini **dibangun ulang dari main** di
 worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-24/skinv2.md`.
@@ -1394,6 +1426,7 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
 - **Kekurangan**: ekstrak OSM tidak ada di mesin ini → props/context dirapikan lewat pasca-proses (`derive.mjs`),
   `alsut-grass.json` BELUM dibangun ulang (topeng ilalang masih tapak lama), gedung context belum dipangkas/jalannya belum
   disempitkan, `build_props.py` belum punya penjaga cincin kosong.
+- **(USANG — M3 sudah lolos audit dan aktif di main, lihat §42; butir ini keadaan saat §40 ditulis.)**
 - **M3 (tembok keliling) — DRAF, tidak aktif**: `tools/tidy/walls.mjs`, `web/map/walls.js`, dan cabang gerbang/tembok di
   `envprops.js` sudah ada tetapi data tembok TIDAK ditulis ke `web/data` karena audit belum lolos: 11 kompleks (sasaran 20),
   20,4 km, 82 gerbang jalan + 19 servis + 123 pintu pejalan; A8 43 bocor dari 78.588 uji, A9 89 titik, A11 2, A12 5, A13 7,
