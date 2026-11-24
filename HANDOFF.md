@@ -1400,3 +1400,24 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   A14 1, ±90 m tembok di aspal, 14 titik di dalam gedung. Lanjutkan dengan `--stages roads,buildings,walls` ke folder keluaran
   sampai audit tembok bersih, baru K1 di `bots.js buildGraph`, uji browser, lalu M4 (tanam ulang pohon) dan M5.
 - Alat audit/uji ada di luar repo (`_sr_out/tataletak/audit/` di mesin Jason) dan bisa hilang; bangun ulang dari rancangan bila perlu.
+
+## 41. Kostum M2 (24 Nov, dibangun ulang dari main) — SUDAH di main, `?v=202611242111`; BELUM lewat gerbang visual Steven
+
+- **Pipeline** `tools/blender/costumes.py` (+ `costume_parts.py` bagian prosedural, `costume_tex.py` bahan per-texel) →
+  `web/game/assets/costumes/<id>/{costume.json, <var>.glb (LOD0+LOD1, 17 tulang), <var>_albedo/normal/orm.webp, thumb.webp}` +
+  `CREDITS.md` (11 MB total). ±50 dtk per kostum × varian. Aset dasar MakeHuman CC0 diunduh ke `~/.cache/senara-digital-twin`
+  (data MPFB, aset sistem, paket `suits02`, `masks01`, `shoes01`, `pants01`); `characters3.py` hanya dirapikan supaya bisa diimpor.
+- **Runtime**: `rig.js` `loadCostume(id, variant)` (cache, batas 8 dtk, gagal → satu `console.warn` + tampilan lama),
+  `costumeProbe`, `C.setCostume` (mesh tubuh ditukar di tempat, material `cos3`); `skins.js` `equipCostume` dipanggil dari
+  `applyEquipped` dan `lobby.js`; skin bertanda `costume: true` (ID & harga tetap); thumb toko pra-render.
+- **Tiga perintis** (m1/f1/m2/f2 dibangun): `char_malam` (13,4k tris), `char_batik` (16,4k), `char_garuda` (17,4k, sayap statis).
+  Motif dan bagian khas buatan sendiri; tanpa simbol agama/Garuda Pancasila/bendera/merek.
+- **Menyimpang dari rancangan**: kulit + kostum satu mesh/atlas per varian (bukan node kaku terpisah); belum ada pegas, emisi,
+  lengan orang pertama, kostum untuk bot/rekan, atau LOD menurut jarak (LOD1 hanya mesh bayangan).
+- **Diuji**: panggung m1/f1 (diam, senapan, lari, jongkok); cadangan saat aset diblokir; setelah digabung dengan main terbaru:
+  pertandingan orang ketiga Batik & Malam (Garuda sebelum digabung) dan lobi, kostum terpasang, tanpa pesan konsol. Tidak ada uji
+  ulang setelah cap `?v=`.
+- **Belum diuji**: m2/f2 di peramban, toko/koleksi/ganti skin cepat, tiarap/renang/terjun/kendaraan/tumbang, kinerja.
+- **Kekurangan (untuk gerbang visual)**: jarik Batik meregang seperti tenda saat lari (paling mencolok; menunggu pegas/kain M3);
+  dodot Garuda meregang dan lutut menembus saat jongkok; sayap Garuda tipis dari samping; Operator Malam terlalu seragam gelap;
+  motif parang kasar dari dekat. M3–M6 belum dimulai.
