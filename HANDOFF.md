@@ -1331,3 +1331,26 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   atap menara tinggi, goyangan formasi secara terukur, alokasi/CPU, ponsel. Tidak ada uji ulang setelah cap `?v=`.
 - **Kekurangan**: awan dari jauh masih tampak seperti noda putih kecil; garis angin ikut berputar dengan kamera; loncatan betis
   ±5 rad/dtk di akhir guling saat menahan W; kanopi kempis menutupi kamera saat guling.
+
+## 38. Bangunan M5 (24 Nov) — SUDAH di main, `?v=202611241806`; pose `TUCK` belum lewat gerbang visual
+
+- **Pintu kamar mandi** (`interiors.js planBath`, `collide.js addBathDoor`): 4.550 pintu (3.231 lantai dasar + 1.319 lantai atas)
+  di `col.doors` dengan `bath: 1`, `k: −1` (tanpa texel fasad), awal TERBUKA (`open0`, dihormati `resetDoors`; pintu rumah tetap
+  tertutup), hanya berayun ke luar kamar mandi, daun PVC abu di InstancedMesh pintu rumah. `doorClear` kini seperempat cakram ayun
+  (berlaku juga untuk pintu rumah satu daun).
+- **`p.tuck`** (murni visual, peluru tetap dari kamera): sinar pendek searah hadap → 0..1 (mulai 0,95 m laras panjang / 0,7 m
+  pistol, penuh di 0,55 m); `rig.js` konstanta `TUCK` (siap-tinggi, tangan lewat IK), `bots.js draw()` (bot bersenjata < 60 m),
+  `player.js st.tuck` → `pose.tuck` + `vm.update({ tuck })`; 0 saat bidik/menembak.
+- **Bot menutup pintu** (`bots.js doorThink/doorBusy/shutChance`): jangkauan 3 m (dulu 6 m); tidak menutup bila rekan di seberang /
+  menuju celah, jalurnya lewat lagi, pemimpin di seberang, atau sedang menembak lewat celah; menutup untuk memutus garis tembak,
+  saat bertahan, dan setelah lewat dengan peluang menurut keadaan. Simulasi 99 bot Sulit 300 dtk (2×, dibanding main): tutup saat
+  rekan di seberang 28–29 → 0 (perkiraan: penutup = agen terdekat), buka ulang ≤ 3 dtk 29–34 → 5–7, ganti < 1,2 dtk 64–74 → 3–4.
+- **Diuji**: uji asap (lobi → pertandingan → terjun → mendarat → F buka pintu → masuk → kamar mandi) 0 galat, diulang setelah
+  digabung dengan Terjun M5; audit 4.550 pintu (terbuka tembus, tertutup menahan); tuck orang pertama/ketiga/bot. Di uji asap pemain
+  DIPINDAHKAN ke depan pintu setelah mendarat, bukan berjalan ke sana. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: Hemat/ponsel, kinerja, `audit-lantai`/`audit-bangunan`/`lintas.js` (alatnya tidak ada di mesin ini), tuck saat
+  jongkok/tiarap/kendaraan, pertandingan penuh.
+- **Kekurangan**: pose `TUCK` orang ketiga/bot = senapan tegak di depan wajah (mirip hormat senjata; pertimbangkan pose turun,
+  cukup ubah konstanta); tuck penuh orang pertama: laras melintas dekat bidikan tengah; menutup pintu kamar mandi dari luar ditolak
+  bila berdiri di busur ayun dekat engsel; daun terbuka tanpa collider (2 pintu di rumah #463 menimpa benda padat); bot tidak
+  berjalan ke pintu untuk menutup; sisa 5–7 buka-ulang cepat per 5 menit.
