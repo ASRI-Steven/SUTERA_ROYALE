@@ -232,6 +232,7 @@ export class Rig {
     this.A = null; // pose udara (map/rigair.js), dibuat saat pertama mengudara
   }
   pose(s, dt) {
+    this.b.armL.position.z = 0; // bahu kiri maju hanya selama IK senjata (lihat bawah)
     if ((s.freefall || s.chute) && poseAir(this, s, dt, true)) return this.updateWorld(); // pose udara penuh: tanpa pose dasar
     const b = this.b, m = this.m;
     _kdt = dt;
@@ -437,7 +438,6 @@ export class Rig {
     //       magasin (rl3Point), saat melempar tangan kanan mengikuti ayunan granat
     const ikW = arm * (1 - m.dead) * (1 - m.fall) * (1 - m.chute) * (1 - m.heal) * (1 - m.swap * 0.8) * (1 - m.swim);
     let hw = 0;
-    b.armL.position.z = 0;
     if (ikW > 0.01 && (!s.sit || s.armed)) { // duduk bersenjata (menembak dari kendaraan) juga
       const D = GRIPS && GRIPS[s.gunKind];
       const G = GRIP[s.gunKind] || GRIP.rifle;
