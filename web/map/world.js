@@ -6,7 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { cleanTrees } from './trees.js';
 import { skyDomeMaterial, SKY_GLSL } from './realism.js';
 import { makeWaterDepth, WATER } from './water.js';
-import { isHall } from './interiors.js';
+import { isHall, fitHouseHeights } from './interiors.js';
 
 export const UP = new THREE.Vector3(0, 1, 0);
 export const M = 0.1; // desimeter (data) → meter
@@ -402,6 +402,7 @@ export function buildWorld(D, opts = {}) {
   // OSM building=roof (jenis 5) setinggi menara = bagian menara yang salah tanda (gedung kembar 130 m), bukan kanopi:
   // diperlakukan menara (jenis 2) oleh semua modul (render, collider, interior, loot)
   for (let i = 0; i < D.buildings.k.length; i++) if (D.buildings.k[i] === 5 && D.buildings.h[i] * M >= 12) D.buildings.k[i] = 2;
+  if (opts.game) fitHouseHeights(D); // game: tinggi rumah mengikuti rencana lantainya; jenis 0 ≥ 11 m → gedung ber-lift (interiors.js)
   cleanTrees(D); // pohon tidak di jalan/gedung/air (collider memakai daftar yang sama)
   const progress = opts.progress || (() => {});
   const game = !!opts.game;
@@ -1109,6 +1110,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
         bool inA = vWuv.x >= o0.g && vWuv.x <= o0.b, inB = vWuv.x >= o1.r && vWuv.x <= o1.g;
         bool door = vWuv.y < 2.2 && (inA || inB);
         if (vWuv.y < 3.3 && ((wb0 < o0.b + 0.2 && wb1 > o0.g - 0.2) || (wb0 < o1.g + 0.2 && wb1 > o1.r - 0.2))) hWinOk = false;
+        if (3.3 * floor(vWuv.y / 3.3) + 2.574 > o0.a + 0.01) hWinOk = false; // baris jendela hanya untuk lantai yang ada (o0.a = plafon teratas; = collide.js winOk)
         float hfx = fract(vWuv.x / 3.6), hfy = fract(vWuv.y / 3.3);
         bool win = hWinOk && vWuv.y > 0.8 && hfy >= 0.36 && hfy <= 0.78 && hfx >= 0.3 && hfx <= 0.7;
         if (isOpen && (door || win)) discard;
@@ -1689,6 +1691,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
         float wb0 = floor(vWuv.x / 3.6) * 3.6 + 1.08, wb1 = wb0 + 1.44, hfx = fract(vWuv.x / 3.6), hfy = fract(vWuv.y / 3.3);
         bool ok = vSeg.x > -1.0 && !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
         if (vWuv.y < 3.3 && ((wb0 < o0.b + 0.2 && wb1 > o0.g - 0.2) || (wb0 < o1.g + 0.2 && wb1 > o1.r - 0.2))) ok = false;
+        if (3.3 * floor(vWuv.y / 3.3) + 2.574 > o0.a + 0.01) ok = false;
         if ((vWuv.y < 2.2 && (inA || inB)) || (ok && vWuv.y > 0.8 && hfy >= 0.36 && hfy <= 0.78 && hfx >= 0.3 && hfx <= 0.7)) discard;
       }
     }
