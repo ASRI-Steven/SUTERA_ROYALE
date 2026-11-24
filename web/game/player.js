@@ -836,13 +836,13 @@ export function createPlayer(ctx) {
       const dist = me.state === 'dead' ? 5 : lc ? (st.landCam < 0.25 ? 0.3 : LAND.camD) : hor ? 2.6 : 6.5;
       right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
       const pivot = tmp.set(p.x, p.y + (me.state === 'dead' ? 0.6 : st.prone && hor ? 0.75 : 1.6), p.z);
-      let d = dist;
+      let d = dist, wall = false;
       { // jangan menembus dinding (sinar tepat, aman untuk dinding tipis rumah)
         tmp2.copy(fwd).multiplyScalar(-dist).addScaledVector(right, hor ? 0.6 : 0);
         const len = tmp2.length(), t = col.ray(pivot.x, -pivot.z, pivot.y, tmp2.x / len, -tmp2.z / len, tmp2.y / len, len);
-        if (t < len) d = Math.max(0.12, (t - 0.3) * dist / len); // mepet dinding/tangga: kamera boleh sangat dekat (karakter disembunyikan), tidak menembus ke balik dinding
+        if (t < len) wall = true, d = Math.max(0.12, (t - 0.3) * dist / len); // mepet dinding/tangga: kamera boleh sangat dekat (karakter disembunyikan), tidak menembus ke balik dinding
       }
-      st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (lc ? 5 : d < st.camD ? 30 : 5))) : d;
+      st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (d < st.camD && (wall || !lc) ? 30 : 5))) : d; // kamera baru mendarat bergerak pelan, KECUALI terhalang dinding (dulu ikut pelan → sempat menembus ke dalam rumah)
       camera.position.copy(pivot).addScaledVector(fwd, -st.camD).addScaledVector(right, hor ? 0.6 * st.camD / dist : 0);
       if (st.swim && !st.dive && camera.position.y < 0.5) camera.position.y = 0.5; // berenang: kamera tetap di atas permukaan air
       if (st.swim && st.dive) { const bed = -col.waterDepth(camera.position.x, -camera.position.z); if (camera.position.y < bed + 0.35) camera.position.y = bed + 0.35; } // menyelam: kamera tidak menembus dasar
@@ -1101,11 +1101,16 @@ export function createPlayer(ctx) {
       else {
         const sn = Math.sin(L.yaw), cs = Math.cos(L.yaw), x0 = me.pos.x, z0 = me.pos.z;
         if (!st.folOff) st.folOff = new THREE.Vector3().subVectors(me.pos, L.pos);
-        folT.set(-sn * 5 + cs * 3.5, 1.2, -cs * 5 - sn * 3.5);
+        // slot di belakang-kiri pemimpin + goyangan formasi pelan (sama seperti rekan bot, bots.js allyAir)
+        const wt = st.airT, ws = 3.5 + 0.5 * Math.sin(0.7 * wt), wa = -5 + 0.4 * Math.sin(0.5 * wt), ox = st.folOff.x, oz = st.folOff.z;
+        folT.set(sn * wa + cs * ws, 1.2 + 0.3 * Math.sin(0.9 * wt), cs * wa - sn * ws);
         st.folOff.lerp(folT, 1 - Math.exp(-dt * 1.5));
         me.pos.copy(L.pos).add(st.folOff);
         if (me.pos.y < 0.5) me.pos.y = 0.5;
-        if (dt > 0) me.vel.set((me.pos.x - x0) / dt, (me.pos.z - z0) / dt);
+        if (dt > 0) {
+          me.vel.set((me.pos.x - x0) / dt, (me.pos.z - z0) / dt);
+          st.aSide = clamp(((st.folOff.x - ox) * -cs + (st.folOff.z - oz) * sn) / dt / 6, -1, 1); // bergeser menyamping di formasi → badan miring
+        }
         me.yaw = L.yaw;
         if (L.state === 'chute' && me.state !== 'chute') audio.click();
         me.state = L.state;

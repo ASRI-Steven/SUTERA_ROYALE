@@ -304,13 +304,15 @@ function poseChute(A, s, dt, at) {
 
 // ---------- Mendarat ----------
 // 0 serap & 1 lari kecil: pose udara terakhir memudar ke pose dasar (0,35 dtk) + tekukan lutut aditif (naik 0,18 dtk, lepas
-// 0,3–0,55); lari kecil = siklus jalan pose dasar karena sisa laju (player.js). 2 berguling: meringkuk → salto ke depan
-// di tanah (0,2–0,95) → bangkit (bobot → 0 sampai 1,35).
+// 0,3–0,55); lari kecil = siklus jalan pose dasar karena sisa laju (player.js). 2 berguling: meringkuk (0–0,32) sambil
+// mulai salto ke depan di tanah (0,1–0,95) → bangkit (bobot → 0 sampai 1,35).
 function landRollW(lt) { return 1 - sstep(0.95, 1.35, lt); }
 function poseLand(A, lt) {
   const k = A.lk;
   if (k === 2) {
-    const OF = A.OF, e = sstep(0, 0.2, lt), u = sstep(0.2, 0.95, lt);
+    // meringkuk 0,32 dtk (dulu 0,2: paha 12,9 rad/dtk + badan diam dulu baru berputar = menyentak) dan salto sudah mulai
+    // di 0,1 dtk, jadi ringkuk & putaran menyatu (paha ≤ ±8, pinggul ≤ 11,1 rad/dtk)
+    const OF = A.OF, e = sstep(0, 0.32, lt), u = sstep(0.1, 0.95, lt);
     for (let j = 0; j < 36; j++) O[j] = OF[j];
     const tgt = (i, v) => { O[i] = OF[i] + (v - OF[i]) * e; };
     tgt(0, 0); tgt(1, 0.45); tgt(2, 0); tgt(3, ROLL[HX]); tgt(4, 0); tgt(5, 0);
@@ -321,7 +323,7 @@ function poseLand(A, lt) {
       tgt(o, ROLL[AX]); tgt(o + 1, ROLL[AZ] * sd); tgt(o + 2, ROLL[FX]); tgt(o + 3, 0); tgt(o + 4, 0);
       tgt(o + 5, ROLL[TX]); tgt(o + 6, ROLL[TZ] * sd); tgt(o + 7, ROLL[KX]); tgt(o + 8, ROLL[FT]);
     }
-    O[3] += u < 1 ? TAU * u : 0; // salto (≤ 12,6 rad/dtk); selesai = sudut sama tanpa +2π (supaya pudar ke pose dasar tidak berputar balik)
+    O[3] += u < 1 ? TAU * u : 0; // salto (≤ 11,1 rad/dtk); selesai = sudut sama tanpa +2π (supaya pudar ke pose dasar tidak berputar balik)
     return;
   }
   const K = k === 0 ? 0.8 : 0.45, c = K * sstep(0, 0.18, lt) * (1 - sstep(0.3, 0.55, lt)) * (1 - sstep(LAND_DUR[k] - 0.2, LAND_DUR[k], lt));

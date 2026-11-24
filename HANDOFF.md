@@ -1314,3 +1314,20 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
 - **Sudah di main** (atas permintaan Jason, 24 Nov): digabung maju-cepat ke `main` dengan `?v=202611241732` di `royale.html`,
   SEBELUM gerbang visual disetujui Steven. Jadi tampilan Merak di main masih bisa berubah menurut catatan Steven; tema lain tetap
   JANGAN dikerjakan sebelum lembar kontak Merak disetujui.
+
+## 37. Terjun M5 (24 Nov, dibangun ulang dari main; WIP lama `cffc563` tidak ada di origin) — SUDAH di main, `?v=202611241757`
+
+- **Modul baru `web/game/airfx.js`** (dipanggil `main.js` setelah `player.update`; laju dari perpindahan posisi pemain, tanpa alokasi
+  per frame): 64 garis angin berupa pita selebar ±2 px di kotak 18×14×24 m depan kamera (nol saat payung) dan 10 sprite awan (5 di
+  Hemat) 60–140 m di ketinggian 180–520 m di bawah pemain, memudar 4–30 m dari kamera.
+- **Menyimpang dari rancangan**: pita menggantikan `LineSegments` (garis 1 px hilang di skala render rendah); opasitas dinaikkan
+  (garis 0,3 → 0,5, awan 0,22 → 0,5) karena angka rancangan tidak terlihat.
+- **Goyangan formasi** `(0,5·sin 0,7t; 0,3·sin 0,9t; 0,4·sin 0,5t)` m berfase per slot: rekan bot (`bots.js allyAir`) dan pemain di
+  "Ikut rekan" (`player.js`, plus `airSide` dari laju menyamping offset).
+- **Perbaikan dari §35.3**: awal guling (`rigair.js poseLand`: ringkuk 0,32 dtk, salto mulai 0,1 dtk → laju paha 12,9 → 8,1 rad/dtk,
+  loncatan antar frame 3,66 → 1,51); kamera baru mendarat yang menembus dinding rumah (`player.js placeCamera`).
+- **Diuji** (headless, frame manual 60 Hz, 0 galat konsol): alur penuh di Ultra dan Hemat, "Ikut rekan" sampai mendarat, mendarat di
+  dek 4,1 m, guling dengan pengukuran laju sudut. **Belum diuji**: perbaikan kamera di dekat dinding, varian perempuan dari dekat,
+  atap menara tinggi, goyangan formasi secara terukur, alokasi/CPU, ponsel. Tidak ada uji ulang setelah cap `?v=`.
+- **Kekurangan**: awan dari jauh masih tampak seperti noda putih kecil; garis angin ikut berputar dengan kamera; loncatan betis
+  ±5 rad/dtk di akhir guling saat menahan W; kanopi kempis menutupi kamera saat guling.
