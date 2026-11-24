@@ -264,6 +264,21 @@ export function skinCue(ev, voice = VOICE) {
   if (ev === 'equip') { playLayer(voice, 1.18, V.gain * 0.32); tone({ f0: 420, f1: 1260, dur: 0.16, gain: 0.05, type: 'sine' }); }
   else if (ev === 'inspect') { playLayer(voice, 1.32, V.gain * 0.26); playLayer(voice, 1.5, V.gain * 0.16, 0, 0, 0.28); }
   else if (ev === 'reload') playLayer(voice, 1.45, V.gain * 0.22, 0.25);
+  // skin berefek berbentuk (game/fxlib.js): magasin keluar / masuk / kokang
+  else if (ev === 'out') playLayer(voice, 0.8, V.gain * 0.14, 0.12);
+  else if (ev === 'in') playLayer(voice, 1.45, V.gain * 0.22, 0.25);
+  else if (ev === 'bolt') playLayer(voice, 1.9, V.gain * 0.12, 0.1);
+}
+// bunyi finisher skin (game/fxlib.js) di jarak d meter: lebih pelan & tertunda menurut jarak. merak: kendang tiga pukulan
+// makin rapat + kempul 147 Hz + gemerincing
+export function finisher(name, n = 1, d = 0, p = 0) {
+  if (!ok()) return;
+  const g = 1 / (1 + d / 25), t = Math.min(0.6, d / 343);
+  if (name === 'merak') {
+    for (const [dt, f, k] of [[0, 150, 1], [0.2, 165, 0.85], [0.33, 185, 1.1]]) tone({ t: t + dt, f0: f, f1: f * 0.55, dur: 0.16, gain: 0.34 * g * k, type: 'sine', p });
+    tone({ t: t + 0.46, f0: 147, f1: 144, dur: 1.1, gain: 0.3 * g, type: 'sine', p }); tone({ t: t + 0.46, f0: 294, f1: 292, dur: 0.7, gain: 0.1 * g, type: 'triangle', p });
+    for (let i = 0; i < 5 + Math.min(4, n); i++) burst({ t: t + 0.46 + i * 0.07, dur: 0.05, freq: 6200 + (i % 3) * 900, q: 6, gain: 0.07 * g, type: 'bandpass', p });
+  }
 }
 
 // ---------- Kill: denting bertingkat (1 → 5+), bertema suara skin ----------

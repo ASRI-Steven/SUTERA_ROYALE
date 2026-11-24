@@ -197,7 +197,7 @@ const STYLES = {
   },
 };
 
-export function createKillFx({ scene, hud }) {
+export function createKillFx({ scene, hud, sfx = null }) {
   const A = pool(scene, 700, true, 24), B = pool(scene, 360, false, 23);
   let clock = 0, streak = 0, last = -1e9, sting = null;
   const e = { x: 0, y: 0, z: 0, h: 1.7, n: 1, knock: false, c1: '#ffc64a', c2: '#fff1c8', emblem: 'std' };
@@ -212,7 +212,8 @@ export function createKillFx({ scene, hud }) {
   }
   return {
     // pemain menyingkirkan korban (main.js kill()); head = tembakan kepala
-    kill(victim, head) {
+    // w = senjata yang dipakai (main.js kill()); efek berbentuk (kipas di senjata + finisher) hanya untuk kill dengan senjata api
+    kill(victim, head, w) {
       if (!victim || !victim.pos) return;
       streak = clock - last <= STREAK_S ? streak + 1 : 1;
       last = clock;
@@ -220,6 +221,7 @@ export function createKillFx({ scene, hud }) {
       // efek partikel dimatikan (18 Nov: "efek kill gausah"), spanduk kill dihapus (24 Nov); tinggal denting bertema skin
       play(streak, false, th);
       if (th.killAnim) killPulse(streak, false); // senjata beranimasi (skin epik/legendaris), pengganti spanduk
+      if (sfx && th.fx) { const d = sfx.kill(victim, streak, head, !!(w && w.inst)); if (d !== undefined) audio.finisher(th.fx.id, streak, d); } // Skin v2: kipas di senjata + finisher di korban
     },
     // pemain melumpuhkan korban (main.js knock()): denting ringan, hitungan beruntun tidak naik
     knock(victim, head) {
@@ -227,6 +229,7 @@ export function createKillFx({ scene, hud }) {
       const th = gunTheme(), n = clock - last <= STREAK_S ? Math.max(1, streak) : 1;
       play(n, true, th);
       if (th.killAnim) killPulse(n, true);
+      if (sfx && th.fx) sfx.knock(victim);
     },
     // pratinjau: denting kill bertema skin `id`, hitungan n (+ animasi kill di senjata etalase). p tidak dipakai lagi.
     preview(p, n = 1, id) { const th = gunTheme(id); audio.killSting(n, th.voice, false); if (th.killAnim) killPulse(n, false); },

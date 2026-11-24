@@ -725,9 +725,10 @@ void sfGun(int cls, vec3 p, vec3 n, float vdn, inout vec3 col, inout float metal
 #elif SF_GUN == 18 // emas garuda: sapuan emas, bulu menyala berurutan
     float fe = pow(0.5 + 0.5 * sin(p.z * 60.0 + uv.y * 40.0 - uSfK.y * 24.0), 5.0);
     k = front * 2.5 + done * ke * 2.2 * fe; kc = mix(${L('#ffa424')}, ${L('#fff4c8')}, front);
-#elif SF_GUN == 19 // dadak merak: mata merak menyala bergiliran berpelangi
-    vec2 ce = floor(uv * 34.0); float on = pow(0.5 + 0.5 * sin(sfH2(ce) * 6.28 + T * 9.0), 4.0);
-    k = front * 2.0 + done * ke * 2.2 * on; kc = mix(sfHue(fract(sfH2(ce) + T * 0.7 + p.z)), vec3(1.0), front * 0.5) * 1.3;
+#elif SF_GUN == 19 // dadak merak: riak toska-emas
+    // (dulu: petak UV berwarna acak → tampak kotak-kotak) kini riak toska → emas halus menyusuri laras; kipas bulunya kartu berbentuk (fxlib.js)
+    float on = pow(0.5 + 0.5 * sin(p.z * 46.0 - T * 9.0 + uSfK.w), 4.0);
+    k = front * 0.9 + done * ke * 0.8 * on; kc = mix(${L('#19c9a8')}, ${L('#ffc64a')}, clamp(front * 0.6 + on * 0.4, 0.0, 1.0)) * 1.2;
 #elif SF_GUN == 12 // neon: ledakan warna menjalar di garis
     float ln = sfAA(abs(fract(uv.y * 26.0) - 0.5), 0.09) + sfAA(abs(fract(p.z * 30.0 + T * 3.0) - 0.5), 0.05);
     k = front * 2.0 + done * ke * 2.2 * ln; kc = sfHue(fract(p.z * 1.6 - T * 1.4 + uSfK.w)) * 1.3;

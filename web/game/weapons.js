@@ -555,8 +555,9 @@ export function setVmArms(o = {}) {
 // ---------- Efek skin senjata pemain (diisi game/skins.js applyEquipped) ----------
 // tracer / flash: warna HDR [r, g, b] pelacak & kilatan moncong; flame: nyala moncong beranimasi (createSkinFlame);
 // glow: pakai pendar isi ulang/periksa/cabut; cue(ev): bunyi 'equip' | 'inspect' | 'reload' (game/audio.js). null = pabrik.
-const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null };
-export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null }, o || {}); SKIN.v++; }
+// hook(ev, p, kind): kait efek berbentuk (game/fxlib.js; 'casing' → true = selongsong diganti kartu bertema); brass: warna selongsong
+const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null, hook: null, brass: null };
+export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null, hook: null, brass: null }, o || {}); SKIN.v++; }
 // pendar view-model dari luar pertandingan (etalase lobi memakai material yang sama): glow, panas, kilat, posisi sapuan
 export function setVmGlow(x, y, z, w) { VM_G.value.set(x, y, z, w); }
 // ---------- Animasi kill di senjata (pengganti spanduk kill, 24 Nov) ----------
@@ -726,15 +727,16 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   function ejectCasing(kind) {
     const C = CASE[kind], G = guns[kind];
     if (!C || !G || !G.g.parent) return;
-    const i = casN < CAS_N ? casN++ : (Math.random() * CAS_N) | 0, k = i * 14;
     G.g.updateWorldMatrix(true, false);
     casV.set(C.p[0], C.p[1], C.p[2]).applyMatrix4(G.g.matrixWorld); // dunia adegan senjata = ruang kamera
+    if (SKIN.hook && SKIN.hook('casing', casV, kind)) return; // skin berefek: selongsong ini jadi kartu bertema
+    const i = casN < CAS_N ? casN++ : (Math.random() * CAS_N) | 0, k = i * 14;
     casS[k] = casV.x; casS[k + 1] = casV.y; casS[k + 2] = casV.z;
     casS[k + 3] = 1.5 + Math.random() * 1.1; casS[k + 4] = 1.1 + Math.random() * 0.9; casS[k + 5] = 0.15 + Math.random() * 0.7;
     casS[k + 6] = Math.random() * 6; casS[k + 7] = Math.random() * 6; casS[k + 8] = Math.random() * 6;
     casS[k + 9] = 14 + Math.random() * 18; casS[k + 10] = (Math.random() - 0.5) * 20; casS[k + 11] = (Math.random() - 0.5) * 16;
     casS[k + 12] = 0.9; casS[k + 13] = C.shell ? 2.3 : kind === 'pistol' || kind === 'smg' || kind === 'pdw' ? 0.75 : 1;
-    cas.setColorAt(i, C.shell ? SHELL : BRASS);
+    cas.setColorAt(i, C.shell ? SHELL : SKIN.brass ? BRASS_S.set(SKIN.brass) : BRASS);
     cas.instanceColor.needsUpdate = true;
   }
   function updateCasings(dt, hidden) {
@@ -754,7 +756,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     cas.visible = casN > 0 && !hidden;
     cas.instanceMatrix.needsUpdate = true;
   }
-  const BRASS_T = new THREE.Color();
+  const BRASS_T = new THREE.Color(), BRASS_S = new THREE.Color();
   // kepulan asap tipis dari moncong (ruang kamera): kolam titik 24 buah
   const puffs = pointPool(camera, 24, false, 0.0, 70, 30);
   let postOn = true, sunGlare = 0;
@@ -2101,6 +2103,21 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     },
     scopeMask: null, opticOn: false, scopeFallback: false,
     setPost(on) { postOn = !!on; }, // Hemat (tanpa post-processing): cincin gelap di sekitar lensa sebagai pengganti topeng
+    // jangkar efek skin berbentuk (game/fxlib.js): out.gun = matriks senjata di ruang kamera; titik lokal senjata: moncong,
+    // lubang lontar, lubang magasin, atas receiver/optik; out.ads 0..1, out.scoped. → false bila tidak ada senjata tampil
+    anchors(out) {
+      const G = st.kind && guns[st.kind];
+      if (!G || !G.g.parent || !G.g.visible || !root.visible || st.prev) return false;
+      G.g.updateWorldMatrix(true, false);
+      out.gun.copy(G.g.matrixWorld); out.kind = st.kind;
+      out.muzzle.copy(G.muzzle.position);
+      const C = CASE[st.kind];
+      if (C) out.port.set(C.p[0], C.p[1], C.p[2]); else out.port.set(0.03, (SIGHT_Y[st.kind] || 0.08) - 0.01, -0.04);
+      if (G.mag0) { out.mag.copy(G.mag0); out.mag.y -= 0.05; } else out.mag.set(0, 0.0, -0.08);
+      out.top.set(0, (SIGHT_Y[st.kind] || 0.08) + (G.opt ? 0.03 : 0.008), G.opt ? -0.02 : -0.06);
+      out.ads = st.ads; out.scoped = !!st.scoped;
+      return true;
+    },
     muzzleWorld(out) { // posisi moncong di ruang kamera (untuk pelacak peluru dari senjata)
       const G = st.kind && guns[st.kind];
       if (!G) return out.set(0.15, -0.12, -0.6);

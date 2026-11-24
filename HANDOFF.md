@@ -1285,3 +1285,31 @@ Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum di
 - **Integrasi** `.wt/_tools/integ/`: `gabung.sh <commit> <cap> "<judul>"` = merge `--no-ff` ke main, selesaikan konflik `?v=` di import map (`versi.py`), cap semua `?v=` dengan satu cap baru (`cap.sh`, mis. `202611241745`), `node --check` berkas JS yang berubah, commit, lalu `asap.sh` (uji asap headless: menu → pertandingan → zona dimajukan → terjun → payung → mendarat → jalan; cek `__LOGS`). **Eksekutor tidak mengubah `?v=`**; integrator yang mencap. `ambil_laporan.py` = ambil laporan akhir agen dari transkrip JSONL.
 - **Aturan Steven**: tidak ada flag/env khusus tes di kode; koin tak terbatas hanya lewat snippet console (`localStorage royale.profile.v1` → `coins`), bukan kode; ID & harga skin tetap; desain orisinal (tanpa IP/merek); "jangan terlalu terpaku pada map" = boleh menyimpang dari OSM demi tata letak masuk akal (indeks gedung/jalan tetap stabil); push hanya atas izin; jatah pemakaian terbatas → sedikit agen sekaligus, commit kecil per bagian yang lolos uji, berhenti segera bila diminta.
 - **Gerbang visual**: untuk karya yang dinilai dari tampilan (senjata, kostum, efek skin), tunjukkan lembar kontak ke Steven sebelum produksi massal; nilai sendiri gambarnya dengan jujur lebih dulu.
+
+## 36. Sesi 24 Nov (lanjutan) — Skin v2 M1 "etalase Merak" dibangun ulang dari main, MENUNGGU gerbang visual
+
+Branch `wip/skinv2` yang disebut §35 tidak ada di origin (hanya `main` yang ter-push), jadi alur ini **dibangun ulang dari main** di
+worktree `.wt/skinv2` (branch lokal `wip/skinv2`), mengikuti `docs/rancangan/2026-11-24/skinv2.md`. **Belum di-commit, belum digabung.**
+
+- **Modul baru** (`web/game/`): `fxshapes.js` (atlas SDF 1024² + palet: bulu merak, bulu kecil, mata merak, serat, cincin, garis,
+  kilau, pilar — dibangun saat muat, ±230 ms), `shapefx.js` (lapisan kartu ber-instance, 18 preset gerak di vertex shader, dua lapis:
+  view-model & dunia), `fxlib.js` (resep per tema; baru `merak`; tingkat Penuh/Ringkas/Mati di `royale.skinfx`).
+- **Yang sudah jalan untuk `gun_reog`**: (a) kill → kipas bulu merak di atas senjata + finisher "Dadak Merak" di korban (membesar
+  mengikuti beruntun 1/3/5), (b) bulu melesat dari moncong saat menembak + selongsong toska, (c) isi ulang (bulu rontok saat magasin
+  lepas, kipas kecil saat masuk), (d) toko: baris "Lihat efek" (Tembak / Isi ulang / Kill / Finisher, dengan manekin
+  korban) + pengaturan "Efek skin".
+- **Kait di modul lama**: `weapons.js` (`anchors()`, `SKIN.hook`/`brass`), `skins.js` (`th.fx`, chip fitur), `player.js`, `killfx.js`,
+  `audio.js` (`finisher`, cue `out/in/bolt`), `main.js`, `lobby.js`/`lobby.css`, `skinfx.js` (denyut kill Merak: petak UV warna acak
+  — sumber tampilan "kotak-kotak" — diganti riak toska-emas halus).
+- **Diuji** (headless, waktu virtual, tingkat Ultra): lobi keempat peragaan + pertandingan orang pertama (tembak, bidik, isi
+  ulang, kill 1/3/5), 0 galat konsol. Isi ulang, bidik, dan kill tunggal dipotret SEBELUM penyetelan terakhir (ukuran bulu tembak,
+  denyut kill) dan belum diulang. **Belum terverifikasi**: efek cabut & periksa (resepnya ada di `fxlib.js`, tapi cabut tidak
+  memunculkan kartu di uji dan periksa belum pernah dijalankan). **Belum diuji**: tingkat Hemat/ponsel, anggaran GPU, orang ketiga,
+  kendaraan, pemain lain.
+- **Alat uji** ada di luar repo (scratchpad sesi, tidak ikut commit): server statis yang menyuntik `window.__T` ke `main.js` yang
+  disajikan + pengendali CDP dengan frame manual 60 Hz. Kalau hilang, buat ulang; jangan masukkan flag uji ke kode.
+- **Kekurangan yang diketahui**: bulu tembak masih kecil di orang pertama dan nyaris tak terlihat di peragaan "Tembak" lobi; kipas di
+  senjata menutup sebagian kanan layar saat beruntun 5; belum ada jejak peluru berbentuk, reaksi kostum `char_warok`, kartu "Set Merak";
+  kumpulan Points lama di `killfx.js` masih ada.
+- **Integrator**: modul yang berubah butuh `?v=` baru di `royale.html` saat digabung. Tema lain JANGAN dikerjakan sebelum Steven
+  menyetujui lembar kontak Merak.

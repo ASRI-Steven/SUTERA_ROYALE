@@ -318,3 +318,9 @@
   .lb-end-card { grid-template-columns: 1fr; } .lb-end-r { padding-left: 0; border-left: 0; padding-top: 1.2em; border-top: 1px solid var(--ln); }
 }
 @media (prefers-reduced-motion: reduce) { .lb *, .lb { animation: none !important; transition: none !important; } }
+
+/* Skin v2: baris "Lihat efek" di kartu skin senjata + pilihan "Efek skin" di pengaturan */
+.lb-fxd { display: flex; flex-wrap: wrap; align-items: center; gap: .4em; }
+.lb-fxd > span { font-size: .72em; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); margin-right: .2em; }
+.lb-fxd .lb-btn { height: 2.1em; font-size: .82em; padding: 0 .9em; }
+.lb-seg-s { min-width: 15em; }

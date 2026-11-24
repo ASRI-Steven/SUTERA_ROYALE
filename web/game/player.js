@@ -43,7 +43,7 @@ const LAND = { dur: [0.55, 0.7, 1.35], rollV: 5.0, roofK: 0.4, slide: 3.5, camHo
 export function createPlayer(ctx) {
   const { scene, camera, renderer, col, loot, combat, hud, agent: me } = ctx;
   const cvs = renderer.domElement;
-  const vm = createViewModel({ kit: propGeometry('kit'), band: propGeometry('band'), cue: (k) => audio.cue(k) }); // barang Blender untuk animasi obat; bunyi aksi dari lini waktu animasi
+  const vm = createViewModel({ kit: propGeometry('kit'), band: propGeometry('band'), cue: (k) => { audio.cue(k); const ev = ctx.sfx && ctx.sfx.cue(me, k); if (ev) audio.skinCue(ev); } }); // barang Blender untuk animasi obat; bunyi aksi dari lini waktu animasi
   const char = buildCharacter(OUTFIT, { pack: true, hair: true, stripe: true }, { variant: 'm1', hair: 0 });
   // perlengkapan karakter orang ketiga diatur ulang hanya saat berubah (bukan tiap frame)
   const GUN_KEYS = Object.keys(WEAPONS), GUN_GEAR = {};
@@ -413,6 +413,7 @@ export function createPlayer(ctx) {
       combat.fire(me, org, dirV, w, st.vSpread, st.vfp ? muz : tip.copy(org).addScaledVector(dirV, 0.4));
     } else combat.fire(me, camera.position, fwd, w, spread * (me.state === 'ground' && me.grounded ? 1 : 2.5), st.tpp ? null : muz);
     vm.fire();
+    if (ctx.sfx) ctx.sfx.fire(me, w.inst.kind, !st.tpp && !inVeh, st.tpp || inVeh ? tip.set(me.pos.x, me.pos.y + (st.crouch ? 1.0 : 1.38), me.pos.z).addScaledVector(fwd, 0.75) : null, inVeh ? dirV : fwd, !!w.def.auto); // efek tembak berbentuk (skin v2)
     me.pose.fire = 1;
     const rc = w.def.recoil * (st.ads ? 0.65 : 1) * (st.crouch ? 0.8 : 1) * (st.prone ? 0.5 : 1);
     st.recoilP += rc * D2R;

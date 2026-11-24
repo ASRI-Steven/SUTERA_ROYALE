@@ -29,6 +29,7 @@ import { createGovernor } from './governor.js';
 import { matchHooks } from './hooks.js';
 import { initSkins } from './skins.js';
 import { createKillFx } from './killfx.js';
+import { createSkinFx } from './fxlib.js';
 import { createLobby } from './lobby.js';
 import { profile, partySlots } from './profile.js';
 
@@ -183,7 +184,8 @@ function start(D, realAssets, envAssets, furnAssets) {
     g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(cv);
   }
-  const kills = createKillFx({ scene, hud }); // kill pemain: denting beruntun bertema skin senjata (game/killfx.js)
+  const sfx = createSkinFx({ scene, camera }); // efek skin berbentuk (Skin v2, game/fxlib.js): tembak, isi ulang, kill di senjata, finisher
+  const kills = createKillFx({ scene, hud, sfx }); // kill pemain: denting beruntun bertema skin senjata (game/killfx.js)
 
   // ---------- Pertempuran ----------
   const BLAST = { def: { short: 'Ledakan' } }, NADE_HIT = { def: { short: 'Granat' } };
@@ -250,6 +252,7 @@ function start(D, realAssets, envAssets, furnAssets) {
         if (wat > 0) damage(hit.a, def.dmg * falloff(def, hit.t) * mult * wat, hit.part, shooter, w);
         fx.burst(end, wat > 0 ? 'hit' : 'dust', 7);
       } else if (tw < def.maxRange) fx.burst(end, rayOut.b === -1 ? 'dust' : 'wall', 6);
+      if (shooter.isPlayer && (vh || hit || tw < def.maxRange)) sfx.impact(shooter, end, d); // dampak bertema skin
     }
   }
   // ---------- Jeriken bensin di tanah: kena CAN_HITS peluru → meledak (ledakan berantai ke jeriken di dekatnya) ----------
@@ -407,7 +410,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
     const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, vestHp: t.vestHp, helmetHp: t.helmetHp, bag: t.bag | 0, fuel: t.fuel | 0 };
     if (c.bag || c.fuel || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
-    if (attacker && attacker.isPlayer) kills.kill(t, part === 'head'); // denting kill beruntun bertema skin (game/killfx.js)
+    if (attacker && attacker.isPlayer) kills.kill(t, part === 'head', w); // denting kill beruntun bertema skin (game/killfx.js)
     // regu: anggota terakhir yang berdiri jatuh → yang tumbang ikut tersingkir; regu habis → peringkat regu
     const sq = t.sq;
     refreshSquad(sq);
@@ -529,6 +532,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     return best;
   }
   const ctx = {
+    sfx,
     reviveTarget,
     // pemain menahan F di dekat rekan tumbang: on = sedang memulihkan (kemajuan dihitung squadTick)
     reviveHold(t, on) { if (on && t && t.down && t.alive) { t.reviver = me; me.reviving = t; } else me.reviving = null; },
@@ -574,7 +578,7 @@ function start(D, realAssets, envAssets, furnAssets) {
   };
   player = createPlayer(ctx);
   player.vm.setEnv(renderer, R && R.env); // pantulan logam senjata orang pertama (mode realistis: langit foto)
-  initSkins(renderer, R && R.env, scene, camera); // skin (game/skins.js): pratinjau toko/koleksi & kompilasi shader di muka memakai renderer, langit & adegan ini
+  initSkins(renderer, R && R.env, scene, camera, sfx); // skin (game/skins.js): pratinjau toko/koleksi & kompilasi shader di muka memakai renderer, langit & adegan ini
   // ---------- Mode realistis: post-processing, bayangan dinamis, pantulan langit di kendaraan ----------
   const post = R ? createPostFX(renderer) : null;
   const dyn = R ? createDynShadow(renderer, scene, R) : null;
@@ -588,6 +592,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     bots.blobs.visible = false; // bayangan sungguhan menggantikan bayangan bulat
     vehicles.blobs.material.opacity *= 0.45;
     player.vm.setLight({ sky: R.skyColor, ground: R.groundColor, skyI: R.skyIntensity, sun: R.sunColor, sunI: R.sunIntensity });
+    sfx.setLight({ sky: R.skyColor, sun: R.sunColor });
   }
   // Matriks dunia dihitung sekali per frame di loop (frame()), bukan di tiap pass render. Adegan sendiri tidak pernah
   // berpindah: tanpa matrixAutoUpdate ia tidak "memaksa" semua turunannya dihitung ulang tiap frame, sehingga cabang yang
@@ -737,7 +742,7 @@ function start(D, realAssets, envAssets, furnAssets) {
   // Lobi (game/lobby.js): panggung 3D regu + UI profil, misi, toko, koleksi, pengaturan; juga mengisi layar akhir
   // pertandingan. Sensitivitas mouse & kesulitan bot diatur di sana (kunci localStorage royale.sens / royale.diff).
   const lobby = createLobby({
-    scene, camera, col, sunDir, difficulty: DIFFICULTY, diff,
+    scene, camera, col, sunDir, difficulty: DIFFICULTY, diff, sfx,
     onDiff: (k) => { diff = k; },
     onSens: (v) => { player.st.sens = v; },
     onStart: () => { audio.unlockAudio(); startMatch(); ctx.lock(); },
@@ -931,6 +936,7 @@ function start(D, realAssets, envAssets, furnAssets) {
       interiors.update(camera.position, F.state === 'ground' && F.alive ? F.pos : null); // lantai menara yang terbuka = lantai tempat pemain/yang ditonton berdiri
       fx.update(dt);
       kills.update(dt);
+      sfx.update(dt);
       loot.update(now, camera.position);
       if (F.state === 'ground' && shadowC.distanceTo(F.pos) > 40 && !F.swim) refreshShadows(F.pos);
       else if (F.state === 'drive' && shadowC.distanceTo(F.pos) > 95) refreshShadows(F.pos, 300);
@@ -1005,6 +1011,7 @@ function start(D, realAssets, envAssets, furnAssets) {
         else if (view.fp && col.ray(camera.position.x, -camera.position.z, camera.position.y, sunDir.x, -sunDir.z, sunDir.y, 300) < 300) shade = 0.12; // berdiri di bayangan
       }
       exposure += (expT - exposure) * (1 - Math.exp(-dt * 1.6));
+      sfx.setShade(shade);
       if (view.fp) { camQ.copy(camera.quaternion).invert(); player.vm.setSun(sunCam.copy(sunDir).applyQuaternion(camQ), shade, dt); } // senjata disinari dari arah matahari sebenarnya
     }
     player.vm.setPost(postOn);

@@ -79,7 +79,8 @@ export const CHAR_SKINS = [
 // ({ style: fire|plasma|glint|spirit|arc|frost|glow, c1, c2 }),
 // glow = pendar isi ulang/periksa/cabut, voice = suara tembakan (audio.js VOICES), kill = efek kill (killfx.js),
 // emblem = lambang tema (dulu spanduk kill), color/color2 = warna tema (toko), killAnim = senjata beranimasi saat kill
-// (weapons.js killPulse; bawaan = skin yang punya pendar, yaitu semua epik/legendaris)
+// (weapons.js killPulse; bawaan = skin yang punya pendar, yaitu semua epik/legendaris), fx = set efek berbentuk Skin v2
+// ({ id } = tema di game/fxlib.js: tembak, isi ulang, cabut/periksa, kill di senjata, finisher)
 const G = (id, name, rarity, col, desc, fx, th = {}) => ({ id, name, rarity, col, price: fx ? PRICE[rarity] : 0, desc, fx, kind: 'weapon', th: th.glow && th.killAnim === undefined ? { ...th, killAnim: true } : th });
 export const GUN_SKINS = [
   G('gun_default', 'Baja Standar', 'biasa', 'taktis', 'Tampilan pabrik: baja hitam dan polimer.', 0, { color: '#d29f52' }),
@@ -110,7 +111,7 @@ export const GUN_SKINS = [
   G('gun_garuda', 'Emas Garuda', 'legendaris', 'pusaka', 'Emas berukir bulu garuda dan pernis merah tua berfiligri sayap. Cahaya keemasan menyapu badan senjata, tembakan berdentang gong garuda, dan lawan tersingkir dalam hujan bulu emas.', GUN_FX.garuda,
     { coat: true, tracer: [8, 5.6, 1.6], flash: [8, 5.6, 2], flame: { style: 'glint', c1: '#ffb43a', c2: '#fff4c8', size: 0.042 }, glow: true, voice: 'garuda', kill: 'feather', emblem: 'garuda', color: '#ffc64a', color2: '#9a1414' }),
   G('gun_reog', 'Dadak Merak', 'legendaris', 'panggung', 'Mata bulu merak berpelangi yang berdenyut dan loreng macan barongan. Tembakan berkendang & bergong, kill disambut kipas bulu merak.', GUN_FX.reog,
-    { coat: true, tracer: [1.6, 6.5, 4.6], flash: [2.6, 6, 4.2], flame: { style: 'spirit', c1: '#14c9a8', c2: '#ffc64a' }, glow: true, voice: 'reog', kill: 'peacock', emblem: 'merak', color: '#19c9a8', color2: '#2a6bff' }),
+    { coat: true, tracer: [1.6, 6.5, 4.6], flash: [2.6, 6, 4.2], flame: { style: 'spirit', c1: '#14c9a8', c2: '#ffc64a' }, glow: true, voice: 'reog', kill: 'peacock', emblem: 'merak', color: '#19c9a8', color2: '#2a6bff', fx: { id: 'merak' } }),
   G('gun_magma', 'Inti Magma', 'legendaris', 'alam', 'Obsidian dengan lava yang mengalir di retakannya; laras membara makin panas saat menembak. Dentuman naga, lawan meledak jadi bara.', GUN_FX.magma,
     { coat: true, tracer: [9, 3.4, 0.6], flash: [9, 3.6, 0.8], flame: { style: 'fire', c1: '#ff2a00', c2: '#ffe27a', size: 0.06 }, glow: true, voice: 'dragon', kill: 'ember', emblem: 'api', color: '#ff6a1a', color2: '#ffd860' }),
   G('gun_plasma', 'Reaktor Plasma', 'legendaris', 'neo', 'Zirah keramik putih dengan kanal plasma yang mengalir ke moncong dan inti yang makin terang saat menembak. Lawan terurai jadi piksel cahaya.', GUN_FX.plasma,
@@ -127,7 +128,8 @@ export function skinFeatures(s) {
     const th = s.th || {};
     if (th.glow) f.push(['anim', 'Animasi & pendar']);
     if (th.voice) f.push(['sound', 'Suara tembakan khusus']);
-    if (th.killAnim) f.push(['kill', 'Animasi kill']);
+    if (th.fx && SFX && SFX.has(th.fx)) { f.push(['muzzle', 'Efek tembak berbentuk']); f.push(['anim', 'Isi ulang bertema']); f.push(['kill', 'Animasi kill + finisher']); }
+    else if (th.killAnim) f.push(['kill', 'Animasi kill']);
     else if (th.kill) f.push(['kill', 'Denting kill khusus']);
     if (th.tracer) f.push(['tracer', th.flash ? 'Pelacak & kilatan khusus' : 'Pelacak berwarna']);
     if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
@@ -141,7 +143,7 @@ export function skinFeatures(s) {
 // tema senjata yang dipakai pemain (efek kill, suara). Skin tanpa efek khusus: ledakan cahaya warna temanya.
 export function gunTheme(id = profile.equipped && profile.equipped.weapon) {
   const s = BY.get(id) || GUN_SKINS[0], th = s.th || {};
-  return { id: s.id, name: s.name, rarity: s.rarity, voice: th.voice || null, killAnim: !!th.killAnim, kill: th.kill || 'burst', emblem: th.emblem || 'std', color: th.color || '#d29f52', color2: th.color2 || '#fff1c8' };
+  return { id: s.id, name: s.name, rarity: s.rarity, voice: th.voice || null, fx: th.fx || null, killAnim: !!th.killAnim, kill: th.kill || 'burst', emblem: th.emblem || 'std', color: th.color || '#d29f52', color2: th.color2 || '#fff1c8' };
 }
 
 // Dua bentuk, satu sumber (warna pakaian & perlengkapan + nomor pola fx; warna kulit & rambut TIDAK pernah ikut skin):
@@ -260,7 +262,12 @@ export function applyEquipped(char, vm, base = DEFAULT_OUTFIT) {
   setVmArms(o === base ? {} : { sleeve: o.sleeve || o.shirt, glove: o.glove, cuff: o.cuff, fx: o.fx, cuffGlow: cs && cs.cuffGlow });
   if (vm && vm.gunRoots) for (const g of vm.gunRoots()) applyGunSkin(g, gid);
   if (char && char.parts) for (const k in char.parts) if (k.startsWith('gun_')) for (const m of char.parts[k]) applyGunSkin(m, gid);
-  setSkinFx({ tracer: th.tracer || null, flash: th.flash || null, flame: th.flame || null, glow: !!th.glow, killAnim: !!th.killAnim, color: th.color || null, cue: th.voice ? (ev) => audio.skinCue(ev) : null });
+  // efek berbentuk (Skin v2, game/fxlib.js): tema, lapisan di adegan senjata, kait selongsong & kejadian cabut/periksa
+  const shaped = !!(SFX && th.fx && SFX.has(th.fx));
+  if (SFX) { SFX.setThemes(gs); if (vm && vm.scene) SFX.attachVm(vm); }
+  setSkinFx({ tracer: th.tracer || null, flash: th.flash || null, flame: th.flame || null, glow: !!th.glow, killAnim: !!th.killAnim, color: th.color || null,
+    cue: th.voice || shaped ? (ev) => { if (th.voice && !(shaped && ev === 'reload' && SFX.level > 0)) audio.skinCue(ev); if (shaped) SFX.event(null, ev); } : null, // 'reload': tema berbentuk punya bunyi keluar/masuk/kokang sendiri
+    hook: shaped ? SFX.hook : null, brass: shaped ? SFX.brass() : null });
   audio.setShotVoice(th.voice || null);
   setCharAura(char, cs && cs.aura);
   if (vm && vm.compile && R0) { try { vm.compile(R0, warmRT()); } catch (e) { console.warn('Kompilasi shader skin gagal:', e.message); } }
@@ -340,11 +347,12 @@ export function previewWeapon(kind = 'ar', id = 'gun_default') { const g = gunPr
 
 // Gambar pratinjau (data URL, latar transparan), dirender sekali dengan renderer game lalu di-cache. initSkins() harus sudah
 // dipanggil (main.js); sebelum itu hasilnya ''. Karakter: tiga perempat badan; senjata: senapan tampak tiga perempat.
-let R0 = null, ENV = null, SCENE = null, CAM = null, TS = null, TCAM = null, RT = null, PCHAR = null, CV = null, CV2 = null;
+let R0 = null, ENV = null, SCENE = null, CAM = null, SFX = null, TS = null, TCAM = null, RT = null, PCHAR = null, CV = null, CV2 = null;
 const THUMBS = new Map();
 let chain = Promise.resolve();
 // renderer & langit (env) game; scene & camera dunia = tempat karakter digambar (untuk kompilasi shader di muka)
-export function initSkins(renderer, env = null, scene = null, camera = null) { R0 = renderer; ENV = env; SCENE = scene; CAM = camera; }
+// sfx = sutradara efek berbentuk (game/fxlib.js createSkinFx): atlas & program shadernya disiapkan di sini (saat memuat)
+export function initSkins(renderer, env = null, scene = null, camera = null, sfx = null) { R0 = renderer; ENV = env; SCENE = scene; CAM = camera; SFX = sfx; if (sfx) sfx.warm(renderer, warmRT()); }
 export const skinRenderer = () => R0;
 function thumbScene() {
   if (TS) return;
