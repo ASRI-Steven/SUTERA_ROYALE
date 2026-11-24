@@ -1,5 +1,5 @@
-// Efek kill pemain ala "kill banner": tiap kill / lumpuhkan oleh pemain → spanduk HUD dengan hitungan kill beruntun
-// (1 → 5+, makin megah), denting bertingkat (game/audio.js killSting), dan partikel di tubuh korban — semuanya bertema skin
+// Efek kill pemain: tiap kill / lumpuhkan oleh pemain → denting bertingkat sesuai hitungan kill beruntun (1 → 5+,
+// game/audio.js killSting; spanduk HUD dihapus 24 Nov), dan partikel (dimatikan 18 Nov) di tubuh korban — semuanya bertema skin
 // senjata yang dipakai (game/skins.js gunTheme): serpih es, bara, hujan bulu emas, kipas bulu merak, piksel terurai, petir,
 // kelopak, asap tuah, gelembung mutiara; skin tanpa efek khusus = ledakan cahaya warna temanya.
 // Pose mati & peti jarahan tidak disentuh (efek hanya tampil di atasnya).
@@ -216,19 +216,16 @@ export function createKillFx({ scene, hud }) {
       streak = clock - last <= STREAK_S ? streak + 1 : 1;
       last = clock;
       const th = gunTheme();
-      // efek partikel di tubuh korban dimatikan atas permintaan Steven (18 Nov: "efek kill gausah"); spanduk & denting tetap
+      // efek partikel dimatikan (18 Nov: "efek kill gausah"), spanduk kill dihapus (24 Nov); tinggal denting bertema skin
       play(streak, false, th);
-      if (hud && hud.killBanner) hud.killBanner({ n: streak, knock: false, head: !!head, name: victim.name || '', theme: th });
     },
-    // pemain melumpuhkan korban (main.js knock()): efek & spanduk ringan, hitungan beruntun tidak naik
+    // pemain melumpuhkan korban (main.js knock()): denting ringan, hitungan beruntun tidak naik
     knock(victim, head) {
       if (!victim || !victim.pos) return;
       const th = gunTheme(), n = clock - last <= STREAK_S ? Math.max(1, streak) : 1;
       play(n, true, th);
-      if (hud && hud.killBanner) hud.killBanner({ n, knock: true, head: !!head, name: victim.name || '', theme: th });
     },
-    // pratinjau (lobi): denting kill bertema skin `id`, hitungan n (spanduk ditampilkan lobi sendiri). p tidak dipakai lagi
-    // sejak efek partikel dimatikan.
+    // pratinjau: denting kill bertema skin `id`, hitungan n. p tidak dipakai lagi sejak efek partikel dimatikan.
     preview(p, n = 1, id) { const th = gunTheme(id); audio.killSting(n, th.voice, false); },
     update(dt) {
       clock += dt;
