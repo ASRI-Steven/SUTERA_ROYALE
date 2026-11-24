@@ -1001,6 +1001,9 @@ export function createPlayer(ctx) {
   const folT = new THREE.Vector3();
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
+    if (!st.inAir) { st.inAir = true; st.airT = 0; st.visYaw = null; st.airTurn = 0; } // baru keluar pesawat
+    st.airT += dt;
+    st.aFwd = 0.35; st.aSide = 0; st.aDive = 0; // masukan pose udara (map/rigair.js); mode ikut rekan: melayang maju pelan
     // ikut rekan: melayang otomatis di belakangnya (payung ikut terbuka); W/A/S/D melepas, rekan mendarat → mendarat sendiri
     const L = me.follow;
     if (L) {
@@ -1031,6 +1034,7 @@ export function createPlayer(ctx) {
     const vsT = chuteOn ? (iz > 0 ? 7 : iz < 0 ? 6 : 9) : iz > 0 ? 30 + 40 * dive : 46; // payung + S: mengerem, turun lebih pelan
     st.airVs = st.airVs ? st.airVs + (vsT - st.airVs) * (1 - Math.exp(-dt * 3)) : vsT; // perubahan laju turun dihaluskan
     const vs = st.airVs;
+    st.aFwd = iz; st.aSide = ix; st.aDive = dive;
     fwd.set(Math.sin(st.yaw), 0, Math.cos(st.yaw));
     right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
     // A/D: geser samping kekuatan penuh, tidak tergantung W (gabungan maju+samping dibatasi ke kecepatan maksimum)
@@ -1170,6 +1174,7 @@ export function createPlayer(ctx) {
       if (me.state === 'ground' && me.alive) ground(dt, now);
       else if (st.crate || st.lootUI) { st.crate = null; st.lootUI = false; hud.lootPanel(null); } // naik kendaraan / mati → panel loot ditutup
       else if ((me.state === 'fall' || me.state === 'chute') && me.alive) air(dt);
+      if (me.state !== 'fall' && me.state !== 'chute') st.inAir = false;
       if (me.state !== 'ground' || !me.alive) nadeAbort(); // granat batal: naik kendaraan / mati
       // pulihkan sentakan
       st.recoilP *= Math.exp(-dt * 7);
@@ -1180,13 +1185,20 @@ export function createPlayer(ctx) {
       const driving = !!drv();
       const showChar = me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || (me.state === 'ground' && st.tpp && st.camD > 0.4) || (driving && !st.vfp);
       char.root.visible = showChar;
+      if (st.inAir) { // arah badan di udara: me.yaw = atan2(kecepatan) bisa meloncat (S lalu A/D) → dihaluskan untuk tampilan saja
+        const y0 = st.visYaw ?? me.yaw;
+        st.visYaw = y0 + wrap(me.yaw - y0) * (1 - Math.exp(-dt * 8));
+        const tr = dt > 0 ? clamp(-wrap(st.visYaw - y0) / dt, -3, 3) : 0; // laju belok (+ = kanan)
+        st.airTurn += (tr - st.airTurn) * (1 - Math.exp(-dt * 6));
+      }
       if (showChar) {
         if (driving) { char.root.position.set(me.pos.x, me.sitY || 0, me.pos.z); char.root.rotation.set(0, me.yaw, me.sitRoll || 0); }
-        else if ((me.state === 'fall' || me.state === 'chute') && st.airLean) { // miring saat A/D: berputar di titik gantung parasut / tengah badan, bukan di kaki
-          const r = st.airLean, h = me.state === 'chute' ? 1.45 : 1.0, o = h * Math.sin(r);
-          char.root.position.set(me.pos.x + Math.cos(me.yaw) * o, me.pos.y + h * (1 - Math.cos(r)), me.pos.z - Math.sin(me.yaw) * o);
-          char.root.rotation.set(0, me.yaw, r);
+        else if (me.state === 'chute' && st.airLean) { // payung, miring saat A/D: berputar di titik gantung parasut, bukan di kaki
+          const r = st.airLean, h = 1.45, o = h * Math.sin(r), vy = st.visYaw ?? me.yaw;
+          char.root.position.set(me.pos.x + Math.cos(vy) * o, me.pos.y + h * (1 - Math.cos(r)), me.pos.z - Math.sin(vy) * o);
+          char.root.rotation.set(0, vy, r);
         }
+        else if (st.inAir) { char.root.position.copy(me.pos); char.root.rotation.set(0, st.visYaw ?? me.yaw, 0); } // terjun bebas: miring/belok diartikulasikan rig (map/rigair.js)
         else { char.root.position.copy(me.pos); char.root.rotation.set(0, me.state === 'ground' ? st.yaw : me.yaw, 0); }
         const p = me.pose;
         p.speed = me.state === 'ground' ? me.moveSpeed : 0;
@@ -1208,6 +1220,11 @@ export function createPlayer(ctx) {
         p.freefall = me.state === 'fall';
         p.chute = me.state === 'chute';
         p.chuteDrive = p.chute ? keys.fwd - keys.back : 0;
+        if (st.inAir) { // masukan pose udara (map/rigair.js)
+          p.airT = st.airT; p.airFwd = st.aFwd; p.airSide = st.aSide; p.airDive = st.aDive; p.airTurn = st.airTurn;
+          p.airSpd = Math.hypot(Math.hypot(me.vel.x, me.vel.y), st.airVs || 0);
+          p.lookYaw = wrap(st.yaw - (st.visYaw ?? me.yaw)); p.lookPitch = st.pitch; p.airSeed = 0.5;
+        }
         p.sit = driving ? me.sitKind || 'car' : null;
         p.recline = driving ? me.sitRecline || 0 : 0;
         p.steer = driving && isDriver() ? me.vehicle.steerN || 0 : 0;
@@ -1236,7 +1253,7 @@ export function createPlayer(ctx) {
           } }
       } else char.rig.pose(me.pose, dt); // tetap jalan untuk goyangan kamera
       chute.visible = me.state === 'chute';
-      if (chute.visible) { chute.position.set(me.pos.x, me.pos.y + chuteY, me.pos.z); chute.rotation.set(0, me.yaw, st.airLean || 0); }
+      if (chute.visible) { chute.position.set(me.pos.x, me.pos.y + chuteY, me.pos.z); chute.rotation.set(0, st.visYaw ?? me.yaw, st.airLean || 0); }
       // senjata di tangan
       // orang pertama di kendaraan (V) dengan senjata siap: senjata di tangan digambar di atas kabin (tidak terpotong interior)
       const vfp = driving && st.vfp && st.vArmed && me.alive;
