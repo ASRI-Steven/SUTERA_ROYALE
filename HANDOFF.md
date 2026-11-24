@@ -1289,7 +1289,7 @@ Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum di
 ## 36. Sesi 24 Nov (lanjutan) — Skin v2 M1 "etalase Merak" dibangun ulang dari main, MENUNGGU gerbang visual
 
 Branch `wip/skinv2` yang disebut §35 tidak ada di origin (hanya `main` yang ter-push), jadi alur ini **dibangun ulang dari main** di
-worktree `.wt/skinv2` (branch lokal `wip/skinv2`), mengikuti `docs/rancangan/2026-11-24/skinv2.md`. **Belum di-commit, belum digabung.**
+worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-24/skinv2.md`.
 
 - **Modul baru** (`web/game/`): `fxshapes.js` (atlas SDF 1024² + palet: bulu merak, bulu kecil, mata merak, serat, cincin, garis,
   kilau, pilar — dibangun saat muat, ±230 ms), `shapefx.js` (lapisan kartu ber-instance, 18 preset gerak di vertex shader, dua lapis:
@@ -1311,5 +1311,6 @@ worktree `.wt/skinv2` (branch lokal `wip/skinv2`), mengikuti `docs/rancangan/202
 - **Kekurangan yang diketahui**: bulu tembak masih kecil di orang pertama dan nyaris tak terlihat di peragaan "Tembak" lobi; kipas di
   senjata menutup sebagian kanan layar saat beruntun 5; belum ada jejak peluru berbentuk, reaksi kostum `char_warok`, kartu "Set Merak";
   kumpulan Points lama di `killfx.js` masih ada.
-- **Integrator**: modul yang berubah butuh `?v=` baru di `royale.html` saat digabung. Tema lain JANGAN dikerjakan sebelum Steven
-  menyetujui lembar kontak Merak.
+- **Sudah di main** (atas permintaan Jason, 24 Nov): digabung maju-cepat ke `main` dengan `?v=202611241732` di `royale.html`,
+  SEBELUM gerbang visual disetujui Steven. Jadi tampilan Merak di main masih bisa berubah menurut catatan Steven; tema lain tetap
+  JANGAN dikerjakan sebelum lembar kontak Merak disetujui.
