@@ -1314,3 +1314,89 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
 - **Sudah di main** (atas permintaan Jason, 24 Nov): digabung maju-cepat ke `main` dengan `?v=202611241732` di `royale.html`,
   SEBELUM gerbang visual disetujui Steven. Jadi tampilan Merak di main masih bisa berubah menurut catatan Steven; tema lain tetap
   JANGAN dikerjakan sebelum lembar kontak Merak disetujui.
+
+## 37. Terjun M5 (24 Nov, dibangun ulang dari main; WIP lama `cffc563` tidak ada di origin) — SUDAH di main, `?v=202611241757`
+
+- **Modul baru `web/game/airfx.js`** (dipanggil `main.js` setelah `player.update`; laju dari perpindahan posisi pemain, tanpa alokasi
+  per frame): 64 garis angin berupa pita selebar ±2 px di kotak 18×14×24 m depan kamera (nol saat payung) dan 10 sprite awan (5 di
+  Hemat) 60–140 m di ketinggian 180–520 m di bawah pemain, memudar 4–30 m dari kamera.
+- **Menyimpang dari rancangan**: pita menggantikan `LineSegments` (garis 1 px hilang di skala render rendah); opasitas dinaikkan
+  (garis 0,3 → 0,5, awan 0,22 → 0,5) karena angka rancangan tidak terlihat.
+- **Goyangan formasi** `(0,5·sin 0,7t; 0,3·sin 0,9t; 0,4·sin 0,5t)` m berfase per slot: rekan bot (`bots.js allyAir`) dan pemain di
+  "Ikut rekan" (`player.js`, plus `airSide` dari laju menyamping offset).
+- **Perbaikan dari §35.3**: awal guling (`rigair.js poseLand`: ringkuk 0,32 dtk, salto mulai 0,1 dtk → laju paha 12,9 → 8,1 rad/dtk,
+  loncatan antar frame 3,66 → 1,51); kamera baru mendarat yang menembus dinding rumah (`player.js placeCamera`).
+- **Diuji** (headless, frame manual 60 Hz, 0 galat konsol): alur penuh di Ultra dan Hemat, "Ikut rekan" sampai mendarat, mendarat di
+  dek 4,1 m, guling dengan pengukuran laju sudut. **Belum diuji**: perbaikan kamera di dekat dinding, varian perempuan dari dekat,
+  atap menara tinggi, goyangan formasi secara terukur, alokasi/CPU, ponsel. Tidak ada uji ulang setelah cap `?v=`.
+- **Kekurangan**: awan dari jauh masih tampak seperti noda putih kecil; garis angin ikut berputar dengan kamera; loncatan betis
+  ±5 rad/dtk di akhir guling saat menahan W; kanopi kempis menutupi kamera saat guling.
+
+## 38. Bangunan M5 (24 Nov) — SUDAH di main, `?v=202611241806`; pose `TUCK` belum lewat gerbang visual
+
+- **Pintu kamar mandi** (`interiors.js planBath`, `collide.js addBathDoor`): 4.550 pintu (3.231 lantai dasar + 1.319 lantai atas)
+  di `col.doors` dengan `bath: 1`, `k: −1` (tanpa texel fasad), awal TERBUKA (`open0`, dihormati `resetDoors`; pintu rumah tetap
+  tertutup), hanya berayun ke luar kamar mandi, daun PVC abu di InstancedMesh pintu rumah. `doorClear` kini seperempat cakram ayun
+  (berlaku juga untuk pintu rumah satu daun).
+- **`p.tuck`** (murni visual, peluru tetap dari kamera): sinar pendek searah hadap → 0..1 (mulai 0,95 m laras panjang / 0,7 m
+  pistol, penuh di 0,55 m); `rig.js` konstanta `TUCK` (siap-tinggi, tangan lewat IK), `bots.js draw()` (bot bersenjata < 60 m),
+  `player.js st.tuck` → `pose.tuck` + `vm.update({ tuck })`; 0 saat bidik/menembak.
+- **Bot menutup pintu** (`bots.js doorThink/doorBusy/shutChance`): jangkauan 3 m (dulu 6 m); tidak menutup bila rekan di seberang /
+  menuju celah, jalurnya lewat lagi, pemimpin di seberang, atau sedang menembak lewat celah; menutup untuk memutus garis tembak,
+  saat bertahan, dan setelah lewat dengan peluang menurut keadaan. Simulasi 99 bot Sulit 300 dtk (2×, dibanding main): tutup saat
+  rekan di seberang 28–29 → 0 (perkiraan: penutup = agen terdekat), buka ulang ≤ 3 dtk 29–34 → 5–7, ganti < 1,2 dtk 64–74 → 3–4.
+- **Diuji**: uji asap (lobi → pertandingan → terjun → mendarat → F buka pintu → masuk → kamar mandi) 0 galat, diulang setelah
+  digabung dengan Terjun M5; audit 4.550 pintu (terbuka tembus, tertutup menahan); tuck orang pertama/ketiga/bot. Di uji asap pemain
+  DIPINDAHKAN ke depan pintu setelah mendarat, bukan berjalan ke sana. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: Hemat/ponsel, kinerja, `audit-lantai`/`audit-bangunan`/`lintas.js` (alatnya tidak ada di mesin ini), tuck saat
+  jongkok/tiarap/kendaraan, pertandingan penuh.
+- **Kekurangan**: pose `TUCK` orang ketiga/bot = senapan tegak di depan wajah (mirip hormat senjata; pertimbangkan pose turun,
+  cukup ubah konstanta); tuck penuh orang pertama: laras melintas dekat bidikan tengah; menutup pintu kamar mandi dari luar ditolak
+  bila berdiri di busur ayun dekat engsel; daun terbuka tanpa collider (2 pintu di rumah #463 menimpa benda padat); bot tidak
+  berjalan ke pintu untuk menutup; sisa 5–7 buka-ulang cepat per 5 menit.
+
+## 39. Senjata M2 (24 Nov, dibangun ulang dari main) — SUDAH di main, `?v=202611242041`; BELUM lewat gerbang visual Steven
+
+- **Tampilan bidik**: lensa diskalakan saat ADS menjadi cakram pandang (`viewScale` di `weapons.js`; `fill`/`relief` per optik di
+  `weapons.json`: s2 0,68/0,06, s4 0,94/0,06, s8 0,96/0,068) → donat hitam 2× hilang. Shader lensa melukis bibir eyecup sendiri,
+  varian `LENS_DEPTH` (mesh `optic_eye_depth`) supaya kabut/rays post tidak bocor; rumah optik disembunyikan saat `ads > 0,85` pada
+  optik pembesar. Retikel 2×/4× diskalakan `LENS_RS` (2,6/2,4) — **bukan mil sejati lagi**. `postfx.js`: tepi `uScope` 0,972–1,0.
+- **Tiga perintis** (Garuda, P9, Rajawali) dibangun ulang di `tools/blender/weapons.py` (potongan boolean nyata; `gunkit.cut` kini
+  satu modifier per pemotong, berurutan). Tris LOD0: pistol 7.174, ar 31.972, sniper 24.626; GLB 1,98 MB (Draco). P9 mengekspor
+  node `pistol_slide` (pemisahan runtime lama tetap sebagai fallback) → **GLB dan JS harus selalu dirilis bersama**. Shader VM:
+  kind 3 stipple, kind 7 rusuk karet, kotoran dari bake `vwx`; kunci cache `vm6`. Delapan senjata lain: geometri tetap, hanya
+  di-bake ulang (tampilan sedikit berubah).
+- **Diuji** (headless): ADS 2×/4×/8× diam & bergerak; tiga perintis orang pertama (pinggul, inspeksi, ADS, isi ulang, tembak); skin
+  `gun_reog`; setelah digabung dengan Terjun M5 + Bangunan M5: pertandingan cabut/tembak/bidik/isi ulang/kill ×3 dengan efek Merak,
+  0 galat konsol. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: waktu GPU/FPS nyata, 21 skin lain, orang ketiga/loot/lobi/ikon HUD dengan GLB baru, fallback bila GLB gagal,
+  ponsel.
+- **Kekurangan (untuk gerbang visual)**: ADS besi Rajawali — blok popor/receiver menutup tengah-bawah layar; grip & pelindung picu
+  P9 masih kasar; popor Garuda pelat sederhana; bayangan eye-box 4× saat bergerak mungkin terlalu kuat; retikel 2× pucat di latar
+  terang; retikel 8× tidak diperbesar. M3 (delapan senjata sisanya), M4 (LOD1/model dunia), M5, `setGrip`: belum dimulai.
+
+## 40. Tata letak M2 (24 Nov, alat dibangun ulang dari rancangan) — SUDAH di main, `?v=202611242043`; M3 tembok keliling masih DRAF tidak aktif
+
+- **Alat**: `tools/tidy_layout.mjs` + `tools/tidy/{geom,layout,derive,walls}.mjs` (node tanpa dependensi). Masukan =
+  `data/build/alsut-*.raw.json` (salinan data SEBELUM dirapikan). Bangun ulang M2 (hasil identik byte dengan `web/data`):
+  `node tools/tidy_layout.mjs data/build/alsut-map.raw.json web/data/alsut-map.json --props data/build/alsut-props.raw.json web/data/alsut-props.json --context data/build/alsut-context.raw.json web/data/alsut-context.json`
+- **T1 jalan**: 239 jalan disempitkan ke lorong antar-fasad; `roads.s` = trotoar per jalan (dipakai `world.js`); 16 jalan servis
+  dipotong (1.824 → 1.825 jalan). **T2 gedung**: 788 pelanggar → 74 digeser (flag 32), 708 dipangkas (flag 16), 6 dibuang (flag 8,
+  cincin kosong, indeks tetap: #28, #3028, #3797, #3804, #3806, #5657).
+- **Audit** (sebelum → sesudah): gedung di aspal non-servis 701 → 0; pintu depan di aspal 663 → 0; gedung context di air 3 → 0;
+  5.014 gedung tak berflag identik dengan raw; geser terjauh 3,61 m. `planHomes`: tidak ada rumah kehilangan rencana/pintu; rumah
+  2 lantai 2.264 → 2.262; pintu tertutup tetangga 119 → 119. Audit bangunan DIULANG setelah digabung dengan Bangunan M5: tanpa
+  rencana 0, lantai atas tanpa tangga 0, gedung berflag yang kehilangan rencana/pintu 0.
+- **Diuji**: uji asap setelah digabung dengan Skin/Terjun/Bangunan/Senjata (muat → pertandingan → terjun → payung → mendarat →
+  berjalan, 0 galat konsol, `envProps.stats.dropped` 6); halaman twin memuat. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: tampilan 3D deret rumah terpangkas dari dekat (baru denah 2D), kinerja, bot & kendaraan di jalan yang
+  disempitkan, pertandingan penuh.
+- **Kekurangan**: ekstrak OSM tidak ada di mesin ini → props/context dirapikan lewat pasca-proses (`derive.mjs`),
+  `alsut-grass.json` BELUM dibangun ulang (topeng ilalang masih tapak lama), gedung context belum dipangkas/jalannya belum
+  disempitkan, `build_props.py` belum punya penjaga cincin kosong.
+- **M3 (tembok keliling) — DRAF, tidak aktif**: `tools/tidy/walls.mjs`, `web/map/walls.js`, dan cabang gerbang/tembok di
+  `envprops.js` sudah ada tetapi data tembok TIDAK ditulis ke `web/data` karena audit belum lolos: 11 kompleks (sasaran 20),
+  20,4 km, 82 gerbang jalan + 19 servis + 123 pintu pejalan; A8 43 bocor dari 78.588 uji, A9 89 titik, A11 2, A12 5, A13 7,
+  A14 1, ±90 m tembok di aspal, 14 titik di dalam gedung. Lanjutkan dengan `--stages roads,buildings,walls` ke folder keluaran
+  sampai audit tembok bersih, baru K1 di `bots.js buildGraph`, uji browser, lalu M4 (tanam ulang pohon) dan M5.
+- Alat audit/uji ada di luar repo (`_sr_out/tataletak/audit/` di mesin Jason) dan bisa hilang; bangun ulang dari rancangan bila perlu.

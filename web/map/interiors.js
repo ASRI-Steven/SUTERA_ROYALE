@@ -444,7 +444,7 @@ function planBath(H, types) {
         if (H.up) { const S = H.up.stair, pts = [S.ap, S.land]; for (let s = 0; s <= S.len; s += 0.55) pts.push([S.ax + S.ux * s, S.ay + S.uy * s]); if (pts.some((q) => pip(q[0], q[1], big))) continue; } // jangan menimpa tangga
         const g0 = Math.max(0.75, wa - 1.0), g1 = Math.min(wa - 0.05, g0 + 0.9);
         const pa = { a: Q(T + wa, T), b: Q(T + wa, T + wb + 0.06), len: wb + 0.06, g0: 0, g1: 0 }; // dinding sejajar b (penuh)
-        const pb = { a: Q(T, T + wb), b: Q(T + wa + 0.06, T + wb), len: wa + 0.06, g0, g1 };   // dinding sejajar a, berpintu
+        const pb = { a: Q(T, T + wb), b: Q(T + wa + 0.06, T + wb), len: wa + 0.06, g0, g1, bd: cen }; // dinding sejajar a, berpintu (bd = titik di dalam kamar mandi → daun pintu, collide.js addBathDoor)
         H.parts.push(pa, pb);
         const rotA = Math.atan2(a[1], a[0]), rotB = Math.atan2(b[1], b[0]), fix = [];
         const at = (s, t, kind, rot, w, d, h) => { const p = Q(s, t); fix.push({ kind, x: p[0], y: p[1], rot, w, d, h }); };
@@ -1695,7 +1695,7 @@ export function createInteriors(scene, W, homes, col = null, furn = null) {
       const hx = D.ax + D.ux * s + D.nx * D.T / 2, hy = D.ay + D.uy * s + D.ny * D.T / 2;
       const vx = Math.cos(a) * D.ux * du + Math.sin(a) * D.nx, vy = Math.cos(a) * D.uy * du + Math.sin(a) * D.ny;
       q4.setFromAxisAngle(Y4, Math.atan2(vy, vx));
-      M.setMatrixAt(D.slots[l], m4.compose(p4.set(hx, D.z + 0.02, -hy), q4, s4.set(lw / leaves.LW, 1, 1)));
+      M.setMatrixAt(D.slots[l], m4.compose(p4.set(hx, D.z + 0.02, -hy), q4, s4.set(lw / leaves.LW, D.sy || 1, 1)));
     }
     M.instanceMatrix.needsUpdate = true;
   }
@@ -1713,7 +1713,8 @@ export function createInteriors(scene, W, homes, col = null, furn = null) {
           const k = L.free.pop();
           D.slots.push(k); L.used++;
           if (k >= L.mesh.count) L.mesh.count = k + 1;
-          L.mesh.setColorAt(k, c4.setRGB(0.36, 0.23, 0.14).multiplyScalar(0.85 + 0.3 * wc));
+          if (D.bath) L.mesh.setColorAt(k, c4.setRGB(0.62, 0.66, 0.66)); // pintu kamar mandi: daun PVC abu muda
+          else L.mesh.setColorAt(k, c4.setRGB(0.36, 0.23, 0.14).multiplyScalar(0.85 + 0.3 * wc));
         }
         L.mesh.instanceColor.needsUpdate = true;
         D.t = D.open ? 1 : 0;

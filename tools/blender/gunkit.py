@@ -435,7 +435,8 @@ def ring_mount(tube_r, h, w=0.014, base_w=0.026, screws=True, n=32, wall=0.0032)
 # ---------------------------------------------------------------- boolean
 def cut(bm, cutters, solver='EXACT'):
     """Kurangi bm dengan daftar bmesh pemotong (boolean DIFFERENCE, EXACT). Mengembalikan bmesh baru; pemotong dibebaskan.
-    Material index dari face bm dipertahankan; face hasil potongan memakai material face terdekat (urusan Blender)."""
+    Tiap pemotong = satu modifier berurutan (pemotong yang saling tumpang-tindih dalam satu mesh membuat EXACT gagal dan
+    mengembalikan benda kosong). Material index face bm dipertahankan."""
     import bpy
     if not cutters:
         return bm
@@ -444,25 +445,27 @@ def cut(bm, cutters, solver='EXACT'):
     bm.free()
     ob = bpy.data.objects.new('_cut_src', me)
     bpy.context.scene.collection.objects.link(ob)
-    cme = bpy.data.meshes.new('_cut_tool')
-    cb = bmesh.new()
+    tools = []
     for c in cutters:
-        merge_into(cb, c)
-    cb.to_mesh(cme)
-    cb.free()
-    co = bpy.data.objects.new('_cut_tool', cme)
-    bpy.context.scene.collection.objects.link(co)
-    md = ob.modifiers.new('cut', 'BOOLEAN')
-    md.operation = 'DIFFERENCE'
-    md.solver = solver
-    md.object = co
+        cme = bpy.data.meshes.new('_cut_tool')
+        bmesh.ops.recalc_face_normals(c, faces=c.faces)
+        c.to_mesh(cme)
+        c.free()
+        co = bpy.data.objects.new('_cut_tool', cme)
+        bpy.context.scene.collection.objects.link(co)
+        md = ob.modifiers.new('cut', 'BOOLEAN')
+        md.operation = 'DIFFERENCE'
+        md.solver = solver
+        md.object = co
+        tools.append((co, cme))
     dg = bpy.context.evaluated_depsgraph_get()
     out = bmesh.new()
     out.from_object(ob, dg)
     bpy.data.objects.remove(ob)
-    bpy.data.objects.remove(co)
     bpy.data.meshes.remove(me)
-    bpy.data.meshes.remove(cme)
+    for co, cme in tools:
+        bpy.data.objects.remove(co)
+        bpy.data.meshes.remove(cme)
     return out
 
 

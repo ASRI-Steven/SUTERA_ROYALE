@@ -185,6 +185,7 @@ const VM_FS_PARS = `varying vec2 vWx;
 varying vec3 vObjP;
 varying vec3 vObjN;
 uniform vec4 uVm; // x = aus tepi, y = tinggi tonjolan (m), z = frekuensi pola kain
+// vWx: x = oklusi ambien hasil bake (1 − x = cekungan → kotoran), y = aus kontinu 0..1 (bidang bevel × keterbukaan × titik panas)
 float vmHash(vec3 p) { p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3)); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float vmNoise(vec3 x) {
   vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -197,7 +198,8 @@ float vmHeight(vec3 p) { // relief mikro per jenis bahan (0..1)
 #elif VM_KIND == 2
   return vmNoise(p * 700.0); // polimer cetak
 #elif VM_KIND == 3
-  return 0.6 * vmNoise(p * 460.0) + 0.4 * vmNoise(p * 1000.0); // karet / gagang berbintik
+  { vec3 q = p * 520.0; float d = min(length(fract(q) - 0.5), length(fract(q + 0.5) - 0.5)); // gagang: bintik stipple (kisi ±1,9 mm)
+    return 0.25 * vmNoise(p * 460.0) + 0.75 * max(0.0, 1.0 - 2.4 * d); }
 #elif VM_KIND == 4
   vec3 q = p * uVm.z; // kain: anyaman + kusut halus
   return 0.5 + 0.22 * (sin(q.x + q.y) * sin(q.z - q.y * 0.5) + sin(q.x * 0.5 - q.z) * sin(q.y + q.x * 0.3)) + 0.25 * (vmNoise(p * 110.0) - 0.5);
@@ -205,13 +207,16 @@ float vmHeight(vec3 p) { // relief mikro per jenis bahan (0..1)
   return vmNoise(p * vec3(90.0, 90.0, 7.0)) * 0.5 + 0.25 + 0.25 * sin(p.y * 300.0 + p.x * 120.0); // kayu: serat memanjang
 #elif VM_KIND == 6
   return vmNoise(p * 420.0) * 0.6 + vmNoise(p * 1100.0) * 0.4; // kulit
+#elif VM_KIND == 7
+  { float u = abs(vObjN.z) > 0.6 ? p.y : p.z; // karet (bantalan popor, eyecup): rusuk ±4,5 mm melintang arah tekan
+    return 0.5 + 0.42 * sin(u * 1400.0) + 0.08 * vmNoise(p * 900.0); }
 #else
   return 0.5;
 #endif
 }
 `;
 const VM_FS_COLOR = `
-  float vmN = vmNoise(vObjP * 140.0), vmWear = 0.0;
+  float vmN = vmNoise(vObjP * 140.0), vmWear = 0.0, vmDirt = 0.0;
 #if VM_KIND == 1
   vmWear = uVm.x * smoothstep(0.35, 0.85, vWx.y * (0.3 + 1.2 * vmN));
 #ifdef SF_GUN
@@ -219,7 +224,7 @@ const VM_FS_COLOR = `
 #else
   diffuseColor.rgb = mix(diffuseColor.rgb * (0.88 + 0.24 * vmNoise(vObjP * 55.0)), vec3(0.6, 0.61, 0.64), vmWear); // tepi aus: logam telanjang
 #endif
-#elif VM_KIND == 2 || VM_KIND == 3
+#elif VM_KIND == 2 || VM_KIND == 3 || VM_KIND == 7
   vmWear = uVm.x * smoothstep(0.45, 0.9, vWx.y * (0.3 + 1.1 * vmN));
   diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 2.0 + 0.015, vmWear * 0.6);
 #elif VM_KIND == 4
@@ -230,13 +235,18 @@ const VM_FS_COLOR = `
 #elif VM_KIND == 6
   diffuseColor.rgb *= 0.9 + 0.2 * vmNoise(vObjP * 300.0);
 #endif
+#if VM_KIND == 1 || VM_KIND == 2 || VM_KIND == 3 || VM_KIND == 5 || VM_KIND == 7
+  vmDirt = smoothstep(0.3, 0.85, 1.0 - vWx.x) * (0.55 + 0.45 * vmN); // kotoran mengendap di cekungan: lebih gelap & lebih kasar
+  diffuseColor.rgb *= 1.0 - 0.38 * vmDirt;
+#endif
 `;
 const VM_FS_ROUGH = `
 #if VM_KIND == 1 && !defined(SF_GUN)
   roughnessFactor = mix(roughnessFactor * (0.78 + 0.44 * vmNoise(vObjP * 260.0)), 0.22, vmWear);
-#elif VM_KIND == 2 || VM_KIND == 3
+#elif VM_KIND == 2 || VM_KIND == 3 || VM_KIND == 7
   roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.6, vmWear);
 #endif
+  roughnessFactor = min(1.0, roughnessFactor + 0.3 * vmDirt);
 `;
 const VM_FS_BUMP = `
 #if VM_KIND > 0
@@ -292,7 +302,7 @@ const VM_SKIN_COAT = '\n#if defined(SF_GUN) && defined(USE_CLEARCOAT)\n  materia
 // sapuan cahaya (z ruang senjata, m; −99 = tidak ada). Model dunia memakai SF_G0 (selalu diam).
 const VM_G = { value: new THREE.Vector4(0, 0, 0, -99) }, SF_G0 = { value: new THREE.Vector4(0, 0, 0, -99) };
 export { SF_G0 };
-// kind: 1 logam · 2 polimer · 3 karet · 4 kain · 5 kayu · 6 kulit; wear = aus tepi; bump = tinggi relief (m); env = pantulan
+// kind: 1 logam · 2 polimer · 3 gagang berbintik · 4 kain · 5 kayu · 6 kulit · 7 karet berusuk; wear = aus tepi; bump = tinggi relief (m); env = pantulan
 const VM_LOOK = {
   // logam: albedo = F0 (baja ±0,25–0,4); warna GLB terlalu gelap untuk logam murni → warna sendiri
   // 'metal' = baja telanjang (laras, bolt); 'dark' = lapisan hitam (anodis/fosfat): setengah logam supaya tetap merespons
@@ -305,14 +315,14 @@ const VM_LOOK = {
   olive: { metalness: 0, roughness: 0.66, kind: 2, wear: 0.3, bump: 0.00007, env: 0.45 },
   yellow: { metalness: 0, roughness: 0.5, kind: 2, wear: 0.3, bump: 0.00004, env: 0.5 },
   red: { metalness: 0, roughness: 0.5, kind: 2, wear: 0.2, bump: 0.00004, env: 0.5 },
-  grip: { metalness: 0, roughness: 0.84, kind: 3, wear: 0.15, bump: 0.00016, env: 0.3 },
+  grip: { metalness: 0, roughness: 0.84, kind: 3, wear: 0.15, bump: 0.00026, env: 0.3 },
   wood: { metalness: 0, roughness: 0.42, kind: 5, wear: 0, bump: 0.00005, env: 0.55 },
   glove: { metalness: 0, roughness: 0.82, kind: 4, wear: 0, bump: 0.00022, env: 0.25, weave: 1500 },
   sleeve: { metalness: 0, roughness: 0.9, kind: 4, wear: 0, bump: 0.0003, env: 0.2, weave: 1250 },
   cuff: { metalness: 0.25, roughness: 0.55, kind: 4, wear: 0, bump: 0.00022, env: 0.6, weave: 1900 },
   skin: { metalness: 0, roughness: 0.56, kind: 6, wear: 0, bump: 0.00005, env: 0.35 },
   steel: { color: '#a3a8b0', metalness: 0.95, roughness: 0.26, kind: 1, wear: 0.4, bump: 0.00002, env: 1.1 }, // v6: baut, mahkota laras
-  rubber: { color: '#1d1e21', metalness: 0, roughness: 0.92, kind: 3, wear: 0.05, bump: 0.00002, env: 0.12 }, // v6: eyecup, bantalan
+  rubber: { color: '#1d1e21', metalness: 0, roughness: 0.92, kind: 7, wear: 0.05, bump: 0.00022, env: 0.12 }, // v6: eyecup, bantalan
 };
 const VM_MATS = new Map();
 function vmPatch(m, L) {
@@ -339,7 +349,7 @@ function vmPatch(m, L) {
       .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>' + VM_FS_LIGHT)
       .replace('#include <opaque_fragment>', VM_FS_GLASS + '#include <opaque_fragment>');
   };
-  m.customProgramCacheKey = () => 'vm5';
+  m.customProgramCacheKey = () => 'vm6';
   return m;
 }
 // material orang pertama untuk satu nama material GLB (dipakai bersama semua senjata & tangan)
@@ -379,7 +389,7 @@ void main() {
   vLoc = position.xy;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
-const LENS_FS = `uniform vec2 uRes; uniform float uFovT, uAds, uK, uMag, uSun, uLensR; uniform int uRet; uniform vec3 uIll; uniform vec2 uWin;
+const LENS_FS = `uniform vec2 uRes; uniform float uFovT, uAds, uK, uMag, uSun, uLensR, uRs; uniform int uRet; uniform vec3 uIll; uniform vec2 uWin;
 varying vec2 vCen; varying float vRad; varying vec2 vLoc;
 float px; // 1 piksel dalam mrad
 float seg(vec2 p, vec2 a, vec2 b, float w) { // garis a→b selebar w (mrad), AA 1 piksel
@@ -394,8 +404,10 @@ void main() {
   vec2 sc = uRes * 0.5;
   float ppm = (uRes.y * 0.5) / uFovT * 0.001; // piksel per mrad (kamera dunia)
   px = 1.0 / ppm;
-  vec2 p = (gl_FragCoord.xy - sc) * px; // mrad, +y atas
+  px /= uRs; // retikel 2×/4× diperbesar uRs kali (terbaca di layar); 1×/8× tetap mil sungguhan
+  vec2 p = (gl_FragCoord.xy - sc) * px; // satuan retikel (mrad × 1/uRs), +y atas
   float blk = 0.0, ill = 0.0; // retikel hitam / berpendar
+#ifndef LENS_DEPTH
   if (uRet == 0) { // titik merah 1×: titik + halo
     ill = dotm(p, vec2(0.0), 1.1);
     ill = max(ill, 0.35 * exp(-length(p) / max(2.6 * px, 0.9)));
@@ -407,8 +419,8 @@ void main() {
     ill = max(ill, dotm(p, vec2(0.0, 0.0), 0.45));
   } else if (uRet == 2) { // 2×: tapal kuda + titik + 3 tanda jatuh peluru
     float a = atan(p.x, -p.y);
-    ill = ring(p, 13.0, 1.0) * step(0.62, abs(a));
-    ill = max(ill, dotm(p, vec2(0.0), 0.8));
+    ill = ring(p, 13.0, 1.2) * smoothstep(0.58, 0.66, abs(a));
+    ill = max(ill, dotm(p, vec2(0.0), 0.9));
     for (int i = 1; i <= 3; i++) { float y = -3.4 * float(i), w = 2.4 - 0.5 * float(i); ill = max(ill, seg(p, vec2(-w, y), vec2(w, y), 0.55)); }
   } else if (uRet == 3) { // 4×: chevron berpendar + tangga mil + kurung jarak (hitam)
     ill = max(seg(p, vec2(0.0), vec2(-2.6, -3.1), 0.6), seg(p, vec2(0.0), vec2(2.6, -3.1), 0.6));
@@ -431,18 +443,29 @@ void main() {
       blk = max(blk, dotm(p, vec2(float(k) * 1.0, -2.0 * float(r)), 0.12)); }
     ill = dotm(p, vec2(0.0), 0.16);
   }
-  // lensa: koordinat relatif lensa & eye-box
+#endif
+  // lensa: koordinat relatif cakram & eye-box. Optik berperbesaran: cakram = lensa jernih (r < RIN) + bibir eyecup karet
+  // yang dilukis di sini (RIN..1), supaya tepinya halus dan tidak hitam rata; rumah okuler asli tertutup stensil cakram.
   vec2 q = (gl_FragCoord.xy - vCen) / max(vRad, 1.0), e = (vCen - sc) / max(vRad, 1.0);
-  float shade = 0.0;
+  float r = length(q), shade = 0.0, rim = 0.0;
+  const float RIN = 0.84;
   if (uMag > 0.5) {
-    float clearR = mix(0.35, 1.0, uAds * uAds);
-    shade = smoothstep(clearR * 0.78, clearR, length(q + e * uK)); // bayangan eye-box (sabit di sisi berlawanan)
-    shade = max(shade, smoothstep(0.9, 1.0, length(q)));           // cincin gelap di tepi
+    float clearR = mix(0.35, 1.0, uAds * uAds) * RIN;
+    shade = smoothstep(clearR * 0.80, clearR * 1.02, length(q + e * uK)); // bayangan eye-box (sabit di sisi berlawanan)
+    shade = max(shade, smoothstep(RIN * 0.955, RIN, r));                   // tepi lensa menghitam ke bibir eyecup
+    shade = max(shade, 0.34 * smoothstep(RIN * 0.55, RIN * 0.98, r));      // vinyet lembut menuju tepi
+    rim = smoothstep(RIN - 0.004, RIN + 0.004, r);
   }
-  float r = length(q);
+#ifdef LENS_DEPTH
+  // pass kedalaman: bagian buram (bayangan eye-box, bibir eyecup) dicatat sebagai senjata orang pertama, supaya kabut,
+  // sinar matahari, dan AO di post-processing tidak menembusnya; daerah jernih tetap berkedalaman dunia
+  if (max(shade, rim) < 0.75) discard;
+  gl_FragColor = vec4(0.0);
+#else
   vec3 col = vec3(0.012, 0.016, 0.02); float a = uMag > 0.5 ? 0.05 : 0.03;          // lapisan anti-pantul tipis
-  float fr = smoothstep(0.86, 0.9, r) * (1.0 - smoothstep(0.9, 0.95, r)) * uMag;   // pinggiran kromatik
-  col = mix(col, r < 0.9 ? vec3(0.5, 0.15, 0.55) : vec3(0.15, 0.5, 0.25), fr); a = max(a, fr * 0.25);
+  float rl = r / RIN;
+  float fr = smoothstep(0.90, 0.94, rl) * (1.0 - smoothstep(0.94, 0.975, rl)) * uMag * 0.5; // pinggiran kromatik tipis
+  col = mix(col, rl < 0.94 ? vec3(0.5, 0.15, 0.55) : vec3(0.15, 0.5, 0.25), fr); a = max(a, fr * 0.25);
   float dust = step(0.9985, hash(floor(vLoc * 9000.0))) * 0.25;                       // debu samar
   a = max(a, dust * (1.0 - r));
   float gl = uSun * (1.0 - r * 0.6);                                                  // kabut silau (matahari di depan)
@@ -451,16 +474,32 @@ void main() {
   col = mix(col, vec3(0.0), blk * sr); a = max(a, blk * sr * 0.95);
   col = mix(col, uIll, ill * sr); a = max(a, ill * sr);
   col = mix(col, vec3(0.0), shade); a = max(a, shade);
+  if (rim > 0.0) { // bibir eyecup: penampang membulat, terang langit dari atas, pantulan tanah samar dari bawah, alur karet
+    float t = clamp((r - RIN) / (1.0 - RIN), 0.0, 1.0), up = q.y / max(r, 1e-4);
+    float prof = sin(t * 3.14159);                                   // 0 di kedua tepi, 1 di punggung bibir
+    float nz = prof, nr = (t - 0.5) * 2.0;                           // normal kasar: ke mata di punggung, radial di tepi
+    float sky = clamp(0.5 + 0.5 * up * (0.35 + 0.65 * nr), 0.0, 1.0);
+    vec3 rc = vec3(0.011, 0.011, 0.011) + vec3(0.036, 0.035, 0.033) * sky * (0.35 + 0.65 * nz);
+    rc += vec3(0.060, 0.058, 0.054) * pow(clamp(up, 0.0, 1.0), 3.0) * smoothstep(0.50, 0.66, t) * (1.0 - smoothstep(0.70, 0.86, t)); // kilau tipis di punggung atas
+    rc += vec3(0.012, 0.010, 0.007) * clamp(-up, 0.0, 1.0) * nz;     // pantulan tanah
+    rc *= 1.0 - 0.45 * (smoothstep(0.28, 0.31, t) * (1.0 - smoothstep(0.33, 0.36, t))); // alur
+    rc *= 0.55 + 0.45 * smoothstep(0.0, 0.22, t);                    // gelap di tepi dalam (bayangan ke lensa)
+    rc *= 1.0 - 0.6 * smoothstep(0.86, 1.0, t);                      // tepi luar membulat menjauh
+    float ao = 1.0 - smoothstep(1.0 - 1.5 / max(vRad, 1.0), 1.0, r); // tepi luar: AA ±1,5 piksel
+    col = mix(col, rc, rim); a = mix(a, ao, rim);
+  }
   gl_FragColor = vec4(col, a);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
+#endif
 }`;
 const LENS_RET = { rds: 0, holo: 1, s2: 2, s4: 3, s8: 4 };
+const LENS_RS = { s2: 2.6, s4: 2.4 }; // skala retikel di layar (2×/4×: retikel mil asli hanya ±5–14 px di 720p)
 const LENS_ILL = { rds: [6, 0.25, 0.12], holo: [5, 0.5, 0.15], s2: [3.2, 0.25, 0.12], s4: [3.2, 0.3, 0.1], s8: [3.2, 0.2, 0.1] };
 // material lensa okuler satu optik (dibuat per pemasangan; uniform diisi update())
 function lensMaterial(id, lensR, win) {
   const mag = id === 's2' || id === 's4' || id === 's8';
-  const U = { uRes: { value: new THREE.Vector2(1280, 720) }, uFovT: { value: 0.5 }, uAds: { value: 0 }, uK: { value: id === 's2' ? 1.2 : 2.2 }, uMag: { value: mag ? 1 : 0 },
+  const U = { uRes: { value: new THREE.Vector2(1280, 720) }, uFovT: { value: 0.5 }, uAds: { value: 0 }, uK: { value: id === 's2' ? 1.2 : 2.2 }, uMag: { value: mag ? 1 : 0 }, uRs: { value: LENS_RS[id] || 1 },
     uSun: { value: 0 }, uLensR: { value: lensR }, uRet: { value: LENS_RET[id] | 0 }, uIll: { value: new THREE.Vector3(...(LENS_ILL[id] || LENS_ILL.rds)) }, uWin: { value: new THREE.Vector2(...(win || [0, 0])) } };
   const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: LENS_VS, fragmentShader: LENS_FS, transparent: !mag, depthWrite: false });
   if (mag) { // digambar paling awal (bukan antrian transparan) dengan campuran alfa manual, menulis stensil 1
@@ -468,10 +507,11 @@ function lensMaterial(id, lensR, win) {
     m.stencilWrite = true; m.stencilRef = 1; m.stencilFunc = THREE.AlwaysStencilFunc; m.stencilZPass = THREE.ReplaceStencilOp;
   }
   m.userData.lens = { id, mag };
+  if (mag) m.userData.depth = new THREE.ShaderMaterial({ uniforms: U, defines: { LENS_DEPTH: '' }, vertexShader: LENS_VS, fragmentShader: LENS_FS, colorWrite: false }); // lihat LENS_DEPTH
   return m;
 }
 const maskMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.75, depthTest: false, depthWrite: false }), _rs = new THREE.Vector2()
-const backMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+const backMat = new THREE.MeshBasicMaterial({ color: 0x000000, stencilWrite: true, stencilRef: 1, stencilFunc: THREE.NotEqualStencilFunc }); // tidak digambar di dalam cakram pandang
 // geometri ringan optik (LOD1, warna verteks) untuk loot x_s2/4/8; null bila tidak ada di GLB
 export function opticGeometry(id) {
   const n = glbNode('opt_' + id + '_lod1');
@@ -499,7 +539,7 @@ function cloneOptic(kind, id, lensMat) {
   const rs = glbNode('opt_' + id + '_ring');
   if (rs) { ring = dressVm(rs.clone(true), true); ring.userData.q0 = ring.quaternion.clone(); root.add(ring); }
   const lensR = meta ? meta.lensR : 0.014, win = meta && meta.win;
-  const g = win ? new THREE.PlaneGeometry(win[0], win[1]) : new THREE.CircleGeometry(lensR, 40);
+  const g = win ? new THREE.PlaneGeometry(win[0], win[1]) : new THREE.CircleGeometry(lensR, 96);
   const lensMesh = new THREE.Mesh(g, lensMat || vmMaterial('lens'));
   lensMesh.position.copy(eye); lensMesh.frustumCulled = false; lensMesh.name = 'optic_eye';
   root.add(lensMesh);
@@ -761,7 +801,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const puffs = pointPool(camera, 24, false, 0.0, 70, 30);
   let postOn = true, sunGlare = 0;
   const scopeMask = new THREE.Vector4(), _eye = new THREE.Vector3();
-  const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0, fistK: 0, guard: 0, guardT: 0, punch: null, punchSide: -1 };
+  const st = { kind: null, t: 0, ads: 0, kick: 0, kickR: 0, swap: 0, sprint: 0, swayX: 0, swayY: 0, flashT: 0, land: 0, wasGround: true, prev: null, prevT: 0, act: null, inspect: 0, fistK: 0, guard: 0, guardT: 0, punch: null, punchSide: -1, tuck: 0 };
   const v = new THREE.Vector3();
   // ---------- efek skin senjata (setSkinFx): warna kilatan, nyala moncong beranimasi, pendar isi ulang/periksa/cabut, panas ----------
   // Hanya MEMBACA keadaan animasi (st.flashT, st.act, st.inspect, st.swap, st.ads); dipanggil sekali per frame dari update().
@@ -852,6 +892,10 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       if (hn === 'fp_hand_l') { G.handL = c; G.handL0 = c.position.clone(); G.handRest = c.position.clone(); }
       if (hn === 'fp_hand_r') { G.handR = c; G.handR0 = c.position.clone(); }
     }
+    if (kind === 'pistol') { // v6 M2: slide = node tersendiri (asal di asal senjata); tanpa node → dipisah saat runtime di rigGun
+      const sn = glbNode('pistol_slide');
+      if (sn) { G.slide = sn.clone(true); G.g.add(G.slide); }
+    }
     for (const [suf, key] of [['_bolt', 'bolt'], ['_cyl', 'cyl'], ['_brk', 'brk']]) { // bolt runduk, silinder revolver, laras patah-buka
       const n = glbNode(kind + suf);
       if (!n) continue;
@@ -862,7 +906,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     // material PBR orang pertama; simpul statis dibekukan — yang tetap hidup: grup senjata, magasin, pompa, bolt, silinder,
     // laras patah, kedua tangan, titik moncong
     dressVm(model, false);
-    for (const part of [G.mag, G.pump, G.bolt, G.cyl, G.brk, G.handL, G.handR]) if (part && part.isObject3D) dressVm(part, true);
+    for (const part of [G.mag, G.pump, G.bolt, G.cyl, G.brk, G.slide, G.handL, G.handR]) if (part && part.isObject3D) dressVm(part, true);
     // v6: pisir lipat (tegak tanpa optik, rebah dengan optik) & optik yang bisa terpasang di senjata ini (dibuat sekali,
     // tersembunyi; ikut skin lewat gunRoots & ikut compile)
     for (const [suf, key] of [['_buis_up', 'buisUp'], ['_buis_dn', 'buisDn']]) { const n = glbNode(kind + suf); if (n) { G[key] = dressVm(n.clone(true), false); G.g.add(G[key]); } }
@@ -872,15 +916,19 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       const meta = opticMeta(id);
       const O = cloneOptic(kind, id, lensMaterial(id, meta ? meta.lensR : 0.014, meta && meta.win));
       if (!O) continue;
-      if (O.lensMesh.material.userData.lens.mag) O.lensMesh.renderOrder = -50; // stensil ditulis sebelum bahan lain
+      if (O.lensMesh.material.userData.lens.mag) {
+        O.lensMesh.renderOrder = -50; // stensil ditulis sebelum bahan lain
+        const dm = new THREE.Mesh(O.lensMesh.geometry, O.lensMesh.material.userData.depth); // anak lensa: ikut skala cakram pandang
+        dm.renderOrder = -49; dm.frustumCulled = false; dm.name = 'optic_eye_depth'; O.lensMesh.add(dm);
+      }
       O.lensMesh.onBeforeRender = lensRes;
       O.root.visible = false;
-      O.mask = new THREE.Mesh(new THREE.RingGeometry(O.meta ? O.meta.lensR : 0.015, 0.6, 48), maskMat); // Hemat (tanpa post): cincin gelap
+      O.mask = new THREE.Mesh(new THREE.RingGeometry((O.meta ? O.meta.lensR : 0.015) * 0.985, 0.6, 96), maskMat); // Hemat (tanpa post): cincin gelap
       O.mask.position.copy(O.lensMesh.position); O.mask.renderOrder = 40; O.mask.visible = false; O.mask.frustumCulled = false;
       O.root.add(O.mask);
       if (O.lensMesh.material.userData.lens.mag) { // latar hitam di belakang eyecup (celah tipis jahitan bubut tidak memperlihatkan dunia)
-        const lr = O.meta ? O.meta.lensR : 0.015, back = new THREE.Mesh(new THREE.RingGeometry(lr * 0.98, lr * 2.1, 40), backMat);
-        back.position.copy(O.lensMesh.position); back.position.z -= 0.0004; back.frustumCulled = false; O.root.add(back);
+        const lr = O.meta ? O.meta.lensR : 0.015, back = new THREE.Mesh(new THREE.RingGeometry(lr * 0.98, lr * 1.3, 40), backMat);
+        back.position.copy(O.lensMesh.position); back.position.z -= 0.0004; back.frustumCulled = false; O.root.add(back); O.back = back;
       }
       G.g.add(O.root);
       G.optics[id] = O;
@@ -1234,8 +1282,18 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const TAN27 = Math.tan(27 * D2R), IRON_D = 0.46; // pisir besi: jarak mata seperti sebelum v6
   function reliefOf(O) { // jarak mata ke lensa okuler: lensa berperbesaran mengisi `fill` setengah tinggi layar view-model (54°)
     const m = O.meta;
-    if (!m || !m.fill) return (m && m.relief) || 0.16;
+    if (m && m.relief) return m.relief;
+    if (!m || !m.fill) return 0.16;
     return Math.max(0.035, Math.min(0.11, m.lensR / (m.fill * TAN27)));
+  }
+  // Cakram pandang optik berperbesaran: saat membidik, cakram lensa (penulis stensil) dibesarkan sampai mengisi `fill`
+  // setengah tinggi layar pada jarak mata `relief`. Rumah okuler yang jatuh di dalamnya tidak digambar, jadi yang tersisa
+  // hanya bibir eyecup sebagai cincin tipis; di pinggul cakram = lensa okuler sebenarnya (skala 1).
+  function viewScale(O, ads) {
+    const m = O.meta;
+    if (!m || !m.fill || !m.relief) return 1;
+    const k = m.fill * TAN27 * m.relief / m.lensR, a = ads * ads * (3 - 2 * ads);
+    return 1 + (Math.max(1, k) - 1) * a;
   }
   // ---------- Persiapan animasi per senjata (setelah model GLB terpasang) ----------
   // titik kerja tangan kiri (ruang senjata), magasin cadangan yang dijatuhkan, slide pistol (dipisah dari model)
@@ -1268,7 +1326,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       mg, pre: vAdd(mg, -0.005, -0.075, 0.01), po: [R[0] - 0.2, R[1] - 0.6, Math.max(R[2] + 0.4, 0.15)],
       ch: CH[kind] || vAdd(R, 0, 0.06, 0.1), port: kind === 'shotgun' ? [0, 0.03, -0.1] : null,
     };
-    if (kind === 'pistol') { // slide = segitiga logam di atas rangka (y > 0,0618) → bisa mundur saat menembak / terkunci saat kosong
+    if (kind === 'pistol' && !G.slide) { // cadangan (GLB lama): slide = segitiga logam di atas rangka (y > 0,0618) → bisa mundur saat menembak / terkunci saat kosong
       const parts = [];
       G.g.traverse((o) => { if (o.isMesh && o.parent && (o.parent === G.g.children.find((c) => c.name === 'pistol') || o.parent.name === 'pistol' || o.name.startsWith('pistol'))) parts.push(o); });
       const slide = new THREE.Group();
@@ -1944,6 +2002,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       st.t += dt * (1 + o.moving * (o.sprint ? 2.2 : 1.3));
       st.ads += ((o.ads ? 1 : 0) - st.ads) * k(16);
       st.sprint += ((o.sprint ? 1 : 0) - st.sprint) * k(9);
+      st.tuck += ((o.tuck || 0) - st.tuck) * k(11); // menempel dinding: senjata ditarik, moncong naik (player.js)
       st.kick = Math.max(0, st.kick - dt * 9);
       st.swap = Math.max(0, st.swap - dt * 4);
       st.swayX += (Math.max(-1, Math.min(1, -o.mdx * 0.02)) - st.swayX) * k(10);
@@ -2030,13 +2089,13 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         const hip = [0.17, -0.2, -0.52], adsP = [-E.x, -E.y, -(O ? reliefOf(O) : IRON_D) - E.z];
         const sw = st.swap > 0 ? 1 - backOut(1 - st.swap) : 0, low = Math.max(lower, out); // naik: sedikit lewat lalu diam
         const spr = st.sprint * (rA || hA ? 0.35 : 1); // berlari sambil beraksi: pose lari dikurangi
-        const ka = 1 - a * 0.4;
+        const ka = 1 - a * 0.4, tk = st.tuck * (1 - a) * (1 - spr * 0.6);
         pBase.set(
-          hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + spr * 0.04 + low * 0.06,
-          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3],
-          hip[2] + (adsP[2] - hip[2]) * a + spx[0] * ka + low * 0.08,
+          hip[0] + (adsP[0] - hip[0]) * a + bx + st.swayX * 0.02 * (1 - a * 0.7) + spr * 0.04 + low * 0.06 - tk * 0.03,
+          hip[1] + (adsP[1] - hip[1]) * a + by + breathe + st.swayY * 0.015 * (1 - a * 0.7) - spr * 0.05 - sw * 0.28 - low * 0.42 + spx[3] - tk * 0.05,
+          hip[2] + (adsP[2] - hip[2]) * a + spx[0] * ka + low * 0.08 + tk * 0.13,
         );
-        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] - sw * 0.7 - low * 1.1 - spr * 0.25, spr * 0.75 + st.swayX * 0.06 + sw * 0.25, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5));
+        qBase.setFromEuler(eBase.set(spx[1] * (1 - a * 0.5) + spx[4] - sw * 0.7 - low * 1.1 - spr * 0.25 + tk * 0.6, spr * 0.75 + st.swayX * 0.06 + sw * 0.25 + tk * 0.3, spx[2] * 0.6 - spr * 0.3 + sw * 0.35 + low * 0.5 - tk * 0.12));
         mBase.compose(pBase, qBase, ONE);
         if (aPos.x || aPos.y || aPos.z || aRot.x || aRot.y || aRot.z) { mBase.multiply(mAct.compose(aPos, qAct, ONE)); mBase.decompose(G.g.position, G.g.quaternion, _v3); }
         else { G.g.position.copy(pBase); G.g.quaternion.copy(qBase); }
@@ -2064,10 +2123,15 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         if (O) { // lensa: uniform retikel & eye-box, cincin zoom 8×, topeng teropong untuk post-processing
           const U = O.lensMesh.material.uniforms;
           if (U) { U.uAds.value = st.ads; U.uFovT.value = Math.tan((o.fov || 75) * D2R / 2); U.uSun.value = sunGlare; }
+          { const k = viewScale(O, st.ads); if (O.lensMesh.scale.x !== k) { O.lensMesh.scale.setScalar(k); O.mask.scale.setScalar(k); } }
           if (O.ring) { O.ring.quaternion.copy(O.ring.userData.q0); O.ring.rotateZ(((o.zoom || 8) - 4) / 4 * 1.1); }
           const mag = O.lensMesh.material.userData.lens && O.lensMesh.material.userData.lens.mag;
           const kuat = !mag ? 0 : O.id === 's2' ? 0.35 : o.scoped ? 1 : 0;
           O.mask.visible = !postOn && !!o.scoped && kuat > 0.5;
+          { // 4×/8× terbidik penuh: rumah optik asli disembunyikan (bibir eyecup dilukis shader lensa; tepi aslinya mengintip saat berayun)
+            const show = !(kuat > 0.5 && st.ads > 0.85);
+            if (O.body.visible !== show) { O.body.visible = show; if (O.ring) O.ring.visible = show; if (O.back) O.back.visible = show; }
+          }
           if (kuat > 0 && st.ads > 0.02) {
             root.updateMatrixWorld(true);
             v.setFromMatrixPosition(O.lensMesh.matrixWorld).project(camera);

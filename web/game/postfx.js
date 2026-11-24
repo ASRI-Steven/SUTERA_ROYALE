@@ -195,9 +195,9 @@ void main() {
   vec2 uv = vUv + vec2(sin(vUv.y * 34.0 + uTime * 2.1), cos(vUv.x * 27.0 + uTime * 1.7)) * 0.0022 * uUnder; // di bawah air: bergoyang
   vec4 src = texture2D(tColor, uv);
   float d = texture2D(tDepth, uv).x;
-  float sOut = 0.0; // di luar lensa optik berperbesaran: blur cakram 8 tap + digelapkan (dunia ×0,3, senjata ×0,75)
+  float sOut = 0.0; // di luar cakram optik berperbesaran: blur cakram 8 tap + digelapkan (dunia ×0,22, senjata ×0,75)
   if (uScope.w > 0.0) {
-    sOut = smoothstep(1.0, 1.06, length((uv - uScope.xy) * vec2(uAspect, 1.0)) / uScope.z) * uScope.w;
+    sOut = smoothstep(0.972, 1.0, length((uv - uScope.xy) * vec2(uAspect, 1.0)) / uScope.z) * uScope.w; // mulai tepat di tepi luar bibir eyecup (tanpa pita terang)
     if (sOut > 0.0) {
       vec3 bs = src.rgb; float br = 6.0 * sOut;
       float a0 = ign(gl_FragCoord.xy) * 6.2831853; // sudut acak per piksel: tanpa bayangan ganda di tepi kontras
