@@ -18,6 +18,8 @@ const HX = 0, SX = 1, CX = 2, NX = 3, DX = 4, AX = 5, AZ = 6, FX = 7, TX = 8, TZ
 const ARCH = [1.48, -0.15, -0.12, -0.25, -0.50, -1.57, 1.72, -1.35, 0.35, 0.30, 0.70, 0.45, 0.10];
 const TRACK = [1.62, 0.05, 0.10, -0.30, -0.80, -0.12, 0.38, -0.08, 0.08, 0.10, 0.08, 0.60, 0];
 const DIVE = [2.60, 0, 0.05, -0.35, -0.60, 0.15, 0.20, -0.05, 0, 0.06, 0.05, 0.75, 0];
+// keluar pesawat: meringkuk (hipsX diganti ramp 0,30 → 0,90 selama LEAP)
+const EXIT = [0.30, 0.35, 0.25, 0, 0.20, -1.10, 0.45, -0.90, -1.25, 0.12, 1.70, -0.20, 0];
 const BACK = [1.12, -0.22, -0.18, -0.15, -0.35, 0.25, 2.20, -0.40, -0.35, 0.32, 1.50, 0.30, -0.30];
 const J = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // pose campuran frame ini (temporer modul; larik angka biasa = double, tanpa konversi)
 
@@ -25,7 +27,7 @@ const J = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // pose campuran frame ini (t
 // kanal: [f Hz, ζ]
 const CH = [
   [1.9, 0.55], // 0 track (ARCH → TRACK lengan berayun ±1,4 rad: ≤ 12 rad/dtk)
-  [1.9, 0.60], // 1 dive
+  [1.7, 0.60], // 1 dive
   [1.9, 0.50], // 2 back (dari ARCH lengan berayun jauh: f lebih rendah supaya ≤ 12 rad/dtk)
   [2.4, 0.45], // 3 bank (badan)
   [3.4, 0.42], // 4 bankArm (mendahului)
@@ -83,7 +85,12 @@ function makeState(s) {
 // pun, lalu Rig.pose memanggil lagi (pre = false) setelah pose dasar untuk mencampur (masuk/keluar overlay).
 export function poseAir(rig, s, dt, pre) {
   const A = rig.A || (rig.A = makeState(s)), b = rig.b, S = A.S;
-  const fall = !!s.freefall;
+  const fall = !!s.freefall, at = s.airT != null ? s.airT : 99;
+  if (fall && at < 0.3) { // baru keluar pesawat: overlay langsung penuh (karakter baru muncul), pegas mulai dari nol
+    if (A.at > at || !A.on) { S.fill(0); A.t = 0; }
+    A.w = 1;
+  }
+  A.at = at;
   if (pre) {
     if (!fall || A.w < 0.999) return false;
     if (s.hit) s.hit = 0; // impuls yang biasanya dikonsumsi pose dasar
@@ -124,6 +131,19 @@ export function poseAir(rig, s, dt, pre) {
   if (kT * kT > 1e-8) for (let j = 0; j < NJ; j++) J[j] += kT * (TRACK[j] - ARCH[j]);
   if (wD * wD > 1e-8) for (let j = 0; j < NJ; j++) J[j] += wD * (DIVE[j] - ARCH[j]);
   if (wB * wB > 1e-8) for (let j = 0; j < NJ; j++) J[j] += wB * (BACK[j] - ARCH[j]);
+  // ----- keluar pesawat: LEAP (0–0,22 dtk, meringkuk) → TUMBLE (salto ke depan, 0,22–1,17) → STABIL (sstep 0,7–1,6)
+  let tumble = 0, ty = 0, tz2 = 0, flail = 0, bounce = 0;
+  if (fall && at < 1.6) {
+    const wS = sstep(0.7, 1.6, at), sg = A.seed > 0.5 ? 1 : -1;
+    EXIT[HX] = 0.30 + 0.60 * clamp(at / 0.22, 0, 1);
+    for (let j = 0; j < NJ; j++) J[j] = EXIT[j] + (J[j] - EXIT[j]) * wS;
+    const u = sstep(0.22, 1.17, at), tau = TAU * u;
+    tumble = TAU * u; // puncak ±9,9 rad/dtk
+    ty = 0.75 * sg * fsin(tau * 0.5);
+    tz2 = 0.35 * sg * fsin(tau);
+    flail = sstep(0.22, 0.45, at) * (1 - wS); // kibas anggota badan (pelan, ≤ 6 rad/dtk)
+  }
+  if (fall && at > 1.0 && at < 3.0) { const tb = at - 1.0; bounce = -0.12 * Math.exp(-4 * tb) * fsin(TAU * 1.6 * tb); } // pantulan lengkung
   const dk = 1 - 0.5 * clamp(wD, 0, 1); // menukik: belok lebih kecil
   // apungan lambat & getar angin (fase per rig)
   const fl1 = fsin(t * 4.4 + ph), fl2 = fsin(t * 6.3 + ph * 1.7), fl3 = fsin(t * 8.1 + ph * 0.6);
@@ -131,10 +151,10 @@ export function poseAir(rig, s, dt, pre) {
   // getar angin: 4 sinus bersama per frame (6–8 Hz, amplitudo kecil), dipakai bergantian per sisi
   const j1 = wj > 0 ? fsin(t * 41 + ph) : 0, j2 = wj > 0 ? fsin(t * 52 + ph * 1.3) : 0, j3 = wj > 0 ? fsin(t * 37.7 + ph * 0.7) : 0, j4 = wj > 0 ? fsin(t * 47 + ph * 2.3) : 0;
   // ----- badan
-  const hy = 0.20 * bank * dk + 0.035 * fl1, hz = 0.10 * bank * dk + 0.03 * fl2;
+  const hy = 0.20 * bank * dk + 0.035 * fl1 + ty, hz = 0.10 * bank * dk + 0.03 * fl2 + tz2;
   const sy = 0.14 * bank * dk, cy = 0.14 * bank * dk;
   const P = J[HX] + J[SX] + J[CX];
-  let hx = J[HX], spx = J[SX], chx = J[CX], nx = J[NX], dx = J[DX] + 0.02 * wj * j4;
+  let hx = J[HX] + tumble, spx = J[SX] + bounce, chx = J[CX] + bounce, nx = J[NX], dx = J[DX] + 0.02 * wj * j4;
   // toleh kepala: separuh di leher, separuh di kepala (sumbu putar mengikuti kemiringan badan)
   let ny = 0, nz = 0, dy = 0, dz = 0.02 * wj * fl3;
   if (look * look > 1e-6) { const P2 = P + nx; ny = 0.5 * look * fcos(P); nz = -0.5 * look * fsin(P); dy = 0.5 * look * fcos(P2); dz -= 0.5 * look * fsin(P2); }
@@ -159,11 +179,12 @@ export function poseAir(rig, s, dt, pre) {
     const th = k === 0 ? b.thighL : b.thighR, sh = k === 0 ? b.shinL : b.shinR, ft = k === 0 ? b.footL : b.footR;
     const ia = -sd * bArm * dk, il = -sd * bLeg * dk; // > 0 = sisi dalam belokan
     const ja = k === 0 ? j1 : j2, jb = k === 0 ? j3 : j4, jc = k === 0 ? j2 : j1, jd = k === 0 ? j4 : j3;
-    let ax = J[AX] + 0.30 * ia;
+    let ax = J[AX] + 0.30 * ia + (flail > 0 ? 0.40 * flail * fsin(t * 14.5 + k * 2.3) : 0);
     let az = J[AZ] - (ia > 0 ? 0.35 : 0.20) * ia + 0.05 * sd * fl1;
     let fx = J[FX] - (ia > 0 ? 0.30 : 0.45) * ia + 0.025 * wj * jc + 0.04 * fl2;
     const hx2 = J[HN] + 0.05 * wj * ja, hz2 = 0.05 * wj * jb;
-    let tx = J[TX] - 0.12 * il, tz = J[TZ] - 0.10 * il;
+    let tx = J[TX] - 0.12 * il + bounce + (flail > 0 ? 0.35 * flail * fsin(t * 12.2 + k * 3.1 + 1) : 0), tz = J[TZ] - 0.10 * il;
+    if (flail > 0) { az += 0.35 * flail * fsin(t * 16.3 + k * 1.7); }
     let kx = Math.max(0.05, J[KX] + 0.40 * il + 0.03 * wj * jd + 0.05 * fl3 * sd);
     let fz = J[FT] + 0.04 * wj * (0.6 * jb + 0.4 * jc);
     if (!full) {
