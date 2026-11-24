@@ -602,7 +602,7 @@ export function createHud() {
         el.zone.className = 'h-zone ' + zm + (out ? ' out' : '');
         el.zoneI.innerHTML = ic(out ? 'warn' : 'zone');
         el.zoneL.textContent = out ? 'Di luar zona!' : zm === 'pre' ? 'Kawasan aman' : zm === 'wait' ? 'Fase ' + (z.phase + 1) + ' · zona diam' : zm === 'shrink' ? 'Zona menyusut' : 'Zona terakhir';
-        el.zoneS.textContent = out ? '−' + z.def.dps + ' HP/dtk · masuk ke lingkaran' : zm === 'pre' ? 'Zona ditandai dalam' : zm === 'wait' ? 'Mulai menyusut dalam' : zm === 'shrink' ? 'Selesai menyusut dalam' : 'Bertahan sampai akhir';
+        el.zoneS.textContent = out ? '−' + String(z.def.dps).replace('.', ',') + ' HP/dtk · masuk ke lingkaran' : zm === 'pre' ? 'Zona ditandai dalam' : zm === 'wait' ? 'Mulai menyusut dalam' : zm === 'shrink' ? 'Selesai menyusut dalam' : 'Bertahan sampai akhir';
       });
       set('zoneT', zm === 'final' ? '—' : mmss(z.timeLeft), (v) => { el.zoneT.textContent = v; });
       const zt = z.t + z.timeLeft;

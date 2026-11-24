@@ -789,9 +789,8 @@ export function createBots(ctx, n = 50) {
     const dn = Math.hypot(x - zn.x, y - zn.y) - zn.r;
     if (dn <= 0) return false;
     const need = dn / 5.5 + 10;
-    if (zone.mode === 'shrink') return -out / Math.max(1, (zone.from.r - zn.r) / Math.max(1, zone.dur)) < need;
-    const def = zone.def, ws = Math.max(def.speed, (zone.cur.r - zn.r) / def.maxDur);
-    return zone.timeLeft + -out / ws < need;
+    if (zone.mode === 'shrink') return -out / Math.max(1, zone.radialSpeed) < need;
+    return zone.timeLeft + -out / Math.max(0.5, zone.radialSpeed) < need;
   }
   // ---------- Pengawas: tujuan tak terjangkau / macet ----------
   // abandon: tujuan saat ini dibuang — barang, kendaraan, rekan tumbang, perlindungan dilewati sementara (makin sering
