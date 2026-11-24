@@ -323,6 +323,17 @@ export function cue(kind) {
 export function pickup() { if (ok()) { tone({ f0: 660, f1: 990, dur: 0.09, gain: 0.18, type: 'triangle' }); } }
 export function beep(hi = false) { if (ok()) tone({ f0: hi ? 1050 : 700, f1: hi ? 1050 : 700, dur: 0.16, gain: 0.22, type: 'square' }); }
 export function heal() { if (ok()) { tone({ f0: 520, f1: 780, dur: 0.25, gain: 0.15, type: 'sine' }); tone({ t: 0.12, f0: 780, f1: 1040, dur: 0.25, gain: 0.12 }); } }
+// payung terbuka: kain mengembang (sapuan derau 900 → 200 Hz) + dentum rendah sentakan
+export function chuteOpen() {
+  if (!ok()) return;
+  const t0 = ctx.currentTime, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  src.buffer = noise; f.type = 'bandpass'; f.Q.value = 0.9;
+  f.frequency.setValueAtTime(900, t0); f.frequency.exponentialRampToValueAtTime(200, t0 + 0.45);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+  src.connect(f).connect(g).connect(master);
+  src.start(t0, Math.random(), 0.5);
+  tone({ t: 0.05, f0: 70, f1: 40, dur: 0.3, gain: 0.45 });
+}
 export function step(vol = 0.08) { if (ok()) burst({ dur: 0.05, freq: 700, gain: vol, type: 'lowpass' }); }
 // langkah orang lain: pan kiri/kanan sesuai arah, teredam (low-pass rendah) bila terhalang dinding, lebih lembut di rumput
 export function footstep(vol = 0.08, p = 0, muffled = false, soft = false) {

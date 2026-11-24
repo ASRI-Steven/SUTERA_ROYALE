@@ -13,6 +13,7 @@ import { itemIcon } from './icons.js';
 import { buildCharacter } from '../map/rig.js';
 import { applyEquipped } from './skins.js';
 import * as audio from './audio.js';
+import { chuteShape } from './chutefx.js';
 
 const D2R = Math.PI / 180;
 const EYE = 1.62, EYE_CROUCH = 1.12, EYE_PRONE = 0.42, RAD = 0.35, GRAV = 18;
@@ -22,13 +23,14 @@ const BOOST_MAX = 100, BOOST_DRINK = 40; // tenaga (minuman energi): 1 tenaga = 
 const OUTFIT = { shirt: '#503EBA', sleeve: '#503EBA', pants: '#2b2940', skin: '#c68c66', hair: '#231c18', shoes: '#1c1b22', gear: '#4c5340', pack: '#3a3d34', trim: '#D29F52',
   glove: '#25232c', cuff: '#D29F52', inner: '#d9d5cc' }; // sarung tangan & manset = tangan orang pertama (game/weapons.js)
 const clamp = THREE.MathUtils.clamp;
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 // menembak dari kendaraan: sopir hanya pistol/SMG; busur tembak relatif hadap kendaraan (sopir ±100°, penumpang ±150°)
 const DRIVER_GUNS = { pistol: true, smg: true, pdw: true, revolver: true };
 const ARC_DRIVER = 100 * D2R, ARC_PASS = 150 * D2R;
 // kamera udara (orang ketiga) — semua angka setelan di satu tempat. Jarak m, tinggi pivot m, FOV derajat, roll rad (maks ±5°)
 const AIRCAM = {
-  exitD: 14, fallD: 6.5, trackD: 1.0, diveD: 2.0, chuteD: 7.5, rate: 3, fallH: 1.1, chuteH: 2.4, lag: 0.5,
+  exitD: 14, fallD: 6.5, trackD: 1.0, diveD: 2.0, chuteD: 7.5, deployD: 9, jerk: -10, punch: 5, rate: 3, fallH: 1.1, chuteH: 2.4, lag: 0.5,
   fov: 75, trackFov: 6, diveFov: 14, chuteFov: 74, fovRate: 2.5,
   roll: 0.06, rollChute: 0.045, rollMax: 5 * D2R, shake: 0.003, bob: 0.02,
 };
@@ -49,7 +51,15 @@ export function createPlayer(ctx) {
   const chute = new THREE.Mesh(chuteGLB || new THREE.SphereGeometry(3.4, 18, 6, 0, Math.PI * 2, 0, Math.PI * 0.32).scale(1, 0.55, 0.75), new THREE.MeshLambertMaterial({ color: '#D29F52', emissive: '#7a5520', side: THREE.DoubleSide, vertexColors: !!chuteGLB }));
   const chuteY = chuteGLB ? 1.45 : 4.6;
   chute.visible = false;
+  chute.rotation.order = 'YXZ';
   scene.add(chute);
+  // tali kemudi: tepi belakang kanopi → tangan (terlihat ditarik saat belok/mengerem)
+  const steerPos = new Float32Array(12), steerGeo = new THREE.BufferGeometry();
+  steerGeo.setAttribute('position', new THREE.BufferAttribute(steerPos, 3));
+  const steerLines = new THREE.LineSegments(steerGeo, new THREE.LineBasicMaterial({ color: '#2a2a2a' }));
+  steerLines.frustumCulled = false; steerLines.visible = false;
+  scene.add(steerLines);
+  const chuteO = { vis: false, sx: 1, sy: 1, sz: 1, rx: 0 }, steerV = new THREE.Vector3();
   const st = {
     yaw: 0, pitch: -0.1, tpp: false, ads: false, firing: false, trigger: false, crouch: false, sprint: false, nextShot: 0, reloadEnd: 0, reloadFor: null,
     switchEnd: 0, healEnd: 0, healKind: null, recoilP: 0, recoilY: 0, mdx: 0, mdy: 0, sens: 1, camD: 0, plane: null, landedAt: -1, stepT: 0, prompt: null, lastLock: 0,
@@ -833,7 +843,8 @@ export function createPlayer(ctx) {
     const spd = me.pose.airSpd || 0, wk = clamp(spd / 60, 0, 1.3), wk2 = wk * wk;
     aimDir(fwd);
     right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
-    const dist = ch ? AIRCAM.chuteD : AIRCAM.fallD + AIRCAM.trackD * trk * (1 - dv) + AIRCAM.diveD * dv;
+    const ct = st.chuteT >= 0 ? st.chuteT : 5, dep = ch ? 1 - sstep(0.6, 2.2, ct) : 0; // baru membuka: kamera sedikit menjauh
+    const dist = ch ? AIRCAM.chuteD + (AIRCAM.deployD - AIRCAM.chuteD) * dep : AIRCAM.fallD + AIRCAM.trackD * trk * (1 - dv) + AIRCAM.diveD * dv;
     const pivot = tmp.set(p.x, p.y + (ch ? AIRCAM.chuteH : AIRCAM.fallH), p.z).addScaledVector(right, -AIRCAM.lag * bank);
     let d = dist;
     { // tidak menembus atap/dinding (dekat tanah)
@@ -843,11 +854,17 @@ export function createPlayer(ctx) {
     }
     st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (d < st.camD - 0.5 && d < dist ? 20 : AIRCAM.rate))) : d;
     camera.position.copy(pivot).addScaledVector(fwd, -st.camD);
+    { // pegas vertikal (sentakan kanopi)
+      const w = 2 * Math.PI * 1.1, k = Math.min(dt, 0.05);
+      st.cjv = (st.cjv || 0) + (-w * w * (st.cjy || 0) - 2 * 0.6 * w * (st.cjv || 0)) * k;
+      st.cjy = (st.cjy || 0) + st.cjv * k;
+      camera.position.y += st.cjy;
+    }
     const tt = ctx.now(), a = AIRCAM.shake * wk2 * (ch ? 0.2 : 1);
     camera.position.y += AIRCAM.bob * wk2 * (ch ? 0.2 : 1) * Math.sin(tt * 31);
     const roll = clamp(-(ch ? AIRCAM.rollChute : AIRCAM.roll) * bank, -AIRCAM.rollMax, AIRCAM.rollMax);
     camera.rotation.set(pitch + a * Math.sin(tt * 23.1) * Math.sin(tt * 7.3 + 1), yaw + Math.PI + a * Math.sin(tt * 19.7 + 2) * Math.sin(tt * 5.9), roll);
-    const fovT = ch ? AIRCAM.chuteFov : AIRCAM.fov + AIRCAM.trackFov * trk * (1 - dv) + AIRCAM.diveFov * dv;
+    const fovT = ch ? AIRCAM.chuteFov - AIRCAM.punch * sstep(0.45, 0.6, ct) * (1 - sstep(0.6, 1.4, ct)) : AIRCAM.fov + AIRCAM.trackFov * trk * (1 - dv) + AIRCAM.diveFov * dv;
     st.airFov = (st.airFov || 75) + (fovT - (st.airFov || 75)) * (1 - Math.exp(-dt * AIRCAM.fovRate));
   }
 
@@ -1035,8 +1052,14 @@ export function createPlayer(ctx) {
   const folT = new THREE.Vector3();
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
-    if (!st.inAir) { st.inAir = true; st.airT = 0; st.visYaw = null; st.airTurn = 0; st.camD = AIRCAM.exitD; st.airFov = 75; } // baru keluar pesawat
+    if (!st.inAir) { st.inAir = true; st.airT = 0; st.chuteT = -1; st.visYaw = null; st.airTurn = 0; st.camD = AIRCAM.exitD; st.airFov = 75; st.cjy = 0; st.cjv = 0; } // baru keluar pesawat
     st.airT += dt;
+    if (me.state === 'chute') { // dtk sejak payung dibuka (animasi tarik → mengembang → sentakan)
+      const c0 = st.chuteT;
+      st.chuteT = c0 >= 0 ? c0 + dt : 0;
+      if (c0 < 0.4 && st.chuteT >= 0.4) audio.chuteOpen();
+      if (c0 < 0.45 && st.chuteT >= 0.45) st.cjv = AIRCAM.jerk; // sentakan kanopi: kamera tersentak (karakter tampak tertarik ke atas)
+    } else st.chuteT = -1;
     st.aFwd = 0.35; st.aSide = 0; st.aDive = 0; // masukan pose udara (map/rigair.js); mode ikut rekan: melayang maju pelan
     // ikut rekan: melayang otomatis di belakangnya (payung ikut terbuka); W/A/S/D melepas, rekan mendarat → mendarat sendiri
     const L = me.follow;
@@ -1076,7 +1099,6 @@ export function createPlayer(ctx) {
     let fs = iz < 0 ? 0 : Math.max(0.35, iz) * hs, ss = ix * cap; // S = rem: laju maju jadi nol (tanpa tombol tetap melayang maju pelan)
     { const m = Math.hypot(fs, ss), lim = Math.max(cap, fs); if (m > lim) { fs *= lim / m; ss *= lim / m; } }
     const tx = fwd.x * fs + right.x * ss, tz = fwd.z * fs + right.z * ss;
-    st.airLean = (st.airLean || 0) + (ix * (chuteOn ? 0.3 : 0.5) - (st.airLean || 0)) * (1 - Math.exp(-dt * 5)); // badan miring ke arah geser
     const k = 1 - Math.exp(-dt * (iz < 0 ? 3.5 : 1.8)); // mengerem lebih sigap daripada menambah laju
     me.vel.x += (tx - me.vel.x) * k;
     me.vel.y += (tz - me.vel.y) * k;
@@ -1227,12 +1249,7 @@ export function createPlayer(ctx) {
       }
       if (showChar) {
         if (driving) { char.root.position.set(me.pos.x, me.sitY || 0, me.pos.z); char.root.rotation.set(0, me.yaw, me.sitRoll || 0); }
-        else if (me.state === 'chute' && st.airLean) { // payung, miring saat A/D: berputar di titik gantung parasut, bukan di kaki
-          const r = st.airLean, h = 1.45, o = h * Math.sin(r), vy = st.visYaw ?? me.yaw;
-          char.root.position.set(me.pos.x + Math.cos(vy) * o, me.pos.y + h * (1 - Math.cos(r)), me.pos.z - Math.sin(vy) * o);
-          char.root.rotation.set(0, vy, r);
-        }
-        else if (st.inAir) { char.root.position.copy(me.pos); char.root.rotation.set(0, st.visYaw ?? me.yaw, 0); } // terjun bebas: miring/belok diartikulasikan rig (map/rigair.js)
+        else if (st.inAir) { char.root.position.copy(me.pos); char.root.rotation.set(0, st.visYaw ?? me.yaw, 0); } // di udara: miring/belok/bandul diartikulasikan rig (map/rigair.js)
         else { char.root.position.copy(me.pos); char.root.rotation.set(0, me.state === 'ground' ? st.yaw : me.yaw, 0); }
         const p = me.pose;
         p.speed = me.state === 'ground' ? me.moveSpeed : 0;
@@ -1255,7 +1272,7 @@ export function createPlayer(ctx) {
         p.chute = me.state === 'chute';
         p.chuteDrive = p.chute ? keys.fwd - keys.back : 0;
         if (st.inAir) { // masukan pose udara (map/rigair.js)
-          p.airT = st.airT; p.airFwd = st.aFwd; p.airSide = st.aSide; p.airDive = st.aDive; p.airTurn = st.airTurn;
+          p.airT = st.airT; p.chuteT = st.chuteT; p.airFwd = st.aFwd; p.airSide = st.aSide; p.airDive = st.aDive; p.airTurn = st.airTurn;
           p.airSpd = Math.hypot(Math.hypot(me.vel.x, me.vel.y), st.airVs || 0);
           p.lookYaw = wrap(st.yaw - (st.visYaw ?? me.yaw)); p.lookPitch = st.pitch; p.airSeed = 0.5;
         }
@@ -1286,8 +1303,28 @@ export function createPlayer(ctx) {
             char.setGear('hair', me.helmet === 0);
           } }
       } else char.rig.pose(me.pose, dt); // tetap jalan untuk goyangan kamera
-      chute.visible = me.state === 'chute';
-      if (chute.visible) { chute.position.set(me.pos.x, me.pos.y + chuteY, me.pos.z); chute.rotation.set(0, st.visYaw ?? me.yaw, st.airLean || 0); }
+      chute.visible = false; steerLines.visible = false;
+      if (me.state === 'chute') { // kanopi: mengembang (game/chutefx.js), miring ikut belok, condong saat W, tepi belakang turun saat S
+        const A = char.rig.A, ct = st.chuteT >= 0 ? st.chuteT : 5;
+        chuteShape(ct, Math.hypot(me.vel.x, me.vel.y), st.airVs || 9, chuteO);
+        if (chuteO.vis) {
+          chute.visible = true;
+          chute.position.set(me.pos.x, me.pos.y + chuteY, me.pos.z);
+          chute.scale.set(chuteO.sx, chuteO.sy, chuteO.sz);
+          chute.rotation.set(chuteO.rx + (A ? 0.10 * A.cfw - 0.16 * A.cbr : 0), st.visYaw ?? me.yaw, A ? 0.30 * A.bank : 0);
+          if (chuteGLB && ct > 0.5 && char.root.visible) {
+            chute.updateMatrixWorld();
+            for (let k = 0; k < 2; k++) {
+              steerV.set(k === 0 ? 2.4 : -2.4, 3.95, -1.15).applyMatrix4(chute.matrixWorld);
+              steerPos[k * 6] = steerV.x; steerPos[k * 6 + 1] = steerV.y; steerPos[k * 6 + 2] = steerV.z;
+              steerV.setFromMatrixPosition((k === 0 ? char.rig.b.handL : char.rig.b.handR).matrixWorld);
+              steerPos[k * 6 + 3] = steerV.x; steerPos[k * 6 + 4] = steerV.y; steerPos[k * 6 + 5] = steerV.z;
+            }
+            steerGeo.attributes.position.needsUpdate = true;
+            steerLines.visible = true;
+          }
+        }
+      }
       // senjata di tangan
       // orang pertama di kendaraan (V) dengan senjata siap: senjata di tangan digambar di atas kabin (tidak terpotong interior)
       const vfp = driving && st.vfp && st.vArmed && me.alive;
