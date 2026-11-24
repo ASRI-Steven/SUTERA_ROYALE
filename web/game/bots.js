@@ -359,7 +359,7 @@ export function createBots(ctx, n = 50) {
   }
   // rekan pemain di udara: formasi di samping-depan pemain, keadaan mengikuti pemain
   // (terjun bebas / payung); begitu pemain mendarat → titik mendarat bebas 4–8 m darinya, lalu turun seperti biasa
-  const airT = new THREE.Vector3();
+  const airT = new THREE.Vector3(), FORM_SWAY = [0.5, 0.3, 0.4]; // amplitudo goyangan formasi (m): samping, naik-turun, maju-mundur
   function allyAir(b, dt) {
     const P = PLAYER, a = b.ai;
     if (!P || P.state === 'plane') return true;
@@ -370,7 +370,10 @@ export function createBots(ctx, n = 50) {
       if (!a.airOff) a.airOff = new THREE.Vector3().subVectors(b.pos, P.pos);
       airT.set(sn * ahead + cs * side, -0.8 - k * 0.5, cs * ahead - sn * side);
       a.airOff.lerp(airT, 1 - Math.exp(-dt * 1.5));
+      // goyangan formasi: tiap rekan hanyut pelan di sekitar slotnya (fase per slot), supaya tidak tampak terpaku ke pemain
+      const wt = b.airT || 0, ws = FORM_SWAY[0] * Math.sin(0.7 * wt + k * 2.1), wa = FORM_SWAY[2] * Math.sin(0.5 * wt + k * 1.3);
       b.pos.copy(P.pos).add(a.airOff);
+      b.pos.x += sn * wa + cs * ws; b.pos.y += FORM_SWAY[1] * Math.sin(0.9 * wt + k * 3.4); b.pos.z += cs * wa - sn * ws;
       b.yaw = P.yaw;
       b.state = P.state;
       a.land = null;
