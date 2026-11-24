@@ -315,12 +315,25 @@ export function cue(kind) {
     case 'eject': for (let i = 0; i < 3; i++) burst({ t: 0.18 + i * 0.05, dur: 0.03, freq: 5200 - i * 400, type: 'bandpass', q: 4, gain: 0.12 }); break; // selongsong jatuh
     case 'tab': burst({ dur: 0.02, freq: 3800, type: 'bandpass', q: 3, gain: 0.3 }); burst({ t: 0.015, dur: 0.22, freq: 5200, type: 'highpass', q: 0.5, gain: 0.16 }); break; // kaleng dibuka
     case 'pin': burst({ dur: 0.03, freq: 4400, type: 'bandpass', q: 4, gain: 0.25 }); break;
+    case 'cloth': burst({ dur: 0.32, freq: 2600, type: 'bandpass', q: 0.8, gain: 0.07 }); burst({ t: 0.12, dur: 0.22, freq: 3400, type: 'bandpass', q: 0.9, gain: 0.05 }); break; // kasa digulung (gesek kain)
+    case 'tape': burst({ dur: 0.09, freq: 4200, type: 'highpass', q: 0.6, gain: 0.12 }); burst({ t: 0.05, dur: 0.05, freq: 1800, type: 'bandpass', q: 2, gain: 0.1 }); break; // plester disobek & ditempel
     default: click();
   }
 }
 export function pickup() { if (ok()) { tone({ f0: 660, f1: 990, dur: 0.09, gain: 0.18, type: 'triangle' }); } }
 export function beep(hi = false) { if (ok()) tone({ f0: hi ? 1050 : 700, f1: hi ? 1050 : 700, dur: 0.16, gain: 0.22, type: 'square' }); }
 export function heal() { if (ok()) { tone({ f0: 520, f1: 780, dur: 0.25, gain: 0.15, type: 'sine' }); tone({ t: 0.12, f0: 780, f1: 1040, dur: 0.25, gain: 0.12 }); } }
+// payung terbuka: kain mengembang (sapuan derau 900 → 200 Hz) + dentum rendah sentakan
+export function chuteOpen() {
+  if (!ok()) return;
+  const t0 = ctx.currentTime, src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+  src.buffer = noise; f.type = 'bandpass'; f.Q.value = 0.9;
+  f.frequency.setValueAtTime(900, t0); f.frequency.exponentialRampToValueAtTime(200, t0 + 0.45);
+  g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(0.5, t0 + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.45);
+  src.connect(f).connect(g).connect(master);
+  src.start(t0, Math.random(), 0.5);
+  tone({ t: 0.05, f0: 70, f1: 40, dur: 0.3, gain: 0.45 });
+}
 export function step(vol = 0.08) { if (ok()) burst({ dur: 0.05, freq: 700, gain: vol, type: 'lowpass' }); }
 // langkah orang lain: pan kiri/kanan sesuai arah, teredam (low-pass rendah) bila terhalang dinding, lebih lembut di rumput
 export function footstep(vol = 0.08, p = 0, muffled = false, soft = false) {
@@ -345,17 +358,34 @@ export function engineLevel(v) {
   });
   if (n) n.gain.setTargetAtTime(v * 0.16, ctx.currentTime, 0.3);
 }
+function windNode() { // desis (bandpass, nada bisa digeser) + gemuruh rendah (lowpass 140 Hz) dari satu sumber derau
+  const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), lp = ctx.createBiquadFilter(), rg = ctx.createGain();
+  src.buffer = noise; src.loop = true;
+  f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.5;
+  lp.type = 'lowpass'; lp.frequency.value = 140;
+  g.gain.value = 0; rg.gain.value = 0;
+  src.connect(f).connect(g).connect(master);
+  src.connect(lp).connect(rg).connect(master);
+  src.start();
+  wnd.f = f; wnd.rg = rg;
+  return g;
+}
 export function windLevel(v) {
-  const n = loop(wnd, () => {
-    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    src.buffer = noise; src.loop = true;
-    f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.5;
-    g.gain.value = 0;
-    src.connect(f).connect(g).connect(master);
-    src.start();
-    return g;
-  });
-  if (n) n.gain.setTargetAtTime(v * 0.35, ctx.currentTime, 0.25);
+  const n = loop(wnd, windNode);
+  if (!n) return;
+  const t = ctx.currentTime;
+  n.gain.setTargetAtTime(v * 0.35, t, 0.25);
+  wnd.f.frequency.setTargetAtTime(900, t, 0.2); wnd.f.Q.setTargetAtTime(0.5, t, 0.2);
+  wnd.rg.gain.setTargetAtTime(0, t, 0.25);
+}
+// angin terjun: speedK 0..1,2 (laju/60 m/dtk) → keras & gemuruh; tone 0..1 (meluncur/menukik) → desis lebih tinggi & tajam
+export function airWind(speedK, tone = 0) {
+  const n = loop(wnd, windNode);
+  if (!n) return;
+  const t = ctx.currentTime;
+  n.gain.setTargetAtTime(0.06 + 0.34 * speedK * speedK, t, 0.25);
+  wnd.f.frequency.setTargetAtTime(420 + 1500 * tone, t, 0.3); wnd.f.Q.setTargetAtTime(0.5 + 0.5 * tone, t, 0.3);
+  wnd.rg.gain.setTargetAtTime(0.2 * speedK, t, 0.3);
 }
 
 // ---------- Kendaraan ----------
@@ -417,6 +447,21 @@ export function boom(dist = 0, p = 0) {
   burst({ dur: 1.4, freq: 700, gain: vol, p: p * 0.7, q: 0.5 });
   tone({ f0: 90, f1: 28, dur: 1.1, gain: vol, p: p * 0.7 });
   burst({ t: 0.08, dur: 1.8, freq: 260, gain: vol * 0.6, p: p * 0.5 });
+}
+// pintu rumah: buka = derit engsel + klik gerendel, tutup = dentum kayu + desis udara. vol 0..1 (pemanggil menghitung dari
+// jarak, 0 di atas 35 m), p = pan, muffled = di balik dinding (frekuensi tinggi hilang)
+export function houseDoor(open, vol = 1, p = 0, muffled = false) {
+  if (!ok() || vol <= 0.01) return;
+  const m = muffled ? 0.55 : 1;
+  if (open) {
+    burst({ dur: 0.03, freq: muffled ? 1400 : 3200, type: 'bandpass', q: 4, gain: 0.22 * vol * m, p }); // gerendel
+    tone({ t: 0.03, f0: 420, f1: 260, dur: 0.18, gain: 0.05 * vol * m, type: 'sawtooth', p }); // derit
+    tone({ t: 0.05, f0: 610, f1: 380, dur: 0.14, gain: 0.025 * vol * m, type: 'triangle', p });
+  } else {
+    tone({ f0: 140, f1: 70, dur: 0.16, gain: 0.32 * vol, p }); // dentum
+    burst({ dur: 0.09, freq: muffled ? 300 : 650, type: 'lowpass', gain: 0.3 * vol, p });
+    burst({ t: 0.02, dur: 0.03, freq: muffled ? 1200 : 2600, type: 'bandpass', q: 3, gain: 0.12 * vol * m, p }); // gerendel masuk
+  }
 }
 export function door() { if (ok()) { burst({ dur: 0.06, freq: 900, gain: 0.25 }); tone({ f0: 160, f1: 90, dur: 0.08, gain: 0.25 }); } }
 

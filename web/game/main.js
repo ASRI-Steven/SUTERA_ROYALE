@@ -182,7 +182,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     g.fillRect(0, 0, 64, 64);
     return new THREE.CanvasTexture(cv);
   }
-  const kills = createKillFx({ scene, hud }); // kill pemain: spanduk beruntun, denting & partikel bertema skin senjata (game/killfx.js)
+  const kills = createKillFx({ scene, hud }); // kill pemain: denting beruntun bertema skin senjata (game/killfx.js)
 
   // ---------- Pertempuran ----------
   const BLAST = { def: { short: 'Ledakan' } }, NADE_HIT = { def: { short: 'Granat' } };
@@ -406,7 +406,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     hud.feed(attacker === t ? null : attacker, t, w, part === 'head', part);
     const c = { weapons: t.weapons.filter(Boolean).map((x) => x.kind), ammo: { ...t.ammo }, heals: { ...t.heals }, nades: { ...(t.nades || {}) }, vest: t.vest, helmet: t.helmet, vestHp: t.vestHp, helmetHp: t.helmetHp, bag: t.bag | 0, fuel: t.fuel | 0 };
     if (c.bag || c.fuel || c.heals.drink || c.weapons.length || Object.values(c.ammo).some((v) => v > 0) || Object.values(c.nades).some((v) => v > 0) || c.heals.band || c.heals.kit || c.vest || c.helmet) loot.crate(t.pos.x + (t.pos.y > 0.5 ? 0 : 0.8), -t.pos.z, c, t.pos.y > 0.5 ? t.pos.y : 0);
-    if (attacker && attacker.isPlayer) kills.kill(t, part === 'head'); // spanduk beruntun, denting & efek kill bertema skin (game/killfx.js)
+    if (attacker && attacker.isPlayer) kills.kill(t, part === 'head'); // denting kill beruntun bertema skin (game/killfx.js)
     // regu: anggota terakhir yang berdiri jatuh → yang tumbang ikut tersingkir; regu habis → peringkat regu
     const sq = t.sq;
     refreshSquad(sq);
@@ -535,7 +535,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     throwNade: (a, kind, o, v, cooked) => nades.throwNade(a, kind, o, v, cooked),
     nadeCook: (left) => nades.cook(left),
     nadeAim: (o, v) => nades.aim(o, v),
-    scene, camera, renderer, col, loot, combat, hud, agent: me, inArea, areaCenter: center, vehicles,
+    scene, camera, renderer, col, loot, combat, hud, agent: me, inArea, areaCenter: center, vehicles, agents,
     now: () => now,
     enterVehicle(v) {
       if (me.down) return;
@@ -780,6 +780,7 @@ function start(D, realAssets, envAssets, furnAssets) {
     lobby.hide();
     hud.show(true);
     flight = makeFlight();
+    if (col.resetDoors) col.resetDoors(); // semua pintu rumah tertutup di awal pertandingan
     bots.setDifficulty(diff);
     bots.planJumps(flight.path, flight.dur);
     plane.visible = true;

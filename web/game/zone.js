@@ -1,25 +1,30 @@
 // Zona aman (alur ala battle royale):
 //   'pre'    seluruh kawasan aman, belum ada dinding zona (sampai pemain mendarat)
 //   'wait'   lingkaran aman berikutnya ditandai (putih di peta), dinding DIAM, hitung mundur sampai mulai menyusut
-//   'shrink' dinding ungu bergerak ke lingkaran putih dengan kecepatan tetap; selesai → fase berikutnya ('wait')
+//   'shrink' dinding ungu bergerak ke lingkaran putih dengan kecepatan tetap (sisi jauhnya ≤ PHASES[].speed); selesai → fase berikutnya ('wait')
 //   'final'  lingkaran terakhir habis
 // Dinding pertama = lingkaran yang memuat seluruh kawasan, berpusat di lingkaran aman pertama (menyusut dari tepi peta).
 // Koordinat data: x timur, y utara (m).
 import * as THREE from 'three';
 
-export const PHASES = [ // wait = detik diam sebelum menyusut; speed = kecepatan dinding (m/dtk), maxDur = batas lama menyusut (dtk);
-  // ratio = jari-jari berikutnya / sekarang
-  { wait: 100, speed: 12, maxDur: 130, dps: 1 },
-  { wait: 75, speed: 8, maxDur: 80, ratio: 0.55, dps: 2 },
-  { wait: 60, speed: 6, maxDur: 60, ratio: 0.55, dps: 3 },
-  { wait: 50, speed: 4.5, maxDur: 50, ratio: 0.5, dps: 5 },
-  { wait: 40, speed: 3.5, maxDur: 40, ratio: 0.5, dps: 7 },
-  { wait: 35, speed: 2.5, maxDur: 35, ratio: 0.45, dps: 9 },
-  { wait: 30, speed: 2, maxDur: 30, ratio: 0.4, dps: 12 },
-  { wait: 25, speed: 1.5, maxDur: 25, ratio: 0, dps: 15 },
+// Tiap fase: wait = detik diam sebelum menyusut; speed = batas laju sisi JAUH dinding (m/dtk), selalu di bawah lari
+// cepat (6,6 m/dtk) supaya pemain yang berlari dari tepi terjauh tetap bisa mengejar lingkaran berikutnya;
+// ratio = jari-jari berikutnya / sekarang; dps = kerusakan di luar zona (HP/dtk).
+// Lama menyusut = max(MIN_SHRINK, travel / speed), travel = susut jari-jari + geser pusat (jarak tempuh sisi jauh dinding).
+export const PHASES = [
+  { wait: 90, speed: 4.6, dps: 0.6 },
+  { wait: 60, speed: 4.6, ratio: 0.55, dps: 1 },
+  { wait: 45, speed: 4.4, ratio: 0.55, dps: 2 },
+  { wait: 40, speed: 4.0, ratio: 0.5, dps: 3 },
+  { wait: 35, speed: 3.4, ratio: 0.5, dps: 5 },
+  { wait: 30, speed: 2.8, ratio: 0.45, dps: 7 },
+  { wait: 25, speed: 2.2, ratio: 0.4, dps: 10 },
+  { wait: 20, speed: 1.8, ratio: 0, dps: 14 },
 ];
 const PRE = 75; // detik setelah pesawat berangkat sebelum zona pertama diumumkan (±saat mendarat)
-const R1 = 1100, MIN_SHRINK = 22;
+const R1 = 1400, MIN_SHRINK = 22, SHIFT = 0.6; // SHIFT = batas geser pusat, × susut jari-jari
+// lama menyusut dari lingkaran c ke n pada fase def
+const shrinkDur = (c, n, def) => Math.max(MIN_SHRINK, (c.r - n.r + Math.hypot(n.x - c.x, n.y - c.y)) / def.speed);
 
 export function createZone(scene, { inArea, bb, boundary }) {
   const uni = { uTime: { value: 0 }, uColor: { value: new THREE.Color('#7b6cff') } };
@@ -54,6 +59,12 @@ export function createZone(scene, { inArea, bb, boundary }) {
       if (this.mode === 'pre') return Math.max(0, PRE - this.t);
       if (this.mode === 'wait') return Math.max(0, this.def.wait - this.t);
       if (this.mode === 'shrink') return Math.max(0, this.dur - this.t);
+      return 0;
+    },
+    // laju susut jari-jari (m/dtk): saat menyusut = yang sedang berjalan; saat diam = perkiraan susut berikutnya
+    get radialSpeed() {
+      if (this.mode === 'shrink') return (this.from.r - this.next.r) / Math.max(1, this.dur);
+      if (this.mode === 'wait' && this.next) return (this.cur.r - this.next.r) / shrinkDur(this.cur, this.next, this.def);
       return 0;
     },
     get progress() { return this.mode === 'shrink' ? Math.min(1, this.t / this.dur) : 0; },
@@ -93,7 +104,7 @@ export function createZone(scene, { inArea, bb, boundary }) {
           this.mode = 'shrink';
           this.t = 0;
           this.from = { ...this.cur };
-          this.dur = Math.min(this.def.maxDur, Math.max(MIN_SHRINK, (this.cur.r - this.next.r) / this.def.speed));
+          this.dur = shrinkDur(this.cur, this.next, this.def);
           ev = 'shrink';
         }
       } else if (this.mode === 'shrink') {
@@ -104,7 +115,7 @@ export function createZone(scene, { inArea, bb, boundary }) {
           this.t = 0;
           if (this.phase >= PHASES.length || this.next.r <= 0.5) { this.mode = 'final'; this.next = null; ev = 'final'; }
           else {
-            const r = this.cur.r * PHASES[this.phase].ratio, p = pickInside(this.cur.x, this.cur.y, Math.max(0, this.cur.r - r));
+            const r = this.cur.r * PHASES[this.phase].ratio, p = pickInside(this.cur.x, this.cur.y, Math.max(0, (this.cur.r - r) * SHIFT));
             this.next = { x: p.x, y: p.y, r };
             this.mode = 'wait';
             ev = 'next';

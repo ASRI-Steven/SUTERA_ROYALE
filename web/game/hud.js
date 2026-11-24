@@ -50,6 +50,7 @@ const GLYPHS = {
   plus: '<path d="M9.500 3.500h5v6h6v5h-6v6h-5v-6h-6v-5h6z"/>',
   air: '<circle cx="8" cy="15.500" r="4"/><circle cx="16" cy="9" r="3"/><circle cx="17.500" cy="17.500" r="1.800"/>',
   vault: '<path d="M12 3l6 6.200-1.700 1.700-3.100-3.200V16h-2.400V7.700l-3.100 3.200L6 9.200zM3 19h18v2.200H3z"/>',
+  door: '<path fill-rule="evenodd" d="M5 2.500h11.500V21.500H5zm2.200 2.200v14.600h7.100V4.700zM12 11.200a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM18 7h1.800v14.500H18z"/>',
   nav: '<path d="M12 2.500l7.500 17.500-7.500-3.800L4.500 20z"/>',
   squad: '<circle cx="12" cy="7" r="3.1"/><path d="M5.8 19.5c0-3.700 2.700-6 6.200-6s6.200 2.300 6.200 6z"/><g opacity=".7"><circle cx="4.9" cy="9.3" r="2.3"/><path d="M.8 18.3c0-2.800 1.800-4.700 4.300-4.700.6 0 1.200.1 1.700.3-1.400 1.200-2.300 3-2.400 5.100H.8z"/><circle cx="19.1" cy="9.3" r="2.3"/><path d="M23.2 18.3c0-2.800-1.800-4.700-4.300-4.700-.6 0-1.200.1-1.700.3 1.400 1.200 2.300 3 2.400 5.100h3.600z"/></g>',
   down: '<path d="M12 20.8l-1.300-1.200C5.900 15.300 3 12.600 3 9.300 3 6.600 5.100 4.500 7.800 4.500c1.600 0 3.100.7 4.200 1.900 1.100-1.200 2.600-1.900 4.200-1.900 2.700 0 4.800 2.100 4.800 4.800 0 3.300-2.900 6-7.700 10.300z"/>',
@@ -187,7 +188,6 @@ export function createHud() {
   root.innerHTML = TEMPLATE;
   const el = { hud: root };
   root.querySelectorAll('[data-h]').forEach((n) => { el[n.dataset.h] = n; });
-  const kb = createKillBanner(root); // spanduk kill bertema skin (blok mandiri di akhir berkas)
   // kompas: strip berulang 360° (3×) dengan arah mata angin bahasa Indonesia
   const NAMES = { 0: 'U', 45: 'TL', 90: 'T', 135: 'TG', 180: 'S', 225: 'BD', 270: 'B', 315: 'BL' };
   let strip = '';
@@ -331,6 +331,7 @@ export function createHud() {
     if (t.startsWith('Buka peti')) return iconHtml('crate');
     if (t.startsWith('Naik ') || t.startsWith('Kendaraan')) return ic('veh');
     if (t.startsWith('Lompati')) return ic('vault');
+    if (t.endsWith(' pintu')) return ic('door');
     return '';
   }
 
@@ -446,8 +447,6 @@ export function createHud() {
       setTimeout(() => row.classList.add('out'), 6500);
       setTimeout(() => row.remove(), 7100);
     },
-    // spanduk kill pemain (game/killfx.js): o = { n, knock, head, name, theme } — lihat createKillBanner di bawah
-    killBanner(o) { kb.show(o); },
     // penanda rekan di dunia, tiap frame. buf = [x px, y px, jarak m, keadaan] per rekan (keadaan: 0 sembunyi, 1 hidup,
     // 2 tumbang, 3 di tepi layar / di belakang). DOM hanya ditulis kalau bergeser ≥ 0,5 px; jarak ditulis ≤ ±6×/dtk.
     mates(buf) {
@@ -605,7 +604,7 @@ export function createHud() {
         el.zone.className = 'h-zone ' + zm + (out ? ' out' : '');
         el.zoneI.innerHTML = ic(out ? 'warn' : 'zone');
         el.zoneL.textContent = out ? 'Di luar zona!' : zm === 'pre' ? 'Kawasan aman' : zm === 'wait' ? 'Fase ' + (z.phase + 1) + ' · zona diam' : zm === 'shrink' ? 'Zona menyusut' : 'Zona terakhir';
-        el.zoneS.textContent = out ? '−' + z.def.dps + ' HP/dtk · masuk ke lingkaran' : zm === 'pre' ? 'Zona ditandai dalam' : zm === 'wait' ? 'Mulai menyusut dalam' : zm === 'shrink' ? 'Selesai menyusut dalam' : 'Bertahan sampai akhir';
+        el.zoneS.textContent = out ? '−' + String(z.def.dps).replace('.', ',') + ' HP/dtk · masuk ke lingkaran' : zm === 'pre' ? 'Zona ditandai dalam' : zm === 'wait' ? 'Mulai menyusut dalam' : zm === 'shrink' ? 'Selesai menyusut dalam' : 'Bertahan sampai akhir';
       });
       set('zoneT', zm === 'final' ? '—' : mmss(z.timeLeft), (v) => { el.zoneT.textContent = v; });
       const zt = z.t + z.timeLeft;
@@ -691,60 +690,3 @@ export function createHud() {
   };
 }
 
-// ---------- Spanduk kill (gaya kill banner) ----------
-// Blok mandiri, dipakai HUD (hud.killBanner) dan pratinjau toko (lobby.js). Lambang bertema skin senjata di tengah bawah,
-// lima pip hitungan kill beruntun di busur atasnya, label yang makin megah (Ganda → Tripel → Beringas → Amuk), sinar
-// berputar mulai kill ke-3, sinar tepi layar mulai ke-4, gelombang kejut di ke-5+. Lumpuhkan = versi garis/redup.
-// Animasi hanya transform/opacity (CSS di game/killfx.css); DOM ditulis sekali per kejadian.
-// show(o): o = { n, knock, head, name, theme: { color, color2, emblem, rarity } }.
-const KB_EMB = { // lambang 48×48 (diisi gradien tema)
-  std: '<path d="M24 3l5.6 14.8L45 24l-15.4 6.2L24 45l-5.6-14.8L3 24l15.4-6.2z"/>',
-  es: '<g transform="translate(24 24)">' + [0, 60, 120].map((a) => `<g transform="rotate(${a})"><rect x="-2" y="-20" width="4" height="40" rx="2"/><path d="M-8-16 0-9 8-16l-1.6-2.3L0-13l-6.4-5.3zM-8 16 0 9l8 7-1.6 2.3L0 13l-6.4 5.3z"/></g>`).join('') + '<circle r="4.5"/></g>',
-  api: '<path d="M25 3c3 7 12 12 12 24a13 13 0 0 1-26 0c0-6 3-10 5-13 1 4 3 6 6 7-2-6 0-12 3-18z"/><path d="M24 26c2 3 6 5 6 10a6 6 0 0 1-12 0c0-2 1-4 2-5 1 2 2 3 3 3-1-3 0-6 1-8z" opacity=".55"/>',
-  petir: '<path d="M28 2 9 27h12l-4 19 22-27H27z"/>',
-  neo: '<path fill-rule="evenodd" d="M24 3l18 10.5v21L24 45 6 34.5v-21zm0 9-9 5.2v10.6l9 5.2 9-5.2V17.2z"/><circle cx="24" cy="24" r="3.4"/>',
-  holo: '<path fill-rule="evenodd" d="M24 3l18 10.5v21L24 45 6 34.5v-21zm0 6.5L11.6 16.7v14.6L24 38.5l12.4-7.2V16.7z"/><path d="M24 15l7.5 9L24 33l-7.5-9z"/>',
-  reaktor: '<circle cx="24" cy="24" r="5.5"/><g fill="none" stroke-width="2.6" style="stroke:url(#kbG)"><ellipse cx="24" cy="24" rx="19" ry="7.5"/><ellipse cx="24" cy="24" rx="19" ry="7.5" transform="rotate(60 24 24)"/><ellipse cx="24" cy="24" rx="19" ry="7.5" transform="rotate(120 24 24)"/></g>',
-  garuda: '<path d="M24 8c2.2 0 3.6 1.6 3.6 3.6 0 1.4-.7 2.5-1.8 3.1L28 19l9-8.6 1.5 2.5L45 9.6 41.5 18l3.3.8-6 4.4 2 1.3-8.6 2.9L35 33l-7 .2-1.6 6.8h-4.8l-1.6-6.8-7-.2 2.8-5.6-8.6-2.9 2-1.3-6-4.4 3.3-.8L3 9.6l6.5 3.3 1.5-2.5L20 19l2.2-4.3a3.5 3.5 0 0 1-1.8-3.1C20.4 9.6 21.8 8 24 8z"/>',
-  merak: '<g transform="translate(24 40)">' + [-64, -32, 0, 32, 64].map((a) => `<g transform="rotate(${a})"><path d="M0 0C-3-10-5-22 0-34c5 12 3 24 0 34z" opacity=".85"/><circle cy="-27" r="4.6"/></g>`).join('') + '</g>',
-  keris: '<path d="M23 4c2 3 4 5 2 8s1 5 1 8-3 5-1 8 1 5 0 6l-2 2-2-2c-1-1-1-3 0-6s-1-5-1-8 3-5 1-8 0-5 2-8z"/><path d="M17 36h14l-2 3h-10z"/><rect x="21" y="39" width="6" height="7" rx="2"/>',
-  wastra: '<g transform="translate(24 24) rotate(45)"><ellipse cx="0" cy="-10" rx="5.6" ry="9.5"/><ellipse cx="0" cy="10" rx="5.6" ry="9.5"/><ellipse cx="-10" cy="0" rx="9.5" ry="5.6"/><ellipse cx="10" cy="0" rx="9.5" ry="5.6"/></g><circle cx="24" cy="24" r="2.6" opacity=".6"/>',
-  kencana: '<path d="M13 8h22l9 11-20 23L4 19z"/><path d="M13 8l11 34L35 8M4 19h40" fill="none" stroke-width="1.6" stroke="rgba(0,0,0,.28)"/>',
-};
-const KB_LBL = ['', 'Kill', 'Ganda', 'Tripel', 'Beringas', 'Amuk'];
-let KB_ID = 0;
-const KB_PIPS = [-50, -25, 0, 25, 50].map((a) => { const r = a * Math.PI / 180; return `<g transform="translate(${(Math.sin(r) * 55).toFixed(2)} ${(-Math.cos(r) * 55).toFixed(2)}) rotate(${a})"><path class="kb-pip" d="M0-8.5 5 0 0 8.5-5 0z"/></g>`; }).join(''); // animasi CSS di <path>, letak di <g>
-export function createKillBanner(parent) {
-  const el = document.createElement('div'), gid = 'kbG' + (++KB_ID); // id gradien unik per spanduk (HUD & pratinjau toko)
-  el.className = 'kb';
-  el.hidden = true;
-  el.setAttribute('aria-live', 'polite');
-  el.innerHTML = `<div class="kb-edge"></div><div class="kb-wrap"><div class="kb-mid"><i class="kb-rays"></i><i class="kb-burst"></i><i class="kb-shock"></i>
-    <svg class="kb-pips" viewBox="-64 -64 128 128" aria-hidden="true">${KB_PIPS}</svg>
-    <div class="kb-emb"><svg class="kb-ico" viewBox="0 0 48 48" aria-hidden="true"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--k2)"/><stop offset=".55" style="stop-color:var(--k1)"/><stop offset="1" style="stop-color:var(--k1)"/></linearGradient></defs><g class="kb-g"></g></svg><b class="kb-n"></b></div></div>
-    <div class="kb-tx"><em class="kb-lbl"></em><span class="kb-who"></span><i class="kb-hs">Tembakan kepala</i></div></div>`;
-  parent.appendChild(el);
-  const g = el.querySelector('.kb-g'), pips = [...el.querySelectorAll('.kb-pip')], nEl = el.querySelector('.kb-n'), lbl = el.querySelector('.kb-lbl'), who = el.querySelector('.kb-who'), hs = el.querySelector('.kb-hs');
-  let alt = 0, tOut = 0, tHide = 0, emb = '';
-  return {
-    el,
-    show(o) {
-      const th = o.theme || {}, n = Math.max(1, o.n | 0), k = Math.min(5, n);
-      el.style.setProperty('--k1', th.color || '#ffc64a');
-      el.style.setProperty('--k2', th.color2 || '#fff1c8');
-      const e = KB_EMB[th.emblem] ? th.emblem : 'std';
-      if (e !== emb) { emb = e; g.innerHTML = KB_EMB[e].replace('#kbG', '#' + gid); g.setAttribute('fill', 'url(#' + gid + ')'); }
-      pips.forEach((p, i) => p.classList.toggle('on', i < k));
-      nEl.textContent = n > 5 ? '×' + n : '';
-      lbl.textContent = o.knock ? 'Tumbang' : n > 5 ? KB_LBL[5] + ' ×' + n : KB_LBL[k];
-      who.textContent = (o.knock ? 'Melumpuhkan ' : 'Menyingkirkan ') + (o.name || '');
-      hs.hidden = !o.head;
-      alt ^= 1;
-      el.hidden = false;
-      el.className = 'kb on' + alt + ' s' + k + (o.knock ? ' kn' : '') + (th.rarity === 'legendaris' ? ' leg' : th.rarity === 'epik' ? ' epk' : '');
-      clearTimeout(tOut); clearTimeout(tHide);
-      tOut = setTimeout(() => el.classList.add('out'), 2300 + k * 150);
-      tHide = setTimeout(() => { el.hidden = true; }, 2750 + k * 150);
-    },
-  };
-}

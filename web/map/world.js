@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { cleanTrees } from './trees.js';
 import { skyDomeMaterial, SKY_GLSL } from './realism.js';
 import { makeWaterDepth, WATER } from './water.js';
+import { isHall } from './interiors.js';
 
 export const UP = new THREE.Vector3(0, 1, 0);
 export const M = 0.1; // desimeter (data) → meter
@@ -88,6 +89,57 @@ export function insetPoly(pts, d) {
     out.push(p1.clone().addScaledVector(bis, d / Math.max(bis.dot(n1), 0.35)));
   }
   return out;
+}
+// cincin poligon memotong dirinya sendiri (sisi tak bersebelahan berpotongan)?
+export function selfX(p) {
+  const n = p.length;
+  for (let i = 0; i < n; i++) {
+    const a = p[i], b = p[(i + 1) % n];
+    for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      const c = p[j], d = p[(j + 1) % n];
+      const d1 = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x), d2 = (b.x - a.x) * (d.y - a.y) - (b.y - a.y) * (d.x - a.x);
+      const d3 = (d.x - c.x) * (a.y - c.y) - (d.y - c.y) * (a.x - c.x), d4 = (d.x - c.x) * (b.y - c.y) - (d.y - c.y) * (b.x - c.x);
+      if (d1 * d2 < 0 && d3 * d4 < 0) return true;
+    }
+  }
+  return false;
+}
+const ringArea = (p) => { let a = 0; for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += p[j].x * p[i].y - p[i].x * p[j].y; return a / 2; };
+// Bentuk atap gedung (pts CCW Vector2). Rumah tapak (house) SELALU beratap miring: segi empat siku (sisi berhadapan
+// selisih ≤ 1,5 m) → perisai; cembung → limas; lainnya (L/U/poligon) → mansard (cincin genteng miring dari emper ke
+// inset d, dak datar di puncak); inset gagal total → dak datar beremper tanpa parapet. Bukan rumah: parapet bila insetnya
+// sah (tidak memotong diri), selain itu tutup datar. Dipakai addBuilding dan alat audit (.wt/_tools/audit-bangunan.mjs).
+export function roofShape(pts, area, house) {
+  if (house) {
+    const eave = insetPoly(pts, -0.38);
+    if (pts.length === 4) {
+      const L = (k) => pts[k].distanceTo(pts[(k + 1) % 4]);
+      const sq = pts.every((p, k) => { const a = pts[(k + 3) % 4], c = pts[(k + 1) % 4], ux = p.x - a.x, uy = p.y - a.y, vx = c.x - p.x, vy = c.y - p.y; return Math.abs(ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy)) < 0.1; });
+      if (sq && Math.abs(L(0) - L(2)) <= 1.5 && Math.abs(L(1) - L(3)) <= 1.5) return { type: 'hip', eave };
+    }
+    if (isConvex(pts)) return { type: 'pyramid', eave, rh: Math.min(2.6, Math.sqrt(area) * 0.16) };
+    const ea = ringArea(eave);
+    for (let d = Math.min(2.4, Math.sqrt(area) * 0.18); d >= 0.3; d /= 2) {
+      const inner = insetPoly(pts, d), ia = ringArea(inner);
+      if (inner.length === pts.length && ia > 0.5 && ia < ea && !selfX(inner) && !selfX(eave) && inner.every((q) => pip(q.x, q.y, eave))) return { type: 'mansard', eave, inner, d, rh: 0.55 * (d + 0.38) };
+    }
+    const flat = insetPoly(pts, -0.3);
+    return { type: 'eave-flat', eave: selfX(flat) ? pts : flat };
+  }
+  const inset = insetPoly(pts, 0.5);
+  if (inset.length === pts.length && THREE.ShapeUtils.area(inset) > 0.3 * area && !selfX(inset)) return { type: 'parapet', inset };
+  return { type: 'flat' };
+}
+// untuk audit: gedung i (data peta) → { type, house, c (titik tengah), area, selfX, capArea }
+export function roofPlan(D, i, H) {
+  const flat = D.buildings.r[i], pts = [];
+  for (let j = 0; j + 1 < flat.length; j += 2) pts.push(new THREE.Vector2(flat[j] * M, flat[j + 1] * M));
+  if (pts.length < 3) return null;
+  if (THREE.ShapeUtils.area(pts) < 0) pts.reverse();
+  const area = Math.abs(THREE.ShapeUtils.area(pts)), house = D.buildings.k[i] === 0 && !isHall(D, i);
+  const R = roofShape(pts, area, house), top = R.inner || R.inset;
+  return { type: R.type, house, area, c: [pts.reduce((s2, p) => s2 + p.x, 0) / pts.length, pts.reduce((s2, p) => s2 + p.y, 0) / pts.length], selfX: !!(top && selfX(top)), capArea: null };
 }
 export function isConvex(pts) {
   for (let i = 0, n = pts.length; i < n; i++) {
@@ -646,7 +698,7 @@ export function buildWorld(D, opts = {}) {
   overlay(flatGeo(D.green.r.map((r, i) => ({ ring: V2(r), color: real ? tint(GREEN_COLOR[D.greenTypes[D.green.t[i]]] || '#7fae62', ({ forest: 0.6, golf: 0.92, pitch: 0.88, cemetery: 0.72 })[D.greenTypes[D.green.t[i]]] || 0.8, 0.25) : C(GREEN_COLOR[D.greenTypes[D.green.t[i]]] || '#7fae62') })), 0.06), { map: TEX.grass, surf: 'grass' });
   const waterC = C(PAL.water);
   // Air: danau hijau-biru, sungai/kanal hijau-cokelat (seperti Cisadane). Riak bergerak (normal dari gelombang + noise),
-  // kilau matahari (Phong), pantulan langit di sudut landai (fresnel), buih di tepi sungai (atribut side −1…1).
+  // kilau matahari (Phong), pantulan langit di sudut landai (fresnel), buih di tepi sungai (atribut side −1…1 & hw).
   const lakeC = real ? C('#27504c') : game ? C('#2c6470') : waterC, riverC = real ? C('#3f5238') : game ? C('#4a6344') : waterC; // realistis: hijau keruh
   const waterT = { value: 0 };
   const waterize = (m, depth = null) => { // depth: { tex, box } → transparan di bagian dangkal, warna menurut kedalaman
@@ -655,23 +707,33 @@ export function buildWorld(D, opts = {}) {
       sh.uniforms.uSkyW = skyU;
       if (real) { sh.uniforms.tSky = { value: real.dome }; sh.uniforms.uSkyP = { value: new THREE.Vector3(real.skyV0, real.skyGain, 0) }; }
       if (depth) { sh.uniforms.uDep = { value: depth.tex }; sh.uniforms.uDBox = { value: depth.box }; sh.defines = { ...(sh.defines || {}), WDEPTH: 1 }; }
-      sh.vertexShader = 'attribute float side;\nvarying float vSide;\nvarying vec3 vWP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSide = side;\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = `${real ? '#define WREAL\n' + SKY_GLSL : ''}\nuniform float uTime;\nuniform vec3 uSkyW;\nvarying float vSide;\nvarying vec3 vWP;
+      sh.vertexShader = 'attribute float side;\nattribute float hw;\nvarying float vSide;\nvarying float vHw;\nvarying vec3 vWP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSide = side;\n  vHw = hw;\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = `${real ? '#define WREAL\n' + SKY_GLSL : ''}\nuniform float uTime;\nuniform vec3 uSkyW;\nvarying float vSide;\nvarying float vHw;\nvarying vec3 vWP;
 #ifdef WDEPTH
 uniform sampler2D uDep;
 uniform vec4 uDBox;
 #endif
 float wh21(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-float wnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh21(i), wh21(i + vec2(1.0, 0.0)), f.x), mix(wh21(i + vec2(0.0, 1.0)), wh21(i + vec2(1.0, 1.0)), f.x), f.y); }
-float waveH(vec2 p, float t) { return sin(dot(p, vec2(0.8, 0.6)) * 1.3 + t * 1.6) * 0.035 + sin(dot(p, vec2(-0.5, 0.86)) * 2.3 + t * 2.1) * 0.022 + (wnoise(p * 0.8 + vec2(t * 0.3, t * 0.17)) - 0.5) * 0.09 + (wnoise(p * 3.1 - vec2(t * 0.5, -t * 0.4)) - 0.5) * 0.025; }
+float wnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); return mix(mix(wh21(i), wh21(i + vec2(1.0, 0.0)), f.x), mix(wh21(i + vec2(0.0, 1.0)), wh21(i + vec2(1.0, 1.0)), f.x), f.y); }
+// gelombang: dua sinus + dua oktaf noise (interpolasi kuintik, domain diputar 37°/71° dan dilengkungkan oleh sinus/oktaf
+// sebelumnya) supaya kilau matahari tidak membentuk kisi kotak
+float waveH(vec2 p, float t) {
+  float s1 = sin(dot(p, vec2(0.8, 0.6)) * 1.3 + t * 1.6), s2 = sin(dot(p, vec2(-0.5, 0.86)) * 2.3 + t * 2.1);
+  float n1 = wnoise(mat2(0.7986, 0.6018, -0.6018, 0.7986) * p * 0.8 + vec2(t * 0.3, t * 0.17) + vec2(s2, s1) * 0.6);
+  float n2 = wnoise(mat2(0.3256, 0.9455, -0.9455, 0.3256) * p * 3.1 - vec2(t * 0.5, -t * 0.4) + vec2(s1 + n1, s2 - n1) * 0.7);
+  return s1 * 0.035 + s2 * 0.022 + (n1 - 0.5) * 0.09 + (n2 - 0.5) * 0.025;
+}
 ` + sh.fragmentShader
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-  float e = 0.08, h0 = waveH(vWP.xz, uTime);
+  float e = 0.12, h0 = waveH(vWP.xz, uTime);
   vec3 nW = normalize(vec3(-(waveH(vWP.xz + vec2(e, 0.0), uTime) - h0) / e, 1.0, -(waveH(vWP.xz + vec2(0.0, e), uTime) - h0) / e));
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);`)
         .replace('#include <color_fragment>', `#include <color_fragment>
-  float foam = smoothstep(0.8, 1.0, abs(vSide)) * (0.5 + 0.5 * wnoise(vWP.xz * 1.7 + vec2(uTime * 0.45, 0.0)));
-  diffuseColor.rgb = mix(diffuseColor.rgb * (0.9 + 0.2 * wnoise(vWP.xz * 0.15)), vec3(0.84, 0.86, 0.8), foam * 0.65);
+  // buih: pita tipis (0,28–0,42 m, bernapas pelan) dekat tebing sungai; danau tanpa atribut hw (0) → tanpa buih
+  float dB = (1.0 - abs(vSide)) * vHw, fW = 0.35 + 0.07 * sin(uTime * 0.9 + wnoise(vWP.xz * 0.11) * 6.2832);
+  vec2 fq = vWP.xz * 2.3 + vec2(uTime * 0.12, -uTime * 0.07);
+  float foam = (1.0 - smoothstep(0.05, fW, dB)) * mix(0.4, 1.0, smoothstep(0.35, 0.75, wnoise(fq) * 0.65 + wnoise(mat2(0.7986, 0.6018, -0.6018, 0.7986) * fq * 2.1) * 0.35)) * step(0.001, vHw); // garis menerus, gumpalan lebih terang
+  diffuseColor.rgb = mix(diffuseColor.rgb * (0.9 + 0.2 * wnoise(vWP.xz * 0.15)), vec3(0.8, 0.83, 0.78), foam * 0.38);
 #ifdef WDEPTH
   float wdep = texture2D(uDep, (vec2(vWP.x, -vWP.z) - uDBox.xy) / (uDBox.zw - uDBox.xy)).r * 8.0;
 #ifdef WREAL
@@ -701,23 +763,56 @@ float waveH(vec2 p, float t) { return sin(dot(p, vec2(0.8, 0.6)) * 1.3 + t * 1.6
     m.onBeforeRender = () => { waterT.value = performance.now() / 1000; };
     return m;
   };
-  function riverGeo(lines) { // pita sungai dengan atribut side (−1 tepi kanan … +1 tepi kiri) untuk buih
-    const pos = [], nor = [], col = [], side = [];
+  function riverGeo(lines) {
+    // Pita sungai menerus tanpa tumpang: di tiap verteks offset kiri/kanan mengikuti garis bagi sudut (miter); sisi dalam
+    // tikungan dibatasi panjang segmen tetangga, sisi luar tikungan tajam (> 60°) diberi sambungan bundar (kipas, ≤ 20°/langkah).
+    // Atribut side (−1 tepi kanan … +1 tepi kiri) & hw (setengah lebar, m) dipakai shader untuk pita buih di tepi.
+    const pos = [], nor = [], col = [], side = [], hws = [];
+    const MAXT = Math.PI / 3, STEP = Math.PI / 9;
     for (const L of lines) {
-      const P = L.pts, n = P.length, hw = L.w / 2, c = L.color;
-      for (let i = 0; i + 1 < n; i++) {
-        const a = P[i], b = P[i + 1];
-        let dx = b.x - a.x, dy = b.y - a.y;
-        const len = Math.hypot(dx, dy);
-        if (len < 0.01) continue;
-        dx /= len; dy /= len;
-        const ex = Math.min(hw, len), ax = a.x - dx * ex, ay = a.y - dy * ex, bx = b.x + dx * ex, by = b.y + dy * ex, nx = -dy * hw, ny = dx * hw;
-        const q = [ax + nx, ay + ny, bx + nx, by + ny, bx - nx, by - ny, ax - nx, ay - ny], sd = [1, 1, -1, -1];
-        for (const k of [0, 2, 1, 0, 3, 2]) { pos.push(q[k * 2], L.y, -q[k * 2 + 1]); nor.push(0, 1, 0); col.push(c.r, c.g, c.b); side.push(sd[k]); }
+      const hw = L.w / 2, c = L.color, P = [];
+      if (!(hw > 0)) continue;
+      for (const p of L.pts) if (!P.length || Math.hypot(p.x - P[P.length - 1].x, p.y - P[P.length - 1].y) >= 0.05) P.push({ x: p.x, y: p.y });
+      let n = P.length;
+      const closed = n > 3 && Math.hypot(P[0].x - P[n - 1].x, P[0].y - P[n - 1].y) < 0.05;
+      if (closed) P.pop(), n--;
+      if (n < 2) continue;
+      const tri = (a, b, d) => { // a, b, d = [x, y, side]; segitiga menghadap ke atas (berlawanan jarum jam di bidang data)
+        if ((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]) < 0) [b, d] = [d, b];
+        for (const v of [a, b, d]) { pos.push(v[0], L.y, -v[1]); nor.push(0, 1, 0); col.push(c.r, c.g, c.b); side.push(v[2]); hws.push(hw); }
+      };
+      const ns = closed ? n : n - 1, dx = [], dy = [], len = [];
+      for (let i = 0; i < ns; i++) { const a = P[i], b = P[(i + 1) % n], l = Math.hypot(b.x - a.x, b.y - a.y); dx.push((b.x - a.x) / l); dy.push((b.y - a.y) / l); len.push(l); }
+      const S = [], E = []; // S[i]: pasangan [kiri, kanan] awal segmen i; E[i]: akhir segmen i
+      for (let i = 0; i < n; i++) {
+        const p = P[i], i0 = i - 1 < 0 ? (closed ? ns - 1 : -1) : i - 1, i1 = i < ns ? i : -1;
+        if (i0 < 0 || i1 < 0) { // ujung polyline: rata, diperpanjang hw
+          const s = i1 >= 0 ? i1 : i0, k = i1 >= 0 ? -1 : 1, ex = p.x + dx[s] * hw * k, ey = p.y + dy[s] * hw * k, nx = -dy[s] * hw, ny = dx[s] * hw;
+          const pr = [[ex + nx, ey + ny, 1], [ex - nx, ey - ny, -1]];
+          if (i1 >= 0) S[i1] = pr; else E[i0] = pr;
+          continue;
+        }
+        const cr = dx[i0] * dy[i1] - dy[i0] * dx[i1], th = Math.atan2(cr, dx[i0] * dx[i1] + dy[i0] * dy[i1]), half = Math.abs(th) / 2;
+        let bx = -dy[i0] - dy[i1], by = dx[i0] + dx[i1]; // garis bagi ke kiri
+        const bl = Math.hypot(bx, by);
+        if (Math.abs(th) < 1e-4 || bl < 1e-6) { const nx = -dy[i1] * hw, ny = dx[i1] * hw, pr = [[p.x + nx, p.y + ny, 1], [p.x - nx, p.y - ny, -1]]; E[i0] = S[i1] = pr; continue; }
+        bx /= bl; by /= bl;
+        const m = hw / Math.max(Math.cos(half), 0.5), sg = th > 0 ? 1 : -1; // sg: sisi dalam (+1 kiri, −1 kanan)
+        const mi = Math.min(m, Math.min(len[i0], len[i1]) / Math.max(Math.sin(half), 1e-6));
+        const I = [p.x + bx * mi * sg, p.y + by * mi * sg, sg];
+        if (Math.abs(th) <= MAXT) { const O = [p.x - bx * m * sg, p.y - by * m * sg, -sg]; E[i0] = S[i1] = sg > 0 ? [I, O] : [O, I]; continue; }
+        // sambungan bundar di sisi luar: kipas dari titik dalam I ke busur berjari-jari hw di sekitar p
+        const a0 = Math.atan2(-dx[i0] * sg, dy[i0] * sg), k = Math.ceil(Math.abs(th) / STEP), arc = []; // normal luar segmen masuk = −sg·kiri
+        for (let j = 0; j <= k; j++) { const a = a0 + th * j / k; arc.push([p.x + Math.cos(a) * hw, p.y + Math.sin(a) * hw, -sg]); }
+        for (let j = 0; j < k; j++) tri(I, arc[j], arc[j + 1]);
+        E[i0] = sg > 0 ? [I, arc[0]] : [arc[0], I];
+        S[i1] = sg > 0 ? [I, arc[k]] : [arc[k], I];
       }
+      for (let i = 0; i < ns; i++) { const [a, b] = S[i], [d, e] = E[i]; tri(a, b, e); tri(a, e, d); } // a kiri awal, b kanan awal, e kanan akhir, d kiri akhir
     }
     const g = geo(pos, nor, col);
     g.setAttribute('side', new THREE.Float32BufferAttribute(side, 1));
+    g.setAttribute('hw', new THREE.Float32BufferAttribute(hws, 1));
     return g;
   }
   if (!game) waterize(overlay(flatGeo(D.water.map((r) => ({ ring: V2(r), color: lakeC })), 0.08), { phong: true }));
@@ -1005,9 +1100,11 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       vec4 o1 = texelFetch(uOpen, tc + ivec2(1, 0), 0);
       upBand = texelFetch(uOpen, tc + ivec2(2, 0), 0).xy;
       bool isOpen = o0.r > 0.5 && vWuv.y < o0.a;
-      if (o1.b > 0.0) { // toko/aula: bukaan berkala di rentang sisi depan
-        float bf = mod(vWuv.x, o1.b);
-        if (isOpen && ((vWuv.x >= o0.g && vWuv.x <= o0.b) || (vWuv.x >= o1.r && vWuv.x <= o1.g)) && bf >= o1.a && bf <= o1.b - o1.a) discard;
+      if (o1.b > 0.0) { // toko/aula: bukaan berkala di rentang sisi depan (bukaan utuh di satu sisi dinding = interiors.js planShop)
+        float bf = mod(vWuv.x, o1.b), opA = floor(vWuv.x / o1.b) * o1.b + o1.a;
+        vec2 sgA = vSeg.x > -1.0 ? vSeg : -vSeg - 10.0;
+        bool whole = o1.b > 999.0 || (opA >= sgA.x - 0.02 && opA + o1.b - 2.0 * o1.a <= sgA.y + 0.02);
+        if (whole && ((vWuv.x >= o0.g && vWuv.x <= o0.b) || (vWuv.x >= o1.r && vWuv.x <= o1.g)) && bf >= o1.a && bf <= o1.b - o1.a && vWuv.y < o0.a) { if (isOpen) discard; doorK = 3.0; } // belum terbuka: rongga gelap (bukan kaca)
       } else {
         bool inA = vWuv.x >= o0.g && vWuv.x <= o0.b, inB = vWuv.x >= o1.r && vWuv.x <= o1.g;
         bool door = vWuv.y < 2.2 && (inA || inB);
@@ -1015,7 +1112,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
         float hfx = fract(vWuv.x / 3.6), hfy = fract(vWuv.y / 3.3);
         bool win = hWinOk && vWuv.y > 0.8 && hfy >= 0.36 && hfy <= 0.78 && hfx >= 0.3 && hfx <= 0.7;
         if (isOpen && (door || win)) discard;
-        if (door) { doorK = 1.0; dU0 = inA ? o0.g : o1.r; dU1 = inA ? o0.b : o1.g; }
+        if (door) { doorK = 1.0; dU0 = inA ? o0.g : o1.r; dU1 = inA ? o0.b : o1.g; vec4 o3 = texelFetch(uOpen, tc + ivec2(3, 0), 0); if ((inA ? o3.x : o3.y) > 0.5) doorK = 2.0; } // 2 = pintu terbuka (rongga)
       }
     }
   }
@@ -1153,7 +1250,13 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     float shade = (0.78 + 0.22 * smoothstep(0.0, 0.35, r)) * (1.0 - 0.12 * (1.0 - step(0.07, colm)));
     diffuseColor.rgb *= shade * (0.94 + 0.12 * vnoise(vWPos.xz * 0.5));
   }
-  if (doorK > 0.5) { // pintu tertutup (rumah di luar jangkauan buka): dua daun pintu panel kayu + kusen + gagang
+  if (doorK > 2.5) { // bukaan ruko/aula/lobi belum terbuka: rongga gelap
+    winMask = 0.0; winLit = 0.0; signMask = 0.0; diffuseColor.rgb = vec3(0.06);
+#ifdef REAL
+    rInterior = vec3(0.0); rRough = 0.9; rMetal = 0.0;
+#endif
+  }
+  else if (doorK > 0.5) { // pintu tertutup (rumah di luar jangkauan buka): dua daun pintu panel kayu + kusen + gagang
     float lw = dU1 - dU0, lx = vWuv.x - dU0, ly = vWuv.y, hx = abs(lx - lw * 0.5); // hx: jarak dari celah tengah
     vec3 wood = vec3(0.36, 0.23, 0.14) * (0.85 + 0.3 * h21(vec2(hbi, 3.1)));
     float pan = step(0.1, hx) * step(hx, lw * 0.5 - 0.17) * (step(0.2, ly) * step(ly, 0.95) + step(1.1, ly) * step(ly, 1.95)); // panel timbul
@@ -1162,6 +1265,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     vec3 dfr = fs2 < 3.0 ? vec3(0.95, 0.94, 0.91) : fs2 < 5.0 ? vec3(0.2, 0.2, 0.22) : vec3(0.42, 0.29, 0.19);
     dc = mix(dc, dfr, max(max(step(lx, 0.07), step(lw - 0.07, lx)), step(2.12, ly))); // kusen
     dc = mix(dc, vec3(0.78, 0.74, 0.62), 1.0 - step(0.03, length(vec2(hx - 0.07, ly - 1.02)))); // gagang
+    if (doorK > 1.5) dc = mix(vec3(0.06), dfr, max(max(step(lx, 0.07), step(lw - 0.07, lx)), step(2.12, ly))); // terbuka: rongga gelap + kusen
     diffuseColor.rgb = dc;
 #ifdef REAL
     rRough = 0.5;
@@ -1170,7 +1274,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
 #ifdef REAL
   if (vWuv.y > -0.5) { // dinding: detail plester foto (dinormalkan terhadap rata-ratanya) + peta normal
     vec2 tuv = rSuv / uRTile.x;
-    float wallK = (1.0 - winMask) * (1.0 - signMask) * (1.0 - doorK);
+    float wallK = (1.0 - winMask) * (1.0 - signMask) * (1.0 - min(doorK, 1.0));
     float det = dot(texture2D(tPlA, tuv).rgb, vec3(0.3333)) / max(dot(textureLod(tPlA, tuv, 10.0).rgb, vec3(0.3333)), 0.05);
     diffuseColor.rgb *= mix(1.0, det, 0.55 * wallK);
     vec3 pn = texture2D(tPlN, tuv).xyz * 2.0 - 1.0;
@@ -1241,7 +1345,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       const u0 = windows ? per : undefined, u1 = windows ? per + len : undefined;
       // rentang sisi: shader meniadakan jendela yang terpotong sudut; sisi buta [−5, −5] = tanpa jendela (u tetap dipakai
       // untuk pintu: pintu belakang di gang sempit tetap tergambar & berlubang)
-      const sg = win ? [per, per + len] : windows ? [-5, -5] : null;
+      const sg = win ? [per, per + len] : windows ? [-10 - per, -10 - per - len] : null; // buta: rentang disandikan negatif (−10 − u)
       const A0 = V(a.x, a.y, z0, u0, z0, lowC, sg), B0 = V(b.x, b.y, z0, u1, z0, lowC, sg), B1 = V(b.x, b.y, z1, u1, z1, topC, sg), A1 = V(a.x, a.y, z1, u0, z1, topC, sg);
       emitTri(A0, B0, B1, n, topC, o);
       emitTri(A0, B1, A1, n, topC, o);
@@ -1446,6 +1550,24 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     if (rec) (D.roofs || (D.roofs = new Map())).set(i, out);
     return out;
   }
+  function houseRoof(pts, area, h, roofC, o) {
+    const R = roofShape(pts, area, true), eave = R.eave;
+    walls(eave, h - 0.28, h, o, roofC.clone().multiplyScalar(0.62), roofC.clone().multiplyScalar(0.55), false, false); // lisplang
+    capDown(eave, h - 0.28, roofC.clone().multiplyScalar(0.5), o); // bawah emper (menghadap ke bawah: dari bawah tidak tembus langit)
+    if (R.type === 'hip') hipRoof(eave, h, roofC, o);
+    else if (R.type === 'pyramid') pyramidRoof(eave, h, roofC, o, R.rh);
+    else if (R.type === 'mansard') {
+      const top = h + R.rh, inn = R.inner;
+      for (let j = 0; j < eave.length; j++) { // cincin genteng miring
+        const a = eave[j], b = eave[(j + 1) % eave.length], c = inn[(j + 1) % inn.length], d = inn[j], cc = roofC.clone().multiplyScalar(j % 2 ? 0.88 : 1.0);
+        emitTri(V(a.x, a.y, h), V(b.x, b.y, h), V(c.x, c.y, top), null, cc, o);
+        emitTri(V(a.x, a.y, h), V(c.x, c.y, top), V(d.x, d.y, top), null, cc, o);
+      }
+      cap(inn, top, roofC.clone().multiplyScalar(0.72), o); // dak di puncak (tak terlihat dari tanah)
+      ring(inn, top, o);
+    } else cap(eave, h, roofC.clone().multiplyScalar(0.8), o);
+    ring(eave, h, o);
+  }
   function addBuilding(i, o, override) {
     const pts = V2(B.r[i]);
     if (pts.length < 3) return;
@@ -1462,6 +1584,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     const blind = kind === 0 ? blindEdges(i, pts) : null;
     if (blind && blind.size) (D.blind || (D.blind = new Map())).set(i, blind); // dipakai interiors.js & collide.js (tanpa lubang jendela)
     walls(pts, 0, h, o, wallC, lowC, false, true, blind);
+    if (game && kind === 0 && !isHall(D, i)) { houseRoof(pts, area, h, roofC, o); return; } // rumah tapak: selalu atap miring
     const pitched = kind === 0 && ((B.f[i] & 2) === 2 || (area < 450 && pts.length <= 8 && isConvex(pts)));
     if (pitched) {
       const eave = insetPoly(pts, -0.38);
@@ -1473,7 +1596,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
       return;
     }
     const inset = insetPoly(pts, 0.5);
-    const okInset = inset.length === pts.length && THREE.ShapeUtils.area(inset) > 0.3 * area;
+    const okInset = inset.length === pts.length && THREE.ShapeUtils.area(inset) > 0.3 * area && !(game && selfX(inset)); // inset memotong diri (parapet terlipat): tutup datar
     if (!okInset) { cap(pts, h, roofC, o); ring(pts, h, o); return; }
     // parapet: bibir atas, dinding dalam, lantai atap lebih rendah
     const rimC = wallC.clone().multiplyScalar(0.96);
@@ -1527,6 +1650,13 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     D.bands[i * 2] = z0; D.bands[i * 2 + 1] = z1;
     openTex.needsUpdate = true;
   };
+  // keadaan pintu rumah (map/collide.js col.doors, disalin interiors.js): texel 4 = (pintu A terbuka, pintu B terbuka). Rumah
+  // belum dibuka (interior belum dibangun): pintu terbuka digambar rongga gelap, tertutup = daun kayu
+  const setDoorState = (i, k, open) => {
+    if (k < 0 || k > 1) return;
+    openData[texOf(i) + 12 + k] = open ? 1 : 0;
+    openTex.needsUpdate = true;
+  };
   const buildings = new THREE.Mesh(bGeo, bMat);
   buildings.castShadow = buildings.receiveShadow = true;
   if (game && real) {
@@ -1554,7 +1684,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     if (o0.a > 0.0 && vWuv.y < o0.a) {
       vec4 o1 = texelFetch(uOpen, tc + ivec2(1, 0), 0);
       bool inA = vWuv.x >= o0.g && vWuv.x <= o0.b, inB = vWuv.x >= o1.r && vWuv.x <= o1.g;
-      if (o1.b > 0.0) { float bf = mod(vWuv.x, o1.b); if ((inA || inB) && bf >= o1.a && bf <= o1.b - o1.a) discard; }
+      if (o1.b > 0.0) { float bf = mod(vWuv.x, o1.b), opA = floor(vWuv.x / o1.b) * o1.b + o1.a; vec2 sgA = vSeg.x > -1.0 ? vSeg : -vSeg - 10.0; if ((inA || inB) && bf >= o1.a && bf <= o1.b - o1.a && (o1.b > 999.0 || (opA >= sgA.x - 0.02 && opA + o1.b - 2.0 * o1.a <= sgA.y + 0.02))) discard; }
       else {
         float wb0 = floor(vWuv.x / 3.6) * 3.6 + 1.08, wb1 = wb0 + 1.44, hfx = fract(vWuv.x / 3.6), hfy = fract(vWuv.y / 3.3);
         bool ok = vSeg.x > -1.0 && !(vSeg.y > vSeg.x && (wb0 < vSeg.x + 0.3 || wb1 > vSeg.y - 0.3));
@@ -1725,5 +1855,5 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     sunDisc.material.opacity = 0;
   }
 
-  return { real, V2, C, boundary, boundaryHoles, enclaves, game, bb, center, inArea, LAT, LON, B, renderer, small, scene, camera, hemi, sun, TEX, slab, slabTop, floorShadow, overlay, flatGeo, ribbonGeo, stripGeo, markGeo, dashGeo, clusterFill, clusterLines, goldEdge, nightU, skyU, bMat, geo, addBuilding, buildings, edges, lineMat, trees, treesReady, setHouseOpen, setFloorBand, lamps, skyUni, sky, dome, stars, sunDisc, cloudMat, clouds };
+  return { real, V2, C, boundary, boundaryHoles, enclaves, game, bb, center, inArea, LAT, LON, B, renderer, small, scene, camera, hemi, sun, TEX, slab, slabTop, floorShadow, overlay, flatGeo, ribbonGeo, stripGeo, markGeo, dashGeo, clusterFill, clusterLines, goldEdge, nightU, skyU, bMat, geo, addBuilding, buildings, edges, lineMat, trees, treesReady, setHouseOpen, setFloorBand, setDoorState, lamps, skyUni, sky, dome, stars, sunDisc, cloudMat, clouds };
 }

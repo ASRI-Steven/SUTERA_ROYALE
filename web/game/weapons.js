@@ -310,7 +310,7 @@ function vmPatch(m, L) {
   m.userData.env0 = m.envMapIntensity;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
-    sh.uniforms.uSfT = SF_U.uSfT; sh.uniforms.uSfG = VM_G; // skin (lengan bisa berganti pola tanpa material baru)
+    sh.uniforms.uSfT = SF_U.uSfT; sh.uniforms.uSfG = VM_G; sh.uniforms.uSfK = VM_K; // skin (lengan bisa berganti pola tanpa material baru); uSfK = animasi kill
     sh.vertexShader = VM_VS_PARS + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>' + VM_VS);
     sh.fragmentShader = VM_FS_PARS + VM_SKIN_PARS + sh.fragmentShader
       .replace('#include <color_fragment>', '#include <color_fragment>' + VM_SKIN_COLOR + VM_FS_COLOR)
@@ -537,10 +537,31 @@ export function setVmArms(o = {}) {
 // ---------- Efek skin senjata pemain (diisi game/skins.js applyEquipped) ----------
 // tracer / flash: warna HDR [r, g, b] pelacak & kilatan moncong; flame: nyala moncong beranimasi (createSkinFlame);
 // glow: pakai pendar isi ulang/periksa/cabut; cue(ev): bunyi 'equip' | 'inspect' | 'reload' (game/audio.js). null = pabrik.
-const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null };
-export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null }, o || {}); SKIN.v++; }
+const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null };
+export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null }, o || {}); SKIN.v++; }
 // pendar view-model dari luar pertandingan (etalase lobi memakai material yang sama): glow, panas, kilat, posisi sapuan
 export function setVmGlow(x, y, z, w) { VM_G.value.set(x, y, z, w); }
+// ---------- Animasi kill di senjata (pengganti spanduk kill, 24 Nov) ----------
+// Skin beranimasi (th.killAnim) bereaksi saat pemain kill: uSfK view-model (skinfx.js GUN_SKIN_GLSL) = x amplop denyut 0→1→0
+// (naik 0,12 dtk, turun ±1,1 dtk), y sapuan pegangan → moncong 0..1 (0,35 dtk), z beruntun (min(n,5) − 1) / 4, w fase acak.
+// Nyala moncong membesar ±2,2× selama ±0,5 dtk; mulai kill ke-3 cangkang aditif menyelubungi senjata ±1,5 dtk; senjata
+// berselebrasi singkat lewat pegas (hanya bila tidak membidik/menembak/beraksi). Lumpuhkan = denyut setengah, tanpa gerak.
+// killPulse dipanggil game/killfx.js (pertandingan) & lobby.js (etalase); killAnimTick sekali per frame (view-model / lobi).
+const VM_K = { value: new THREE.Vector4(0, 0, 0, 0) };
+const KILL = { t: 9, n: 1, str: 1, ph: 0, move: false, shell: false };
+export function killPulse(n = 1, knock = false) { Object.assign(KILL, { t: 0, n: Math.max(1, n | 0), str: knock ? 0.5 : 1, ph: Math.random() * 6.283, move: !knock, shell: !knock && n >= 3 }); }
+export function killAnimTick(dt) { // → pengali ukuran nyala moncong (1 = biasa)
+  const t = (KILL.t += dt);
+  if (t > 1.6) { VM_K.value.x = 0; return 1; }
+  const a = t < 0.12 ? t / 0.12 : Math.max(0, 1 - (t - 0.12) / 1.1), e = a * a * (3 - 2 * a);
+  VM_K.value.set(e * KILL.str, Math.min(1, t / 0.35), (Math.min(5, KILL.n) - 1) / 4, KILL.ph);
+  return t < 0.5 ? 1 + 1.2 * KILL.str * Math.sin(Math.PI * t / 0.5) : 1;
+}
+// selubung (kill ke-3+): salinan permukaan senjata dikembangkan menurut normal, fresnel tajam, aditif; satu material bersama
+const SHELL_U = { uExp: { value: 0.0035 }, uC: { value: new THREE.Color() }, uI: { value: 0 }, uT: SF_U.uSfT };
+const shellMat = new THREE.ShaderMaterial({ uniforms: SHELL_U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: 'uniform float uExp; varying vec3 vN; varying vec3 vV;\nvoid main() { vec4 mv = modelViewMatrix * vec4(position + normal * uExp, 1.0); vN = normalize(normalMatrix * normal); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }',
+  fragmentShader: 'uniform vec3 uC; uniform float uI, uT; varying vec3 vN; varying vec3 vV;\nvoid main() { float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2); float w = 0.7 + 0.3 * sin(uT * 22.0 + vV.y * 260.0 + vV.x * 90.0); gl_FragColor = vec4(uC * (f * w * uI), 1.0); }' });
 // titik moncong senjata `kind` di ruang senjata (untuk nyala moncong etalase lobi)
 export function muzzleLocal(kind, out = new THREE.Vector3()) { const m = nodeLocal(kind + '_muzzle', kind); return m ? out.copy(m) : out.set(0, 0.012, MUZZLE_Z[kind] || -0.6); }
 // nyala moncong beranimasi (billboard shader, skinfx.js FLAME_*): { mesh, set(flame), update(heat, kick, fade, scale) }.
@@ -753,10 +774,35 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (sk.sweepV > 0) { sk.sweepV = Math.max(0, sk.sweepV - dt * 1.8); sk.sweep = -0.95 + (1 - sk.sweepV) * 1.5; if (!sk.sweepV && !(st.inspect > 0)) sk.sweep = -99; }
     sk.glow = Math.max(0, sk.glow - dt * 1.6);
     VM_G.value.set(SKIN.glow ? Math.max(glow, sk.glow) : 0, sk.heat, sk.kick, SKIN.glow ? sk.sweep : -99);
+    const fk = killFx(dt, G, scoped); // animasi kill skin (blok di bawah)
     // nyala moncong di titik moncong senjata yang dipegang: membesar saat menembak & panas, memudar saat membidik
     const on = !!(SKIN.flame && G && G.g.parent && G.g.visible && !scoped);
     skinFlame.mesh.visible = on;
-    if (on) { G.muzzle.getWorldPosition(v); skinFlame.mesh.position.copy(v); skinFlame.update(sk.heat, sk.kick, 1 - st.ads * 0.85, FLASH_K[st.kind] || 1); }
+    if (on) { G.muzzle.getWorldPosition(v); skinFlame.mesh.position.copy(v); skinFlame.update(sk.heat + (fk - 1) * 0.6, sk.kick, Math.max(1 - st.ads * 0.85, (fk - 1) * 0.6), (FLASH_K[st.kind] || 1) * fk); }
+  }
+  // animasi kill (killPulse): uSfK, selebrasi pegas (tertunda sampai tidak membidik/menembak/beraksi, maks 1 dtk), selubung
+  // kill ke-3+ (cangkang per senjata dibuat sekali saat pertama dipakai, berbagi geometri; programnya dikompilasi lewat
+  // shellDummy di root). Scope 4×/8× terpasang & membidik: tanpa efek sama sekali.
+  const shellDummy = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3)).setAttribute('normal', new THREE.BufferAttribute(new Float32Array(9), 3)), shellMat);
+  shellDummy.geometry.setDrawRange(0, 0); shellDummy.frustumCulled = false; root.add(shellDummy);
+  let shellG = null;
+  function shellOf(G) {
+    if (!G.kShell) { G.kShell = []; const ms = []; G.g.traverse((o) => { let h = o; while (h && h !== G.g && !(h.name || '').startsWith('fp_hand')) h = h.parent; if (o.isMesh && h === G.g && o.material !== shellMat && o.geometry.attributes.normal) ms.push(o); }); // tanpa tangan/lengan
+      for (const o of ms) { const m = new THREE.Mesh(o.geometry, shellMat); m.frustumCulled = false; m.renderOrder = 34; m.visible = false; o.add(m); m.updateMatrix(); G.kShell.push(m); } }
+    return G.kShell;
+  }
+  function killFx(dt, G, scoped) {
+    const fk = killAnimTick(dt), live = KILL.t < 1.6 && SKIN.killAnim;
+    if (!live || scoped || !G) { VM_K.value.x = 0; KILL.move = false; }
+    if (KILL.move && KILL.t < 1 && st.ads < 0.1 && sk.kick < 0.08 && !st.act && !st.nade && !(st.swap > 0)) { // selebrasi: miring ±12° di sumbu laras, naik ±2 cm
+      KILL.move = false; spv[2] += (KILL.ph > 3.14 ? 1 : -1) * 13; spv[3] += 0.55; spv[4] -= 0.6;
+    }
+    if (KILL.t >= 1) KILL.move = false;
+    const sOn = !!(live && KILL.shell && G && !scoped && KILL.t < 1.5);
+    if (sOn && shellG !== G) { if (shellG) for (const m of shellG.kShell) m.visible = false; shellG = G; for (const m of shellOf(G)) m.visible = true; SHELL_U.uC.value.set(SKIN.color || '#ffd890'); }
+    if (!sOn && shellG) { for (const m of shellG.kShell) m.visible = false; shellG = null; }
+    if (sOn) { const a = KILL.t < 0.15 ? KILL.t / 0.15 : Math.max(0, 1 - (KILL.t - 0.15) / 1.35); SHELL_U.uI.value = a * (0.45 + 0.35 * (Math.min(5, KILL.n) - 3)) * (1 - 0.6 * st.ads); }
+    return live && !scoped ? fk : 1;
   }
   // ganti model prosedural dengan model Blender (laras −Z, asal di pegangan): titik bidik & moncong dari model;
   // magasin (<jenis>_mag) & pompa (shotgun_pump) adalah simpul terpisah di weapons.glb → dipasang ke senjata supaya bisa dianimasikan
@@ -955,12 +1001,128 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const heal = new THREE.Group();
   heal.visible = false; // ditempel ke root hanya selama dipakai
   const hArmL = armPiece('fp_hand_l', AX_L), hArmR = armPiece('fp_hand_r', AX_R), hArmC = armPiece('fp_hand_nade', AX_N);
-  const bandageMat = new THREE.MeshStandardMaterial({ color: '#f1efe8', roughness: 0.9 });
-  const unitCyl = new THREE.CylinderGeometry(1, 1, 1, 18, 1, true);
-  const wrap = new THREE.Mesh(unitCyl, bandageMat), roll = new THREE.Group();
-  { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, 0.05, 18), bandageMat), core = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.052, 10), new THREE.MeshStandardMaterial({ color: '#b9b2a2' })); roll.add(r, core); }
-  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1, 0.003), bandageMat); // pita perban dari gulungan ke lengan (sumbu panjang = Y)
-  wrap.material.side = THREE.DoubleSide;
+  // ---- perban v3: lengan kiri berkepalan longgar (tangan kanan GLB dicerminkan), kasa = pita heliks bertekstur ----
+  // Lengan kiri perban = potongan fp_hand_r dicerminkan (skala x −1; three.js membalik sisi depan sendiri), sumbu AX_LB.
+  // Pita dibuat sekali menempel potongan itu: 3 lilitan, lebar 4,4 cm, langkah 3 cm (tumpang ±30 %), radius = profil
+  // permukaan lengan (diukur dari verteks potongan per stasiun & sektor sudut) + 1,2 mm (+0,25 mm per lilitan).
+  // Tumbuh lewat setDrawRange + kolom ujung yang diinterpolasi (menerus). Gulungan & pita bebas di ruang kamera.
+  const AX_LB = new THREE.Vector3(-AX_R.x, AX_R.y, AX_R.z);
+  const hArmLB = new THREE.Group();
+  { const p = armPiece('fp_hand_r', AX_R); p.scale.x = -1; hArmLB.add(p); hArmLB.name = 'fp_hand_lb'; }
+  // pose membalut (ruang kamera): telapak, arah ke siku (kiri-bawah, sedikit ke kamera → lengan naik ±28° ke kanan),
+  // dan arah sisi dalam lengan (menghadap kamera & sedikit ke atas)
+  const BAND_P = [-0.04, -0.045, -0.42], BAND_D = [-0.84, -0.44, 0.32], BAND_IN = new THREE.Vector3(0, 0.55, 1).normalize();
+  const BAND_H = new THREE.Vector3(1, 0, 0).applyAxisAngle(AX_LB, -Math.PI / 2); // sumbu lokal yang diarahkan ke BAND_IN: kepalan tampak dari sisi ibu jari
+  const BT = { turns: 3, seg: 28, w: 0.044, pitch: 0.03, s0: 0.085, rows: 3 }; // s0 = pusat pita lilitan pertama dari telapak (m, sepanjang AX_LB)
+  // profil radius lengan di sekitar sumbu: pusat sumbu = rata-rata titik tengah kotak batas per stasiun (cincin lengan baju/manset)
+  function armProfile(piece, a, s0, s1, ds, nSec) {
+    const e1 = new THREE.Vector3().crossVectors(a, UPV).normalize(), e2 = new THREE.Vector3().crossVectors(e1, a).normalize();
+    const nSt = Math.round((s1 - s0) / ds) + 1, r = new Float32Array(nSt * nSec), c = new THREE.Vector3(), v = new THREE.Vector3();
+    const bb = new Float32Array(nSt * 4).fill(NaN);
+    piece.updateMatrixWorld(true);
+    const inv = piece.matrixWorld.clone().invert(), m = new THREE.Matrix4(), pts = [];
+    piece.traverse((o) => { if (!o.isMesh || !o.geometry.attributes.position) return; m.copy(o.matrixWorld).premultiply(inv); const P = o.geometry.attributes.position;
+      for (let i = 0; i < P.count; i++) { v.fromBufferAttribute(P, i).applyMatrix4(m); const s = v.dot(a); if (s < s0 - ds || s > s1 + ds) continue; pts.push(s, v.dot(e1), v.dot(e2)); } });
+    let cx = 0, cy = 0, cn = 0;
+    for (let i = 0; i < pts.length; i += 3) { const k = Math.round((pts[i] - s0) / ds); if (k < 0 || k >= nSt) continue; const b = k * 4;
+      if (!(bb[b] <= pts[i + 1])) bb[b] = pts[i + 1]; if (!(bb[b + 1] >= pts[i + 1])) bb[b + 1] = pts[i + 1]; if (!(bb[b + 2] <= pts[i + 2])) bb[b + 2] = pts[i + 2]; if (!(bb[b + 3] >= pts[i + 2])) bb[b + 3] = pts[i + 2]; }
+    for (let k = 0; k < nSt; k++) if (bb[k * 4] === bb[k * 4]) { cx += (bb[k * 4] + bb[k * 4 + 1]) / 2; cy += (bb[k * 4 + 2] + bb[k * 4 + 3]) / 2; cn++; }
+    if (cn) { cx /= cn; cy /= cn; }
+    for (let i = 0; i < pts.length; i += 3) {
+      const k = Math.round((pts[i] - s0) / ds); if (k < 0 || k >= nSt) continue;
+      const x = pts[i + 1] - cx, y = pts[i + 2] - cy, j = Math.floor(((Math.atan2(y, x) / (2 * Math.PI) + 1) % 1) * nSec) % nSec;
+      r[k * nSec + j] = Math.max(r[k * nSec + j], Math.hypot(x, y));
+    }
+    const r2 = new Float32Array(r.length); let any = 0;
+    for (let k = 0; k < nSt; k++) for (let j = 0; j < nSec; j++) { // isi celah: maks tetangga stasiun, lalu tutup lekuk sektor
+      let x = 0; for (let d = -1; d <= 1; d++) { const kk = Math.min(nSt - 1, Math.max(0, k + d)); x = Math.max(x, r[kk * nSec + j]); }
+      r2[k * nSec + j] = x; if (x > 0) any++;
+    }
+    for (let k = 0; k < nSt; k++) for (let j = 0; j < nSec; j++) { const i = k * nSec + j, l = r2[k * nSec + (j + nSec - 1) % nSec], q = r2[k * nSec + (j + 1) % nSec]; r[i] = Math.max(r2[i], 0.5 * (l + q)); }
+    if (any < r.length * 0.5) r.fill(0.036); // cadangan: radius tetap
+    c.copy(e1).multiplyScalar(cx).addScaledVector(e2, cy);
+    return { r, s0, ds, nSt, nSec, c, e1, e2, at(s, ang) { // radius terinterpolasi (bilinear) di stasiun s & sudut ang
+      const fk = Math.min(nSt - 1.001, Math.max(0, (s - s0) / ds)), k = Math.floor(fk), tk = fk - k;
+      const fj = ((ang / (2 * Math.PI)) % 1 + 1) % 1 * nSec, j = Math.floor(fj) % nSec, tj = fj - Math.floor(fj), j2 = (j + 1) % nSec;
+      const a0 = r[k * nSec + j] * (1 - tj) + r[k * nSec + j2] * tj, a1 = r[(k + 1) * nSec + j] * (1 - tj) + r[(k + 1) * nSec + j2] * tj;
+      return a0 * (1 - tk) + a1 * tk;
+    } };
+  }
+  const BPROF = armProfile(hArmLB, AX_LB, 0.04, 0.24, 0.01, 12);
+  // sudut awal lilitan = sisi lengan yang menghadap atas-kamera pada pose membalut (pose dihitung sekali di sini)
+  const BANG0 = (() => { const o = new THREE.Object3D(); aimArm2(o, AX_LB, new THREE.Vector3(...BAND_P), new THREE.Vector3(...BAND_D), BAND_H, BAND_IN, null);
+    const d = new THREE.Vector3(0, 1, 0.5).normalize().applyQuaternion(o.quaternion.invert()); return Math.atan2(d.dot(BPROF.e2), d.dot(BPROF.e1)); })();
+  const BDIR = 1; // arah lilitan (tanda sudut)
+  // titik permukaan pita (ruang lokal lengan): fase φ (rad, 0..6π), offset melintang dv (m), angkat dr (m)
+  const bandPt = (phi, dv, dr, out) => { const s = BT.s0 + BT.pitch * phi / (2 * Math.PI) + dv, ang = BANG0 + BDIR * phi, r = BPROF.at(s, ang) + 0.0012 + 0.00025 * phi / (2 * Math.PI) + dr;
+    return out.copy(BPROF.c).addScaledVector(AX_LB, s).addScaledVector(BPROF.e1, Math.cos(ang) * r).addScaledVector(BPROF.e2, Math.sin(ang) * r); };
+  // tekstur kasa 128² (bisa diulang di u): gading, anyaman 7 % lebih gelap + serat, tepi v berjumbai (alfa) & sedikit bayang
+  function gauzeTex() {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const x = cv.getContext('2d'), im = x.createImageData(128, 128), d = im.data;
+    let sd = 7; const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+    const fr = new Float32Array(128 * 2); for (let i = 0; i < 256; i++) fr[i] = rnd();
+    for (let y = 0; y < 128; y++) for (let i = 0; i < 128; i++) {
+      const weave = (i % 6 < 2 ? 0.93 : 1) * (y % 6 < 2 ? 0.94 : 1), fib = 0.97 + 0.05 * rnd(), ev = Math.min(y, 127 - y) / 127;
+      const shade = weave * fib * (0.8 + 0.2 * Math.min(1, ev * 7)) * (Math.min(y, 127 - y) < 7 ? 0.8 : 1); // tepi pita lebih gelap → batas lilitan terbaca
+      const jag = (y < 64 ? fr[i] : fr[128 + i]) * 3.2 + (i % 6 < 2 ? 1.2 : 0), k = (y * 128 + i) * 4;
+      d[k] = 239 * shade; d[k + 1] = 233 * shade; d[k + 2] = 218 * shade; d[k + 3] = Math.min(y, 127 - y) < jag ? 0 : 255;
+    }
+    x.putImageData(im, 0, 0);
+    const t = new THREE.CanvasTexture(cv); t.wrapS = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    return t;
+  }
+  function spiralTex() { // tutup gulungan: cincin spiral lapisan kasa + inti karton
+    const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+    const x = cv.getContext('2d'); x.fillStyle = '#e9e2d0'; x.fillRect(0, 0, 64, 64);
+    x.strokeStyle = 'rgba(120,105,80,0.35)'; x.lineWidth = 0.8; x.beginPath();
+    for (let a = 0; a < 2 * Math.PI * 9; a += 0.08) { const r = 13 + a / (2 * Math.PI) * 2.1; x.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r); }
+    x.stroke(); x.fillStyle = '#b9a37f'; x.beginPath(); x.arc(32, 32, 12.5, 0, 7); x.fill(); x.fillStyle = '#6b5b44'; x.beginPath(); x.arc(32, 32, 10, 0, 7); x.fill();
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  }
+  const gTex = gauzeTex();
+  const gauzeM = new THREE.MeshStandardMaterial({ color: '#ffffff', map: gTex, bumpMap: gTex, bumpScale: 0.6, roughness: 0.95, side: THREE.DoubleSide, alphaTest: 0.5 });
+  const BSEG = BT.turns * BT.seg, BROW = BT.rows, bandPos = new Float32Array((BSEG + 1) * BROW * 3), bandHead = new Float32Array(BROW * 3);
+  const bandGeo = new THREE.BufferGeometry();
+  { const uv = new Float32Array((BSEG + 1) * BROW * 2), nr = new Float32Array(bandPos.length), idx = [], p = new THREE.Vector3(), q = new THREE.Vector3(); let len = 0;
+    for (let i = 0; i <= BSEG; i++) {
+      const phi = i / BT.seg * 2 * Math.PI;
+      if (i) len += bandPt(phi, 0, 0, p).distanceTo(bandPt(phi - 2 * Math.PI / BT.seg, 0, 0, q));
+      for (let j = 0; j < BROW; j++) {
+        const k = i * BROW + j, ang = BANG0 + BDIR * phi;
+        bandPt(phi, (j / (BROW - 1) - 0.5) * BT.w, 0, p); p.toArray(bandPos, k * 3);
+        q.copy(BPROF.e1).multiplyScalar(Math.cos(ang)).addScaledVector(BPROF.e2, Math.sin(ang)); q.toArray(nr, k * 3);
+        uv[k * 2] = len / 0.03; uv[k * 2 + 1] = j / (BROW - 1);
+      }
+      if (i < BSEG) for (let j = 0; j < BROW - 1; j++) { const a = i * BROW + j, b = a + BROW; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+    }
+    bandGeo.setAttribute('position', new THREE.BufferAttribute(bandPos, 3));
+    bandGeo.setAttribute('normal', new THREE.BufferAttribute(nr, 3));
+    bandGeo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    bandGeo.setIndex(idx); bandGeo.setDrawRange(0, 0); }
+  const wrap = new THREE.Mesh(bandGeo, gauzeM);
+  hArmLB.add(wrap);
+  let bandCol = -1; // kolom ujung yang sedang diinterpolasi (dipulihkan sebelum menulis kolom berikutnya)
+  function bandGrow(phi) { // pita tampil sampai fase phi (menerus): segmen utuh lewat drawRange, kolom ujung digeser
+    const f = Math.max(0, Math.min(BSEG, phi / (2 * Math.PI) * BT.seg)), n = Math.min(BSEG, Math.ceil(f)), col = n, t = f - (n - 1);
+    if (bandCol >= 0) { bandPos.set(bandHead, bandCol * BROW * 3); bandCol = -1; }
+    if (n > 0 && t < 1) { for (let j = 0; j < BROW * 3; j++) bandHead[j] = bandPos[col * BROW * 3 + j]; bandCol = col;
+      for (let j = 0; j < BROW * 3; j++) { const a = (col - 1) * BROW * 3 + j; bandPos[col * BROW * 3 + j] = bandPos[a] + (bandHead[j] - bandPos[a]) * t; } }
+    bandGeo.setDrawRange(0, n * (BROW - 1) * 6);
+    bandGeo.attributes.position.needsUpdate = true;
+  }
+  // gulungan (sumbu Y): sisi bertekstur kasa, tutup bergambar spiral; diskalakan 27 → 22 mm
+  const capM = new THREE.MeshStandardMaterial({ map: spiralTex(), roughness: 0.95 });
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.027, 0.027, BT.w, 24, 1), [gauzeM, capM, capM]);
+  // pita bebas: 3 stasiun × 2 tepi (ruang kamera), ditulis ulang tiap frame
+  const tailPos = new Float32Array(18), tailGeo = new THREE.BufferGeometry();
+  tailGeo.setAttribute('position', new THREE.BufferAttribute(tailPos, 3));
+  tailGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0.8, 0, 0.8, 1, 1.6, 0, 1.6, 1]), 2));
+  tailGeo.setIndex([0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5]);
+  const tail = new THREE.Mesh(tailGeo, gauzeM);
+  // plester 2 × 5 cm (muncul di akhir di bawah ibu jari)
+  const plaster = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.0008, 0.05), new THREE.MeshStandardMaterial({ color: '#d7b08a', roughness: 0.7 }));
+  hArmLB.add(plaster);
   const kit = new THREE.Group(), lid = new THREE.Group();
   { const kg = props.kit ? props.kit.clone() : null;
     if (kg) { kg.computeBoundingBox(); const bb = kg.boundingBox, c = bb.getCenter(new THREE.Vector3()); kg.translate(-c.x, -bb.min.y, -c.z); const m = new THREE.Mesh(kg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })); m.scale.setScalar(0.4); kit.add(m); kit.userData.h = (bb.max.y - bb.min.y) * 0.4; kit.userData.d = (bb.max.z - bb.min.z) * 0.4; kit.userData.w = (bb.max.x - bb.min.x) * 0.4; }
@@ -992,9 +1154,9 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     canTab.add(ring); canTab.position.set(0, 0.065, -0.004);
     can.add(body, band, top, bot, canTab, hole);
     can.userData.hole = hole; }
-  for (const o of [kit, syringe, can, roll, wrap, tail, ...shells, spl, spent]) o.traverse((m) => { if (m.isMesh) m.frustumCulled = false; });
-  heal.add(hArmL, hArmR, hArmC, wrap, tail, kit);
-  hArmR.add(roll, syringe, can);
+  for (const o of [kit, syringe, can, roll, hArmLB, tail, ...shells, spl, spent]) o.traverse((m) => { if (m.isMesh) m.frustumCulled = false; });
+  heal.add(hArmL, hArmR, hArmC, hArmLB, roll, tail, kit);
+  hArmR.add(syringe, can);
   // granat di tangan kanan (fp_hand_nade, asal = pusat granat) + tangan kiri untuk mencabut pin
   const nadeRig = new THREE.Group(), nArm = armPiece('fp_hand_nade', AX_N), nArmL = armPiece('fp_hand_l', AX_L), nadeMesh = {};
   nadeRig.add(nArm, nArmL);
@@ -1430,15 +1592,16 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
   const OFF_L = scr(-0.75, -1.9, 0.38), OFF_R = scr(0.8, -1.9, 0.36), FOFF_L = [-0.55, -0.8, 0.3], FOFF_R = [0.5, -0.8, 0.35];
   const ARM_P = scr(0.06, -0.36, 0.42), ARM_F = [-0.92, -0.26, 0.29], FR = [0.45, -0.72, 0.55]; // lengan kiri disodorkan melintang
   const DOWN = [0, -1, 0.15], UP = [0, 1, -0.1];
+  const BAND_OFFL = scr(-0.6, -1.4, 0.4), BAND_OFFR = scr(0.6, -1.3, 0.38); // titik masuk/keluar lengan perban (tepat di luar layar)
   const HEAL_K = {
-    band: { // perban 3,5 dtk: lengan kiri disodorkan, gulungan memutari lengan 3 kali, ujung ditekan, turun
-      gun: [0.07, 0.86],
-      L: [kP(0, OFF_L), kP(0.04, OFF_L), kP(0.17, ARM_P, 1), kP(0.5, vAdd(ARM_P, 0.004, 0.006, 0)), kP(0.82, ARM_P, 1), kP(0.95, OFF_L)],
-      Lf: [kP(0, FOFF_L), kP(0.17, ARM_F), kP(0.82, ARM_F), kP(0.95, FOFF_L)],
-      Lt: [kP(0, DOWN), kP(0.17, DOWN), kP(0.5, [0.25, -1, 0.3]), kP(0.82, DOWN), kP(0.95, DOWN)],
-      R: [kP(0, OFF_R), kP(0.08, OFF_R), kP(0.2, scr(0.0, -0.1, 0.4)), kP(0.8, scr(-0.5, -0.6, 0.38)), kP(0.86, scr(-0.4, -0.72, 0.38)), kP(0.96, scr(0.1, -1.9, 0.36))], // ujung perban ditekan di dekat siku, lalu turun
-      Rf: [kP(0, FOFF_R), kP(0.2, FR), kP(0.86, FR), kP(0.96, FOFF_R)],
-      wrap: [0.21, 0.78], tuck: [0.79, 0.85],
+    band: { // perban 3,5 dtk: lengan kiri naik melintang, ujung kasa ditempel, gulungan mengorbit 3 lilitan, tekan + plester, periksa, turun
+      gun: [0.07, 0.9],
+      L: [kP(0, BAND_OFFL), kP(0.09, BAND_P, 1), kP(0.92, BAND_P, 1), kP(1, BAND_OFFL)],
+      Lf: [kP(0, FOFF_L), kP(0.09, BAND_D), kP(0.92, BAND_D), kP(1, FOFF_L)],
+      Lt: [kP(0, DOWN), kP(1, DOWN)], // tidak dipakai (putaran lengan dari BAND_IN)
+      R: [kP(0, BAND_OFFR), kP(0.15, scr(0.25, -0.55, 0.4)), kP(0.82, scr(0.25, -0.55, 0.4)), kP(1, BAND_OFFR)],
+      Rf: [kP(0, FOFF_R), kP(1, FOFF_R)],
+      grab: [0.02, 0.15], stick: [0.1, 0.16], wrap: [0.16, 0.74], press: [0.74, 0.84], look: [0.84, 0.92], leave: [0.82, 0.98],
     },
     kit: { // P3K 6 dtk: kotak dibuka, suntikan diambil & dijentik, disuntikkan ke sisi dalam lengan kiri (tegak), dibuang
       gun: [0.045, 0.9],
@@ -1447,7 +1610,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       Lt: [kP(0, UP), kP(0.12, UP), kP(0.42, UP), kP(0.5, DOWN), kP(0.53, [1, 0, 0.2]), kP(0.94, [1, 0, 0.2])],
       R: [kP(0, OFF_R), kP(0.09, OFF_R), kP(0.16, scr(-0.12, -0.12, 0.4)), kP(0.19, scr(-0.15, -0.02, 0.41), 1), kP(0.235, scr(-0.12, -0.0, 0.43)), kP(0.29, scr(-0.22, -0.3, 0.42), 1), kP(0.36, scr(0.12, -0.02, 0.38)), kP(0.41, scr(0.14, 0.02, 0.38), 1), kP(0.44, scr(0.15, 0.0, 0.38)), kP(0.56, scr(0.18, -0.1, 0.4)), kP(0.6, scr(0.12, -0.18, 0.41), 1), kP(0.82, scr(0.12, -0.19, 0.41), 1), kP(0.86, scr(0.22, -0.15, 0.39)), kP(0.94, OFF_R)],
       Rf: [kP(0, FOFF_R), kP(0.16, FR), kP(0.29, FR), kP(0.36, [0.5, -0.75, 0.42]), kP(0.6, [0.2, -0.85, 0.5]), kP(0.82, [0.2, -0.85, 0.5]), kP(0.88, FR), kP(0.94, FOFF_R)],
-      Rt: [kP(0, [-0.6, -0.6, -0.5]), kP(0.29, [-0.6, -0.6, -0.5]), kP(0.36, [-0.75, -0.2, -0.6]), kP(0.44, [-0.75, -0.25, -0.6]), kP(0.56, [-0.85, -0.35, -0.3]), kP(0.6, [-0.9, -0.25, -0.3]), kP(0.82, [-0.9, -0.25, -0.3]), kP(0.88, [0.3, -0.9, 0.2]), kP(0.94, [0.3, -0.9, 0.2])],
+      Rt: [kP(0, [-0.6, -0.6, -0.5]), kP(0.29, [-0.6, -0.6, -0.5]), kP(0.36, [-0.75, -0.2, -0.6]), kP(0.44, [-0.75, -0.25, -0.6]), kP(0.56, [-0.85, -0.35, -0.3]), kP(0.6, [-0.9, -0.25, -0.3]), kP(0.82, [-0.9, -0.25, -0.3]), kP(0.86, [-0.45, -0.75, -0.1]), kP(0.9, [0.3, -0.9, 0.2]), kP(0.94, [0.3, -0.9, 0.2])],
       lid: [0.17, 0.235], syr: [0.27, 0.9], inj: [0.6, 0.625, 0.79, 0.82], flick: [0.41, 0.44],
     },
     drink: { // minuman 4 dtk: kaleng diangkat, cincin ditarik tangan kiri, diminum (makin miring), kaleng diturunkan
@@ -1457,50 +1620,83 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       Lt: [kP(0, DOWN), kP(0.19, [0.3, -0.6, -0.7]), kP(0.24, [0.3, -0.6, -0.7]), kP(0.33, DOWN)],
       R: [kP(0, OFF_R), kP(0.03, OFF_R), kP(0.15, scr(0.36, -0.42, 0.38), 1), kP(0.28, scr(0.35, -0.4, 0.38), 1), kP(0.335, [0.1, -0.06, -0.26]), kP(0.39, [0.06, -0.05, -0.21]), kP(0.81, [0.057, -0.044, -0.205]), kP(0.89, OFF_R)],
       Rf: [kP(0, FOFF_R), kP(0.15, FR), kP(0.28, FR), kP(0.335, [0.9, -0.4, -0.1]), kP(0.39, [0.9, -0.4, 0.1]), kP(0.81, [0.9, -0.42, 0.1]), kP(0.89, FOFF_R)],
-      Rt: [kP(0, [0, 1, 0]), kP(0.15, [0.05, 1, 0.12]), kP(0.28, [0.05, 1, 0.12]), kP(0.335, [-0.95, 0.1, -0.2]), kP(0.39, [-0.15, -0.6, 0.8]), kP(0.81, [-0.1, -0.85, 0.5]), kP(0.89, [0, 1, 0])],
+      Rt: [kP(0, [0, 1, 0]), kP(0.15, [0.05, 1, 0.12]), kP(0.28, [0.05, 1, 0.12]), kP(0.335, [-0.1, 0.55, 0.8]), kP(0.39, [-0.15, -0.6, 0.8]), kP(0.81, [-0.1, -0.85, 0.5]), kP(0.85, [-0.1, 0.2, 0.95]), kP(0.89, [0, 1, 0])],
       tab: 0.215, sip: [0.39, 0.81],
     },
   };
   const hp2 = new THREE.Vector3(), fd2 = new THREE.Vector3(), tg = new THREE.Vector3(), wristL = new THREE.Vector3(), axisL = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3(), endP = new THREE.Vector3();
   const AXOFF = new THREE.Vector3(-0.008, 0.016, 0.005); // titik sumbu lengan baju dekat asal fp_hand_l
+  const BAND_ER = new THREE.Vector3(0.3, -0.56, -0.2), _bm4 = new THREE.Matrix4(); let bandCue = -1; // siku kanan saat membalut (luar layar)
   // u 0..1, kind 'band' | 'kit' | 'drink', cancel 0..1 (dibatalkan: lengan turun keluar layar) → seberapa jauh senjata diturunkan
   function animHeal(u, kind, cancel) {
     const H = HEAL_K[kind] || HEAL_K.band;
     const gunDown = easeIn(seg(u, 0, H.gun[0])) * (1 - easeOut(seg(u, H.gun[1], 1))) * (1 - easeOut(cancel));
-    const exit = easeIn(cancel) * 0.4; // batal: lengan jatuh keluar layar
+    const band = kind === 'band', exit = band ? 0 : easeIn(cancel) * 0.4; // batal: lengan jatuh keluar layar (perban: ditarik ke titik keluar)
     heal.visible = u > 0.01 && u < 0.99 && cancel < 1;
     curve(u, H.L, hp); curve(u, H.Lf, fd); curve(u, H.Lt, tg); hp.y -= exit;
-    aimArm2(hArmL, AX_L, hp, fd, PALM, tg);
+    const armL = band ? hArmLB : hArmL, axL = band ? AX_LB : AX_L;
+    hArmL.visible = !band; hArmLB.visible = band;
+    if (band && cancel > 0) { hp.lerp(tmp.fromArray(BAND_OFFL), ease(cancel)); fd.lerp(tmp.fromArray(FOFF_L), ease(cancel)); }
+    if (band) aimArm2(hArmLB, AX_LB, hp, fd, BAND_H, BAND_IN);
+    else aimArm2(hArmL, AX_L, hp, fd, PALM, tg);
     curve(u, H.R, hp2); hp2.y -= exit;
     if (H.Rf) curve(u, H.Rf, fd2);
     // sumbu lengan bawah kiri (untuk perban & suntikan): titik pergelangan & dua arah tegak lurus
-    axisL.copy(AX_L).applyQuaternion(hArmL.quaternion);
+    axisL.copy(axL).applyQuaternion(armL.quaternion);
     wristL.copy(AXOFF).applyQuaternion(hArmL.quaternion).add(hArmL.position).addScaledVector(axisL, 0.09);
     n1.crossVectors(axisL, UPV).normalize(); n2.crossVectors(n1, axisL).normalize(); // n2 ≈ atas lengan, n1 ≈ menjauhi kamera
-    roll.visible = tail.visible = wrap.visible = kit.visible = syringe.visible = can.visible = false;
+    roll.visible = tail.visible = plaster.visible = kit.visible = syringe.visible = can.visible = false;
     hArmC.visible = false; hArmR.visible = true;
-    if (kind === 'band') {
-      const wu = seg(u, H.wrap[0], H.wrap[1]), wl = 0.015 + 0.13 * ease(wu), th = wu * Math.PI * 2 * 3;
-      const k = ease(seg(u, H.wrap[0] - 0.06, H.wrap[0])) * (1 - ease(seg(u, H.wrap[1], H.tuck[1])));
-      // gulungan memutari lengan (atas → depan → bawah → belakang), maju ke arah siku
-      endP.copy(wristL).addScaledVector(axisL, 0.02 + wl).addScaledVector(n2, Math.cos(th) * 0.075).addScaledVector(n1, -Math.sin(th) * 0.075);
+    if (band) {
+      // fase lilitan φ (0..6π): menerus, awal & akhir melambat seperempat putaran (percepatan tetap)
+      const A = 2 * Math.PI * BT.turns, ar = Math.PI / 2, vv = A + 2 * ar, wu = seg(u, H.wrap[0], H.wrap[1]), tr = 2 * ar / vv;
+      const phi = wu <= tr ? 0.5 * vv * wu * wu / tr : wu >= 1 - tr ? A - 0.5 * vv * (1 - wu) * (1 - wu) / tr : ar + vv * (wu - tr);
+      bandGrow(phi);
+      const look = Math.sin(Math.PI * seg(u, H.look[0], H.look[1])); // periksa: lengan diputar ±20° di sumbunya
+      if (look > 0) { hArmLB.quaternion.premultiply(_aq2.setFromAxisAngle(axisL, -0.35 * look)); }
+      const pr = seg(u, H.press[0], H.press[1]), prK = ease(seg(pr, 0, 0.5));
+      // tangan kanan mengorbit lengan kiri: titik pada sumbu di kepala pita, radius = permukaan + gulungan + celah
+      const rr = 0.027 - 0.005 * wu, sh = BT.s0 + BT.pitch * phi / (2 * Math.PI);
+      const lead = 1.05 - 0.95 * prK, th = BANG0 + BDIR * (phi + lead + 0.45 * (1 - prK) * Math.sin(phi + lead + Math.PI / 2)); // lebih cepat saat lewat atas-belakang (lengan kanan sebentar menutupi balutan)
+      const rArm = BPROF.at(sh - 0.035 * (1 - prK), th), stick = Math.sin(Math.PI * seg(u, H.stick[0], H.stick[1])), press = Math.sin(Math.PI * seg(pr, 0.35, 0.85));
+      const ro = rArm + 0.05 - (0.05 - rr - 0.006) * prK - 0.012 * stick - 0.006 * press;
+      endP.copy(BPROF.c).addScaledVector(AX_LB, sh - 0.035 * (1 - prK)).addScaledVector(BPROF.e1, Math.cos(th) * ro).addScaledVector(BPROF.e2, Math.sin(th) * ro)
+        .applyQuaternion(hArmLB.quaternion).add(hArmLB.position);
+      const k = ease(seg(u, H.grab[0], H.grab[1])) * (1 - ease(seg(u, H.leave[0], H.leave[1])));
       hp2.lerp(endP, k);
-      if (u > H.tuck[0] && u < H.tuck[1]) hp2.addScaledVector(n2, 0.02 - 0.03 * Math.sin(seg(u, H.tuck[0], H.tuck[1]) * Math.PI)); // ujung ditekan
-      aimArm2(hArmR, AX_R, hp2, fd2, GRIPY, axisL); // sumbu gulungan sejajar lengan
-      wrap.visible = u > H.wrap[0] && cancel < 1;
-      wrap.position.copy(wristL).addScaledVector(axisL, 0.02 + wl / 2);
-      wrap.scale.set(0.05, wl, 0.05);
-      wrap.quaternion.setFromUnitVectors(UPV, axisL);
-      roll.visible = u > 0.05 && u < H.tuck[0] + 0.01;
-      roll.scale.setScalar(1 - 0.4 * wu);
-      roll.position.set(0, 0, 0); roll.rotation.set(0, th, 0);
-      tail.visible = roll.visible && u > H.wrap[0] && u < H.wrap[1] + 0.01;
-      if (tail.visible) { // pita dari gulungan ke ujung balutan
-        hArmR.updateMatrix();
-        tmp.set(0, 0, 0).applyMatrix4(hArmR.matrix);
-        endP.copy(wristL).addScaledVector(axisL, 0.02 + wl).addScaledVector(n2, Math.cos(th - 0.6) * 0.05).addScaledVector(n1, -Math.sin(th - 0.6) * 0.05);
-        tail.position.copy(tmp).add(endP).multiplyScalar(0.5); tail.scale.set(1, tmp.distanceTo(endP), 1);
-        tail.quaternion.setFromUnitVectors(UPV, tmp2.copy(endP).sub(tmp).normalize());
+      if (cancel > 0) hp2.lerp(tmp.fromArray(BAND_OFFR), ease(cancel));
+      fd2.copy(BAND_ER).sub(hp2); // lengan bawah kanan ke siku tetap di kanan-bawah luar layar
+      aimArm2(hArmR, AX_R, hp2, fd2, GRIPY, axisL); // sumbu genggaman (= sumbu gulungan) sejajar lengan kiri
+      roll.visible = u > 0.03 && u < 0.95 && cancel < 1;
+      roll.position.copy(hp2);
+      roll.quaternion.setFromUnitVectors(UPV, axisL).multiply(_aq.setFromAxisAngle(UPV, -BDIR * phi * 0.036 / rr));
+      roll.scale.set(rr / 0.027, 1, rr / 0.027);
+      tail.visible = roll.visible && u > H.stick[0] && pr < 0.6;
+      if (tail.visible) { // pita bebas: kepala pita di lengan → sisi gulungan yang menghadapnya, sedikit melendut
+        hArmLB.updateMatrix();
+        for (let e = 0; e < 2; e++) {
+          bandPt(phi, (e - 0.5) * BT.w, 0, tmp).applyMatrix4(hArmLB.matrix);
+          tmp2.copy(tmp).sub(hp2); tmp2.addScaledVector(axisL, -tmp2.dot(axisL)).normalize();
+          n1.copy(hp2).addScaledVector(tmp2, rr).addScaledVector(axisL, (e - 0.5) * BT.w);
+          tmp.toArray(tailPos, e * 3); n1.toArray(tailPos, 12 + e * 3);
+          tmp.lerp(n1, 0.5); tmp.y -= 0.0025 * Math.min(1, tmp.distanceTo(n1) * 30); tmp.toArray(tailPos, 6 + e * 3);
+        }
+        tailGeo.attributes.position.needsUpdate = true;
+      }
+      plaster.visible = u > 0.79;
+      if (plaster.visible) { // plester di atas ujung lilitan terakhir, melintang tepi pita
+        const ang = BANG0 + BDIR * (phi - 0.15), s2 = sh - 0.006, r2 = BPROF.at(s2, ang) + 0.0012 + 0.00025 * BT.turns + 0.0015;
+        n1.copy(BPROF.e1).multiplyScalar(Math.cos(ang)).addScaledVector(BPROF.e2, Math.sin(ang));
+        plaster.position.copy(BPROF.c).addScaledVector(AX_LB, s2).addScaledVector(n1, r2);
+        n2.crossVectors(n1, AX_LB);
+        _bm4.makeBasis(n2, n1, AX_LB); plaster.quaternion.setFromRotationMatrix(_bm4);
+        plaster.scale.setScalar(Math.max(0.01, backOut(seg(u, 0.79, 0.81))));
+      }
+      if (cue) { // bunyi: gesek kain tiap lilitan, plester di akhir
+        const n = u < H.wrap[0] ? -1 : Math.floor(phi / (2 * Math.PI) + 0.25);
+        if (n < bandCue) bandCue = -1;
+        if (n > bandCue) { bandCue = n; if (n >= 0 && n < BT.turns) cue('cloth'); }
+        if (u > 0.79 && bandCue < 9) { bandCue = 9; cue('tape'); }
       }
     } else if (kind === 'kit') {
       kit.visible = u < 0.5;
@@ -1537,7 +1733,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
       curve(u, H.Rt, tg);
       aimArm2(hArmR, AX_R, hp2, fd2, GRIPY, tg);
     }
-    keepSleeve(hArmL, AX_L, null); keepSleeve(hArmR, AX_R, null);
+    keepSleeve(armL, axL, null); keepSleeve(hArmR, AX_R, null);
     return gunDown;
   }
   const KIT_Q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.6, 0.35, -0.1));
