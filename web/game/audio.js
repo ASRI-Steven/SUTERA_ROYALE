@@ -315,6 +315,8 @@ export function cue(kind) {
     case 'eject': for (let i = 0; i < 3; i++) burst({ t: 0.18 + i * 0.05, dur: 0.03, freq: 5200 - i * 400, type: 'bandpass', q: 4, gain: 0.12 }); break; // selongsong jatuh
     case 'tab': burst({ dur: 0.02, freq: 3800, type: 'bandpass', q: 3, gain: 0.3 }); burst({ t: 0.015, dur: 0.22, freq: 5200, type: 'highpass', q: 0.5, gain: 0.16 }); break; // kaleng dibuka
     case 'pin': burst({ dur: 0.03, freq: 4400, type: 'bandpass', q: 4, gain: 0.25 }); break;
+    case 'cloth': burst({ dur: 0.32, freq: 2600, type: 'bandpass', q: 0.8, gain: 0.07 }); burst({ t: 0.12, dur: 0.22, freq: 3400, type: 'bandpass', q: 0.9, gain: 0.05 }); break; // kasa digulung (gesek kain)
+    case 'tape': burst({ dur: 0.09, freq: 4200, type: 'highpass', q: 0.6, gain: 0.12 }); burst({ t: 0.05, dur: 0.05, freq: 1800, type: 'bandpass', q: 2, gain: 0.1 }); break; // plester disobek & ditempel
     default: click();
   }
 }
