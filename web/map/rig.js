@@ -218,6 +218,8 @@ function rl3Palm(i, D, gun, out) {
 }
 // obat & lempar (ruang dada; +X = kiri karakter, +Z = depan): target tangan
 const _ht = new THREE.Vector3(), _hu = new THREE.Vector3();
+// senjata saat menempel dinding (ruang dada): [x, y, z, putar-x (− = moncong ke atas), putar-z]
+const TUCK = [-0.1, -0.02, 0.12, -1.2, 0];
 export class Rig {
   constructor() {
     const b = this.b = makeBones();
@@ -227,7 +229,7 @@ export class Rig {
     this.chain = Object.values(b); // induk selalu lebih dulu dari anaknya (urutan makeBones)
     this.phase = Math.random() * PI * 2;
     this.t = Math.random() * 10;
-    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, punch: 0, punchSide: 1, guard: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, rlu: 0, heal: 0, ht: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0, thr: 0, hold: 0 };
+    this.m = { speed: 0, crouch: 0, aim: 0, air: 0, armed: 0, fall: 0, chute: 0, dead: 0, hit: 0, fire: 0, punch: 0, punchSide: 1, guard: 0, hipYaw: 0, pitch: 0, sit: 0, bike: 0, steer: 0, rl: 0, rlu: 0, heal: 0, ht: 0, swap: 0, prone: 0, swim: 0, stroke: 0, cd: 0, thr: 0, hold: 0, tuck: 0 };
     this.cphase = 0;
     this.A = null; // pose udara (map/rigair.js), dibuat saat pertama mengudara
   }
@@ -336,6 +338,15 @@ export class Rig {
     }
     b.gun.position.set(lerp(-0.13, -0.11, aim), lerp(0.02, 0.27, aim), lerp(0.26, 0.22, aim) - 0.05 * m.fire);
     b.gun.rotation.set(lerp(0.55, 0, aim) * (1 - m.chute) - look * 0.5 + (1 - aim) * 0.12 * walkW * Math.sin(2 * ph), 0, 0);
+    // ----- menempel dinding (s.tuck 0..1, dari sinar pendek searah hadap — bots.js draw / player.js): senjata ditarik ke
+    //       dada dengan moncong ke atas (siap-tinggi) supaya laras tidak menembus dinding; tangan mengikuti lewat IK
+    m.tuck += (clamp(s.tuck || 0, 0, 1) - m.tuck) * k(10);
+    if (m.tuck > 0.01) {
+      const w = m.tuck * arm * (1 - m.chute) * (1 - m.fall) * (1 - m.dead), e = w * w * (3 - 2 * w);
+      b.gun.position.set(lerp(b.gun.position.x, TUCK[0], e), lerp(b.gun.position.y, TUCK[1], e), lerp(b.gun.position.z, TUCK[2], e));
+      b.gun.rotation.x = lerp(b.gun.rotation.x, TUCK[3], e);
+      b.gun.rotation.z = lerp(b.gun.rotation.z, TUCK[4], e);
+    }
     // ----- isi ulang: senjata dimiringkan & sedikit diangkat ke depan dada; tangan kiri mengikuti jalur IK (lihat bawah)
     const rl = s.reload == null || s.reload < 0 ? -1 : Math.min(1, s.reload);
     m.rl += ((rl >= 0 ? 1 : 0) - m.rl) * k(rl >= 0 ? 14 : 9);

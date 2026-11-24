@@ -109,6 +109,22 @@ export function createCollider(D, inArea, homes) {
     const k = key(Math.floor(D.x / CELL), Math.floor(D.y / CELL));
     (doorCells.get(k) || doorCells.set(k, []).get(k)).push(D);
   }
+  // Pintu kamar mandi (interiors.js planBath, sekat ber-`bd`): satu daun di ambang sekat, mekanisme sama dengan pintu rumah,
+  // tetapi awalnya TERBUKA, hanya berayun ke luar kamar mandi (ruangnya sempit: dari dalam selalu bisa ditutup) dan tidak
+  // punya texel fasad (k = −1). n menuju ke dalam kamar mandi; engsel di ujung g1 (dekat sekat penuh).
+  function addBathDoor(H, p, z0) {
+    const u0x = (p.b[0] - p.a[0]) / p.len, u0y = (p.b[1] - p.a[1]) / p.len, T = 0.12, w = p.g1 - p.g0, sm = (p.g0 + p.g1) / 2;
+    const pi = addPoly(strip(p.a[0], p.a[1], u0x, u0y, -u0y, u0x, p.g0, p.g1, -T / 2, T / 2), -Infinity, H.i, 1, z0, null);
+    let nx = -u0y, ny = u0x;
+    const mx = p.a[0] + u0x * sm, my = p.a[1] + u0y * sm;
+    if ((p.bd[0] - mx) * nx + (p.bd[1] - my) * ny < 0) { nx = -nx; ny = -ny; }
+    const D = { id: doors.length, b: H.i, k: -1, bath: 1, x: mx - nx * T / 2, y: my - ny * T / 2, ax: p.a[0] + u0x * p.g1 - nx * T / 2, ay: p.a[1] + u0y * p.g1 - ny * T / 2, ux: -u0x, uy: -u0y, nx, ny, w, T, z: z0, pi, open: 1, open0: 1, t: 1, dir: -1,
+      swing: 2, leaves: 1, maxA: Math.PI / 2, at: -99, H2: z0 + 2.1, sy: 2.06 / 2.15 };
+    polys[pi].door = D;
+    doors.push(D);
+    const k = key(Math.floor(D.x / CELL), Math.floor(D.y / CELL));
+    (doorCells.get(k) || doorCells.set(k, []).get(k)).push(D);
+  }
   function eachDoor(x, y, r, fn) {
     for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) for (let cy = Math.floor((y - r) / CELL); cy <= Math.floor((y + r) / CELL); cy++) {
       const L = doorCells.get(key(cx, cy));
@@ -148,7 +164,7 @@ export function createCollider(D, inArea, homes) {
       if (Math.abs(u) < hw + 0.45 && v > -0.45 && v < D.T + 0.45) return false;
       if (D.open) for (let l = 0; l < D.leaves; l++) { // cakram ayun di sisi daun terbuka
         const hu = l === 0 ? -hw : hw, sv = D.dir > 0 ? v - D.T : -v;
-        if (sv > -0.45 && Math.hypot(u - hu, sv > 0 ? sv : 0) < lw + 0.15 + 0.45) return false;
+        if (sv > -0.45 && (l === 0 ? u - hu : hu - u) > -0.45 && Math.hypot(u - hu, sv > 0 ? sv : 0) < lw + 0.15 + (D.bath ? 0.1 : 0.45)) return false; // seperempat cakram: daun hanya menyapu dari engsel ke arah celah
       }
     }
     return true;
@@ -169,7 +185,7 @@ export function createCollider(D, inArea, homes) {
     doorStamp++;
     return true;
   }
-  function resetDoors() { for (const D of doors) { D.open = 0; D.t = 0; D.at = -99; polys[D.pi].h = D.H2; } doorStamp++; }
+  function resetDoors() { for (const D of doors) { D.open = D.open0 | 0; D.t = D.open; D.at = -99; if (D.open) D.dir = D.swing & 1 ? 1 : -1; polys[D.pi].h = D.open ? -Infinity : D.H2; } doorStamp++; }
   function addHome(H) {
     const T = 0.2, b = H.i;
     for (const e of H.edges) { // dinding luar (tebal T ke dalam), celah pintu, ambang di atas pintu
@@ -234,6 +250,7 @@ export function createCollider(D, inArea, homes) {
           addPoly(strip(p.a[0], p.a[1], ux, uy, nx, ny, 0, p.g0, -0.06, 0.06), ceil, b, 1, z0);
           addPoly(strip(p.a[0], p.a[1], ux, uy, nx, ny, p.g1, p.len, -0.06, 0.06), ceil, b, 1, z0);
           addPoly(strip(p.a[0], p.a[1], ux, uy, nx, ny, p.g0, p.g1, -0.06, 0.06), ceil, b, 1, z0 + 2.1);
+          if (p.bd && !H.kind) addBathDoor(H, p, z0);
         } else addPoly(strip(p.a[0], p.a[1], ux, uy, nx, ny, 0, p.len, -0.06, 0.06), ceil, b, 1, z0);
       }
     };
