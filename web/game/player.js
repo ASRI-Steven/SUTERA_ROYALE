@@ -13,7 +13,7 @@ import { itemIcon } from './icons.js';
 import { buildCharacter } from '../map/rig.js';
 import { applyEquipped } from './skins.js';
 import * as audio from './audio.js';
-import { chuteShape } from './chutefx.js';
+import { chuteShape, chuteCollapse, COLLAPSE_T } from './chutefx.js';
 
 const D2R = Math.PI / 180;
 const EYE = 1.62, EYE_CROUCH = 1.12, EYE_PRONE = 0.42, RAD = 0.35, GRAV = 18;
@@ -34,6 +34,11 @@ const AIRCAM = {
   fov: 75, trackFov: 6, diveFov: 14, chuteFov: 74, fovRate: 2.5,
   roll: 0.06, rollChute: 0.045, rollMax: 5 * D2R, shake: 0.003, bob: 0.02,
 };
+// mendarat — jenis 0 serap (payung + S, pelan), 1 lari kecil, 2 berguling (masih terjun bebas / payung + W kencang).
+// dur = lama animasi (sama dengan map/rigair.js LAND_DUR); rollV = sisa laju berguling (m/dtk; jenis 1 ikut laju datar
+// 1,6–3,2); roofK = pengali sisa laju di atap; slide = laju respons gerak saat baru mendarat (lalu naik ke 12 = normal);
+// camHold = kamera tetap orang ketiga sampai dur + camHold dtk (0 = langsung orang pertama); camD = jarak kamera itu.
+const LAND = { dur: [0.55, 0.7, 1.35], rollV: 5.0, roofK: 0.4, slide: 3.5, camHold: 0.15, camD: 3.4 };
 
 export function createPlayer(ctx) {
   const { scene, camera, renderer, col, loot, combat, hud, agent: me } = ctx;
@@ -823,10 +828,11 @@ export function createPlayer(ctx) {
     if (!me.alive && st.spec && st.spec.alive) { specCamera(dt); return; }
     if (drv()) { driveCamera(dt); return; }
     if (st.inAir && (me.state === 'fall' || me.state === 'chute')) { airCamera(dt, pitch, yaw); return; }
-    if (me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || st.tpp) {
+    const lc = me.state === 'ground' && st.landCam > 0 && !st.tpp; // baru mendarat: orang ketiga sebentar lalu ke mata
+    if (me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || st.tpp || lc) {
       aimDir(fwd);
       const hor = me.state === 'ground';
-      const dist = me.state === 'dead' ? 5 : hor ? 2.6 : 6.5;
+      const dist = me.state === 'dead' ? 5 : lc ? (st.landCam < 0.25 ? 0.3 : LAND.camD) : hor ? 2.6 : 6.5;
       right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
       const pivot = tmp.set(p.x, p.y + (me.state === 'dead' ? 0.6 : st.prone && hor ? 0.75 : 1.6), p.z);
       let d = dist;
@@ -835,7 +841,7 @@ export function createPlayer(ctx) {
         const len = tmp2.length(), t = col.ray(pivot.x, -pivot.z, pivot.y, tmp2.x / len, -tmp2.z / len, tmp2.y / len, len);
         if (t < len) d = Math.max(0.12, (t - 0.3) * dist / len); // mepet dinding/tangga: kamera boleh sangat dekat (karakter disembunyikan), tidak menembus ke balik dinding
       }
-      st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (d < st.camD ? 30 : 5))) : d;
+      st.camD = st.camD ? st.camD + (d - st.camD) * (1 - Math.exp(-dt * (lc ? 5 : d < st.camD ? 30 : 5))) : d;
       camera.position.copy(pivot).addScaledVector(fwd, -st.camD).addScaledVector(right, hor ? 0.6 * st.camD / dist : 0);
       if (st.swim && !st.dive && camera.position.y < 0.5) camera.position.y = 0.5; // berenang: kamera tetap di atas permukaan air
       if (st.swim && st.dive) { const bed = -col.waterDepth(camera.position.x, -camera.position.z); if (camera.position.y < bed + 0.35) camera.position.y = bed + 0.35; } // menyelam: kamera tidak menembus dasar
@@ -997,7 +1003,7 @@ export function createPlayer(ctx) {
     fwd.set(Math.sin(st.yaw), 0, Math.cos(st.yaw));
     right.set(-Math.cos(st.yaw), 0, Math.sin(st.yaw));
     const tx = (fwd.x * iz + right.x * ix) * sp, tz = (fwd.z * iz + right.z * ix) * sp;
-    const k = 1 - Math.exp(-dt * (me.grounded ? 12 : 2));
+    const k = 1 - Math.exp(-dt * (me.grounded ? (st.landT >= 0 ? LAND.slide + (12 - LAND.slide) * sstep(0.25 * st.landDur, st.landDur, st.landT) : 12) : 2)); // baru mendarat: sisa laju meluruh pelan
     me.vel.x += (tx - me.vel.x) * k;
     me.vel.y += (tz - me.vel.y) * k;
     const x0 = me.pos.x, y0 = -me.pos.z;
@@ -1065,7 +1071,17 @@ export function createPlayer(ctx) {
     if (st.liftPick && (!lf || lf.L !== st.liftPick.L || Math.hypot(me.pos.x - st.liftPick.x, -me.pos.z - st.liftPick.y) > 2.2)) closeLiftPick(); // menjauh dari pintu lift
     st.prompt = st.lootUI || st.liftPick ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? 'Lift · pilih lantai' : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : (dr = doorFacing()) ? (dr.open ? 'Tutup pintu' : 'Buka pintu') : vaultSpot() ? 'Lompati (atau Spasi)' : null;
   }
-  const folT = new THREE.Vector3();
+  const folT = new THREE.Vector3(), landPos = new THREE.Vector3();
+  // menyentuh tanah: pilih jenis pendaratan, sisakan sedikit laju searah badan (bukan dinolkan), kamera ditahan
+  function touchDown(roof, moved) {
+    const hs0 = Math.hypot(me.vel.x, me.vel.y), vs0 = st.airVs || 0;
+    let kind = me.state === 'fall' || hs0 > 11 ? 2 : vs0 < 7.6 && hs0 < 3.5 ? 0 : 1;
+    if (roof && kind === 2) kind = 1;
+    const v = (kind === 2 ? LAND.rollV : kind === 1 ? clamp(hs0, 1.6, 3.2) : 0) * (roof ? LAND.roofK : 1) * (moved ? 0 : 1), y = st.visYaw ?? me.yaw;
+    me.vel.set(Math.sin(y) * v, Math.cos(y) * v);
+    Object.assign(st, { landT: 0, landKind: kind, landDur: LAND.dur[kind], landYaw: y, landCam: LAND.camHold > 0 ? LAND.dur[kind] + LAND.camHold : 0, landChute: me.state === 'chute' });
+    audio.land(kind);
+  }
   function air(dt) {
     let ix = keys.right - keys.left, iz = keys.fwd - keys.back;
     if (!st.inAir) { st.inAir = true; st.airT = 0; st.chuteT = -1; st.visYaw = null; st.airTurn = 0; st.camD = AIRCAM.exitD; st.airFov = 75; st.cjy = 0; st.cjv = 0; } // baru keluar pesawat
@@ -1131,23 +1147,24 @@ export function createPlayer(ctx) {
     else { const d = Math.atan2(Math.sin(st.yaw - me.yaw), Math.cos(st.yaw - me.yaw)); me.yaw += d * (1 - Math.exp(-dt * 4)); } // nyaris diam (direm): badan menghadap arah kamera
     audio.airWind(chuteOn ? 0.18 : clamp(Math.hypot(Math.hypot(me.vel.x, me.vel.y), vs) / 60, 0, 1.2), chuteOn ? 0 : Math.max(dive, iz > 0 ? 0.45 : 0)); // desis/deru angin
     const rf = y0 < 260 && col.roofAt ? col.roofAt(me.pos.x, -me.pos.z, y0) : 0; // atap terbuka (menara, kanopi): mendarat di atasnya
+    st.airGnd = me.pos.y - (rf > 0.5 ? rf : 0); // tinggi di atas tanah/atap (pose pra-mendarat)
     if (rf > 0.5 && me.pos.y <= rf) {
-      me.pos.y = rf; me.vel.set(0, 0); me.vy = 0;
+      me.pos.y = rf; me.vy = 0;
+      touchDown(true, false); landPos.copy(me.pos);
       me.state = 'ground'; me.grounded = true; st.floorY = rf;
       st.airLean = 0; st.airVs = 0;
-      audio.windLevel(0); audio.step(0.2);
+      audio.windLevel(0);
       ctx.landed(me.pos.x, -me.pos.z);
       return;
     }
     if (me.pos.y <= 0 || (me.pos.y < 40 && !(rf > 0.5 && me.pos.y < rf + 1.5) && col.solidAt(me.pos.x, -me.pos.z, me.pos.y))) { // tepat di atas atap: jangan dianggap menabrak gedung
       const f = col.arrival(me.pos.x, -me.pos.z) || [me.pos.x, -me.pos.z];
-      me.pos.set(f[0], 0, -f[1]);
-      me.vel.set(0, 0);
+      touchDown(false, Math.hypot(f[0] - me.pos.x, f[1] + me.pos.z) > 0.5); // dipindah keluar gedung: tanpa sisa laju
+      me.pos.set(f[0], 0, -f[1]); landPos.copy(me.pos);
       me.state = 'ground';
       me.grounded = true;
       st.airLean = 0; st.airVs = 0;
       audio.windLevel(0);
-      audio.step(0.2);
       ctx.landed(f[0], f[1]);
     }
   }
@@ -1190,6 +1207,7 @@ export function createPlayer(ctx) {
   return {
     st, vm,
     reset() {
+      Object.assign(st, { landT: -1, landCam: 0, landChute: false, inAir: false });
       Object.assign(st, { yaw: 0, pitch: -0.25, tpp: false, ads: false, firing: false, crouch: false, prone: false, sprint: false, nextShot: 0, reloadEnd: 0, switchEnd: 0, healEnd: 0, recoilP: 0, recoilY: 0, camD: 0, prompt: null, spec: null, revive: null, revOn: false, lift: null, liftPick: null });
       if (fadeEl) fade(0);
       if (pickEl) drawPick();
@@ -1247,6 +1265,8 @@ export function createPlayer(ctx) {
       else if (st.crate || st.lootUI) { st.crate = null; st.lootUI = false; hud.lootPanel(null); } // naik kendaraan / mati → panel loot ditutup
       else if ((me.state === 'fall' || me.state === 'chute') && me.alive) air(dt);
       if (me.state !== 'fall' && me.state !== 'chute') st.inAir = false;
+      if (st.landT >= 0) { st.landT += dt; if (st.landT > st.landDur || me.state !== 'ground') st.landT = -1; }
+      if (st.landCam > 0) st.landCam = me.state === 'ground' && me.alive ? Math.max(0, st.landCam - dt) : 0;
       if (me.state !== 'ground' || !me.alive) nadeAbort(); // granat batal: naik kendaraan / mati
       // pulihkan sentakan
       st.recoilP *= Math.exp(-dt * 7);
@@ -1255,7 +1275,7 @@ export function createPlayer(ctx) {
       if (drv() && me.alive) seated(dt, now); // setelah kamera: sinar bidik memakai kamera frame ini
       // karakter orang ketiga / saat terjun
       const driving = !!drv();
-      const showChar = me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || (me.state === 'ground' && st.tpp && st.camD > 0.4) || (driving && !st.vfp);
+      const showChar = me.state === 'fall' || me.state === 'chute' || me.state === 'dead' || (me.state === 'ground' && (st.tpp || st.landCam > 0) && st.camD > 0.4) || (driving && !st.vfp);
       char.root.visible = showChar;
       if (st.inAir) { // arah badan di udara: me.yaw = atan2(kecepatan) bisa meloncat (S lalu A/D) → dihaluskan untuk tampilan saja
         const y0 = st.visYaw ?? me.yaw;
@@ -1266,7 +1286,10 @@ export function createPlayer(ctx) {
       if (showChar) {
         if (driving) { char.root.position.set(me.pos.x, me.sitY || 0, me.pos.z); char.root.rotation.set(0, me.yaw, me.sitRoll || 0); }
         else if (st.inAir) { char.root.position.copy(me.pos); char.root.rotation.set(0, st.visYaw ?? me.yaw, 0); } // di udara: miring/belok/bandul diartikulasikan rig (map/rigair.js)
-        else { char.root.position.copy(me.pos); char.root.rotation.set(0, me.state === 'ground' ? st.yaw : me.yaw, 0); }
+        else { // baru mendarat: badan berputar halus dari arah mendarat ke arah pandang
+          const ry = me.state !== 'ground' ? me.yaw : st.landT >= 0 ? st.landYaw + wrap(st.yaw - st.landYaw) * sstep(0.5 * st.landDur, st.landDur, st.landT) : st.yaw;
+          char.root.position.copy(me.pos); char.root.rotation.set(0, ry, 0);
+        }
         const p = me.pose;
         p.speed = me.state === 'ground' ? me.moveSpeed : 0;
         p.moveYaw = me.moveYaw || 0;
@@ -1287,7 +1310,9 @@ export function createPlayer(ctx) {
         p.freefall = me.state === 'fall';
         p.chute = me.state === 'chute';
         p.chuteDrive = p.chute ? keys.fwd - keys.back : 0;
+        p.landT = me.state === 'ground' && st.landT >= 0 ? st.landT : -1; p.landKind = st.landKind | 0;
         if (st.inAir) { // masukan pose udara (map/rigair.js)
+          p.airGnd = st.airGnd;
           p.airT = st.airT; p.chuteT = st.chuteT; p.airFwd = st.aFwd; p.airSide = st.aSide; p.airDive = st.aDive; p.airTurn = st.airTurn;
           p.airSpd = Math.hypot(Math.hypot(me.vel.x, me.vel.y), st.airVs || 0);
           p.lookYaw = wrap(st.yaw - (st.visYaw ?? me.yaw)); p.lookPitch = st.pitch; p.airSeed = 0.5;
@@ -1340,11 +1365,16 @@ export function createPlayer(ctx) {
             steerLines.visible = true;
           }
         }
+      } else if (st.landChute && st.landT >= 0 && st.landT < COLLAPSE_T && chuteCollapse(st.landT, chuteO)) { // kanopi kempis
+        chute.visible = true;
+        chute.position.set(landPos.x, landPos.y + chuteY, landPos.z);
+        chute.scale.set(chuteO.sx, chuteO.sy, chuteO.sz);
+        chute.rotation.set(chuteO.rx, st.landYaw, 0);
       }
       // senjata di tangan
       // orang pertama di kendaraan (V) dengan senjata siap: senjata di tangan digambar di atas kabin (tidak terpotong interior)
       const vfp = driving && st.vfp && st.vArmed && me.alive;
-      const fp = (me.state === 'ground' && !st.tpp && me.alive) || vfp;
+      const fp = (me.state === 'ground' && !st.tpp && !(st.landCam > 0) && me.alive) || vfp;
       const w = weapon();
       const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
       vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });

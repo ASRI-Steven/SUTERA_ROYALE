@@ -89,13 +89,20 @@ function rest(o) { const q = o.quaternion; q._x = q._y = q._z = 0; q._w = 1; o.r
 function makeState(s) {
   const seed = s.airSeed != null ? s.airSeed : Math.random();
   return { S: new Float64Array(NC * 2), on: false, w: 0, seed, fk: 0.92 + 0.16 * seed, ph: seed * 97.3, t: 0, at: 99, ct: -1,
-    OF: new Float64Array(36), ofOk: false, cOff: 0, hx: ARCH[HX], fd: 0, fs: 0, bank: 0, cfw: 0, cbr: 0, cR: 0, cP: 0 };
+    O: new Float64Array(36), OF: new Float64Array(36), ofOk: false, cOff: 0, lt: -1, lk: 0, w0: 0, hx: ARCH[HX], fd: 0, fs: 0, bank: 0, cfw: 0, cbr: 0, cR: 0, cP: 0 };
 }
 
 // Hasil pose frame ini (radian), ditulis ke tulang oleh write(): posisi pinggul, rotasi XYZ badan, lalu per sisi
 // (kiri 18.., kanan 27..): armX armZ foreX handX handZ thighX thighZ shinX footX (Z sudah dikali side)
-const O = new Float64Array(36);
+// O = larik milik rig yang sedang dipose (rig.A.O): pose udara terakhir tetap tersimpan per karakter untuk dicampur saat
+// mendarat. D = tambahan (aditif) di atas campuran, dipakai pendaratan (temporer modul, dinolkan tiap panggilan).
+let O = null;
+const D = new Float64Array(36);
 const OL = 18, OR = 27;
+// berguling (mendarat cepat): meringkuk; pinggul X ditambah 2π selama guling
+const ROLL = [0.3, 0.45, 0.45, 0.30, 0.50, -1.20, 0.25, -1.70, -1.90, 0.15, 2.20, -0.30, 0];
+// lama pendaratan per jenis (dtk): 0 serap (flare), 1 lari kecil, 2 berguling — sama dengan player.js LAND.dur
+const LAND_DUR = [0.55, 0.7, 1.35];
 const PULL_R = [-0.20, 0.60, -1.30], PULL_L = [-1.57, 2.40, -0.60]; // tangan kanan meraih pilot chute di pinggang, kiri menjaga keseimbangan
 
 // pre = true: dipanggil di AWAL Rig.pose. Bila overlay menutup seluruh tubuh (bobot penuh), pose dikerjakan di sini dan
@@ -104,6 +111,8 @@ const PULL_R = [-0.20, 0.60, -1.30], PULL_L = [-1.57, 2.40, -0.60]; // tangan ka
 export function poseAir(rig, s, dt, pre) {
   const A = rig.A || (rig.A = makeState(s)), b = rig.b, S = A.S;
   const fall = !!s.freefall, chute = !!s.chute && !fall, air = fall || chute, at = s.airT != null ? s.airT : 99;
+  const lt = !air && s.landT >= 0 ? s.landT : -1;
+  O = A.O;
   if (fall && at < 0.3) { // baru keluar pesawat: overlay langsung penuh (karakter baru muncul), pegas mulai dari nol
     if (A.at > at || !A.on) { S.fill(0); A.t = 0; }
     A.w = 1;
@@ -118,16 +127,21 @@ export function poseAir(rig, s, dt, pre) {
     if (s.swap) s.swap = 0;
   }
   // bobot overlay: masuk/keluar halus (pose dasar Rig.pose mengambil alih di darat)
-  A.w += ((air ? 1 : 0) - A.w) * (1 - Math.exp(-dt * (air ? 5 : 7)));
-  if (!air && A.w < 0.003) { // mati: leher & tangan dinolkan sekali, pegas direset
-    if (A.on) { rest(b.neck); rest(b.handL); rest(b.handR); S.fill(0); A.on = false; A.ct = -1; A.ofOk = false; }
+  if (lt >= 0) {
+    if (A.lt < 0) { A.w0 = A.on ? A.w : 0; A.lk = s.landKind | 0; for (let i = 0; i < 36; i++) A.OF[i] = O[i]; } // menyentuh tanah
+    A.w = A.lk === 2 ? landRollW(lt) : A.w0 * (1 - sstep(0, 0.35, lt));
+  } else A.w += ((air ? 1 : 0) - A.w) * (1 - Math.exp(-dt * (air ? 5 : 7)));
+  A.lt = lt;
+  if (!air && lt < 0 && A.w < 0.003) { // mati: leher & tangan dinolkan sekali, pegas direset
+    if (A.on) { rest(b.neck); rest(b.handL); rest(b.handR); S.fill(0); A.on = false; A.ct = -1; A.ofOk = false; A.lt = -1; }
     return false;
   }
   if (!A.on) { A.on = true; if (dt < 0.25) { S.fill(0); } }
   A.t += dt;
+  D.fill(0);
   if (air) {
     if (chute) poseChute(A, s, dt, at); else poseFall(A, s, dt, at);
-  } // di darat (bobot memudar): pose udara terakhir tetap di O, dicampur ke pose dasar
+  } else if (lt >= 0) poseLand(A, lt); // di darat (bobot memudar): pose udara terakhir tetap di O, dicampur ke pose dasar
   write(b, A.w);
   return true;
 }
@@ -263,7 +277,9 @@ function poseChute(A, s, dt, at) {
   O[6] = J[SX]; O[7] = 0; O[8] = 0.08 * steer;
   O[9] = J[CX]; O[10] = 0; O[11] = 0;
   O[12] = J[NX]; O[13] = -0.35 * steer; O[14] = 0;
-  O[15] = J[DX] - 0.4 * clamp(s.lookPitch || 0, -0.8, 0.5); O[16] = 0; O[17] = -0.5 * cR;
+  // pra-mendarat (< 8 m): lutut diangkat, kaki siap, kepala melihat ke bawah
+  const pre = s.airGnd != null ? sstep(8, 2, s.airGnd) : 0;
+  O[15] = J[DX] - 0.4 * clamp(s.lookPitch || 0, -0.8, 0.5) + 0.2 * pre; O[16] = 0; O[17] = -0.5 * cR;
   headLook(look, cP + J[SX] + J[CX], J[NX]);
   // ----- lengan & kaki
   for (let k = 0; k < 2; k++) {
@@ -273,16 +289,48 @@ function poseChute(A, s, dt, at) {
     O[o] = ax; O[o + 1] = az * sd; O[o + 2] = fx;
     O[o + 3] = J[HN] + 0.05 * jit * fl3; O[o + 4] = 0;
     const sway = 0.12 * fsin(t * 1.6 + k * PI + ph) * (1 - cbr); // kaki menggantung berayun pelan
-    O[o + 5] = J[TX] - 0.25 * ii + sway;
+    O[o + 5] = J[TX] - 0.25 * ii + sway * (1 - pre) - 0.35 * pre;
     O[o + 6] = J[TZ] * sd + 0.10 * bLeg;
-    O[o + 7] = Math.max(0.05, J[KX] + 0.30 * ii);
-    O[o + 8] = J[FT];
+    O[o + 7] = Math.max(0.05, J[KX] + 0.30 * ii + 0.45 * pre);
+    O[o + 8] = J[FT] - 0.10 * pre;
   }
   // peralihan dari pose jatuh bebas terakhir (A.OF) — kecuali pinggul X: bandul sudah mulai dari sudut badan itu
   if (wC < 1) { const OF = A.OF; for (let i = 0; i < 36; i++) if (i !== 3) O[i] = OF[i] + (O[i] - OF[i]) * wC; }
   if (pb > 0) for (let k = 0; k < 2; k++) { // tangan kanan meraih pilot chute, kiri menjaga keseimbangan
     const sd = k === 0 ? 1 : -1, o = k === 0 ? OL : OR, P = k === 0 ? PULL_L : PULL_R;
     O[o] += (P[0] - O[o]) * pb; O[o + 1] += (P[1] * sd - O[o + 1]) * pb; O[o + 2] += (P[2] - O[o + 2]) * pb;
+  }
+}
+
+// ---------- Mendarat ----------
+// 0 serap & 1 lari kecil: pose udara terakhir memudar ke pose dasar (0,35 dtk) + tekukan lutut aditif (naik 0,18 dtk, lepas
+// 0,3–0,55); lari kecil = siklus jalan pose dasar karena sisa laju (player.js). 2 berguling: meringkuk → salto ke depan
+// di tanah (0,2–0,95) → bangkit (bobot → 0 sampai 1,35).
+function landRollW(lt) { return 1 - sstep(0.95, 1.35, lt); }
+function poseLand(A, lt) {
+  const k = A.lk;
+  if (k === 2) {
+    const OF = A.OF, e = sstep(0, 0.2, lt), u = sstep(0.2, 0.95, lt);
+    for (let j = 0; j < 36; j++) O[j] = OF[j];
+    const tgt = (i, v) => { O[i] = OF[i] + (v - OF[i]) * e; };
+    tgt(0, 0); tgt(1, 0.45); tgt(2, 0); tgt(3, ROLL[HX]); tgt(4, 0); tgt(5, 0);
+    tgt(6, ROLL[SX]); tgt(7, 0); tgt(8, 0); tgt(9, ROLL[CX]); tgt(10, 0); tgt(11, 0);
+    tgt(12, ROLL[NX]); tgt(13, 0); tgt(14, 0); tgt(15, ROLL[DX]); tgt(16, 0); tgt(17, 0);
+    for (let s = 0; s < 2; s++) {
+      const sd = s === 0 ? 1 : -1, o = s === 0 ? OL : OR;
+      tgt(o, ROLL[AX]); tgt(o + 1, ROLL[AZ] * sd); tgt(o + 2, ROLL[FX]); tgt(o + 3, 0); tgt(o + 4, 0);
+      tgt(o + 5, ROLL[TX]); tgt(o + 6, ROLL[TZ] * sd); tgt(o + 7, ROLL[KX]); tgt(o + 8, ROLL[FT]);
+    }
+    O[3] += u < 1 ? TAU * u : 0; // salto (≤ 12,6 rad/dtk); selesai = sudut sama tanpa +2π (supaya pudar ke pose dasar tidak berputar balik)
+    return;
+  }
+  const K = k === 0 ? 0.8 : 0.45, c = K * sstep(0, 0.18, lt) * (1 - sstep(0.3, 0.55, lt)) * (1 - sstep(LAND_DUR[k] - 0.2, LAND_DUR[k], lt));
+  D[1] = -0.40 * c; D[6] = 0.30 * c;
+  for (let s = 0; s < 2; s++) {
+    const sd = s === 0 ? 1 : -1, o = s === 0 ? OL : OR;
+    D[o + 5] = -0.95 * c; D[o + 7] = 1.75 * c; D[o + 8] = -0.64 * c;
+    if (k === 0) { D[o] = -0.6 * c; D[o + 1] = 0.35 * c * sd; D[o + 2] = -0.5 * c; } // serap: lengan ke depan
+    else D[o + 1] = 0.5 * sstep(0, 0.15, lt) * (1 - sstep(0.15, LAND_DUR[1], lt)) * sd; // lari kecil: lengan terbuka menjaga keseimbangan
   }
 }
 
@@ -307,9 +355,9 @@ function write(b, w) {
     return;
   }
   const hp = b.hips.position;
-  hp.set(hp.x + (O[0] - hp.x) * w, hp.y + (O[1] - hp.y) * w, hp.z + (O[2] - hp.z) * w);
+  hp.set(hp.x + (O[0] - hp.x) * w + D[0], hp.y + (O[1] - hp.y) * w + D[1], hp.z + (O[2] - hp.z) * w + D[2]);
   mix3(b.hips, 3, w); mix3(b.spine, 6, w); mix3(b.chest, 9, w);
-  qXYZ(b.neck, O[12] * w, O[13] * w, O[14] * w); // leher & tangan: pose dasar = 0
+  qXYZ(b.neck, O[12] * w + D[12], O[13] * w + D[13], O[14] * w + D[14]); // leher & tangan: pose dasar = 0
   mix3(b.head, 15, w);
   for (let k = 0; k < 2; k++) {
     const o = k === 0 ? OL : OR;
@@ -323,9 +371,9 @@ function write(b, w) {
 }
 function mix3(bone, i, w) {
   const r = bone.rotation;
-  qXYZ(bone, r.x + (O[i] - r.x) * w, r.y + (O[i + 1] - r.y) * w, r.z + (O[i + 2] - r.z) * w);
+  qXYZ(bone, r.x + (O[i] - r.x) * w + D[i], r.y + (O[i + 1] - r.y) * w + D[i + 1], r.z + (O[i + 2] - r.z) * w + D[i + 2]);
 }
 function mixXZ(bone, ix, iz, w) {
   const r = bone.rotation;
-  qXYZ(bone, r.x + (O[ix] - r.x) * w, r.y * (1 - w), iz < 0 ? r.z * (1 - w) : r.z + (O[iz] - r.z) * w);
+  qXYZ(bone, r.x + (O[ix] - r.x) * w + D[ix], r.y * (1 - w), iz < 0 ? r.z * (1 - w) : r.z + (O[iz] - r.z) * w + D[iz]);
 }
