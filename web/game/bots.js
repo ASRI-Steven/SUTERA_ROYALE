@@ -12,6 +12,7 @@
 // Digambar sebagai kerumunan instans (map/rig.js). Koordinat agen: dunia three.js (x, tinggi, z = −y data).
 import * as THREE from 'three';
 import { Rig, createCrowd, characterVariants } from '../map/rig.js';
+import { chuteShape } from './chutefx.js';
 import { WEAPONS } from './weapons.js';
 import { applyItem, TIER, propGeometry } from './loot.js';
 import { createNav } from './nav.js';
@@ -268,6 +269,7 @@ export function createBots(ctx, n = 50) {
   const chuteMat = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide, vertexColors: !!chuteGLB });
   chuteMat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += diffuseColor.rgb * 0.28;'); }; // tidak gelap dilihat dari bawah
   const chutes = new THREE.InstancedMesh(chuteGeo, chuteMat, n);
+  const chO = { vis: false, sx: 1, sy: 1, sz: 1, rx: 0 }, chE = new THREE.Euler();
   chutes.frustumCulled = false;
   scene.add(chutes);
   const cv = document.createElement('canvas');
@@ -1830,7 +1832,7 @@ export function createBots(ctx, n = 50) {
           continue;
         }
         if (b.state === 'plane') {
-          b.airT = 0;
+          b.airT = 0; b.chuteT = -1;
           if (b.ally && PLAYER && PLAYER.dropMode && PLAYER.dropMode !== 'lead') { // regu terjun menurut rencananya sendiri (pemain ikut, atau pemain turun sendiri)
             if (flight && flight.t >= b.ai.dropAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4 + (b.slot || 1) * 1.5; b.ai.land = b.ai.dropLand; b.ai.own = true; }
           }
@@ -1838,7 +1840,7 @@ export function createBots(ctx, n = 50) {
           else if (flight && flight.t >= b.ai.jumpAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4; }
           continue;
         }
-        if (b.state === 'fall' || b.state === 'chute') { b.airT = (b.airT || 0) + dt; if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; } // airT: waktu simulasi sejak terjun (pose udara)
+        if (b.state === 'fall' || b.state === 'chute') { b.airT = (b.airT || 0) + dt; b.chuteT = b.state === 'chute' ? (b.chuteT >= 0 ? b.chuteT + dt : 0) : -1; if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; } // airT: waktu simulasi sejak terjun (pose udara)
         if (b.down) { downStep(b, dt, now); continue; }
         b.ai.next -= dt;
         if (b.ai.next <= 0) { b.ai.next = 0.25 + Math.random() * 0.1; think(b, now); }
@@ -1894,8 +1896,8 @@ export function createBots(ctx, n = 50) {
           if (p.freefall || p.chute) { // masukan pose udara (map/rigair.js); rekan formasi meniru gaya pemain
             const own = !(b.ally && !b.ai.own && PLAYER && (PLAYER.state === 'fall' || PLAYER.state === 'chute')), PP = PLAYER && PLAYER.pose;
             const seed = ((b.i * 0.6180339) % 1 + 1) % 1, at = b.airT || 0;
-            p.airT = at; p.airSeed = seed; p.airSide = own ? 0 : PP.airSide || 0;
-            p.airFwd = own ? ((b.airD || 0) > 40 ? 0.35 : 0) : PP.airFwd || 0;
+            p.airT = at; p.chuteT = b.chuteT; p.airSeed = seed; p.airSide = own ? 0 : PP.airSide || 0;
+            p.airFwd = own ? (p.chute ? (b.pos.y < 12 ? -1 : (b.airD || 0) > 25 ? 1 : 0) : (b.airD || 0) > 40 ? 0.35 : 0) : PP.airFwd || 0;
             p.airDive = own ? (seed > 0.7 && b.pos.y > 350 ? 0.4 : 0) : PP.airDive || 0;
             const dy = b.pyaw == null || at < 0.3 || pdt <= 0 ? 0 : -wrap(b.yaw - b.pyaw) / pdt;
             p.airTurn = clamp(dy, -3, 3);
@@ -1918,8 +1920,9 @@ export function createBots(ctx, n = 50) {
         }
         const w = b.cur >= 0 && b.weapons[b.cur];
         crowd.put(b.i, b.rig, rx, ry, rz, d, posed, inF, w && b.alive && !b.down && (!driving || (b.ai.mode === 'ride' && b.ai.losOk)) ? w.kind : null, b.helmet, b.vest, true, b.longHair);
-        if (b.state === 'chute') {
-          chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromAxisAngle(UP, b.yaw), sv.set(1, 1, 1)));
+        if (b.state === 'chute' && chuteShape(b.chuteT >= 0 ? b.chuteT : 5, 11, 9, chO).vis) { // kanopi mengembang (game/chutefx.js), miring ikut ayunan badan
+          const A = b.rig.A;
+          chutes.setMatrixAt(b.i, m4.compose(pv.set(b.pos.x, b.pos.y + chuteY, b.pos.z), q.setFromEuler(chE.set(chO.rx + (A ? 0.10 * A.cfw - 0.16 * A.cbr : 0), b.yaw, A ? 0.30 * A.bank : 0, 'YXZ')), sv.set(chO.sx, chO.sy, chO.sz)));
           b.chuteOn = true; chuteDirty = true;
         } else if (b.chuteOn) { chutes.setMatrixAt(b.i, ZERO); b.chuteOn = false; chuteDirty = true; }
         if (blobs.visible) { // bayangan bulat (hanya tampilan non-realistis)
