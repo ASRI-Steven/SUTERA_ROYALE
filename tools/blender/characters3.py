@@ -34,16 +34,20 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import mhdata  # noqa: E402
 
-ap = argparse.ArgumentParser()
-ap.add_argument('--mpfb', required=True)
-ap.add_argument('--assets', required=True)
-ap.add_argument('--out', required=True)
-ap.add_argument('--work', required=True)
-ap.add_argument('--only', default='')
-ap.add_argument('--stage', default='all')
-ap.add_argument('--preview', default='')
-args = ap.parse_args(sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else [])
-os.makedirs(args.work, exist_ok=True)
+
+
+def parse_args(argv=None):
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--mpfb', required=True)
+    ap.add_argument('--assets', required=True)
+    ap.add_argument('--out', required=True)
+    ap.add_argument('--work', required=True)
+    ap.add_argument('--only', default='')
+    ap.add_argument('--stage', default='all')
+    ap.add_argument('--preview', default='')
+    return ap.parse_args(argv if argv is not None else (sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []))
+
+
 np.set_printoptions(precision=4, suppress=True)
 T0 = time.time()
 
@@ -1571,7 +1575,8 @@ def export_hair_tex(style, mat, work, out_dir):
 
 
 # ---------- utama ----------
-def main():
+def main(args):
+    os.makedirs(args.work, exist_ok=True)
     mh = mhdata.MakeHuman(args.mpfb, args.assets)
     keys = [k for k in (args.only.split(',') if args.only else VARIANTS.keys()) if k]
     os.makedirs(args.out, exist_ok=True)
@@ -1614,4 +1619,6 @@ def main():
         log('manifest', mp)
 
 
-main()
+# argumen di-parse hanya bila dijalankan langsung, supaya modul ini bisa diimpor (tools/blender/costumes.py)
+if __name__ == '__main__':
+    main(parse_args())
