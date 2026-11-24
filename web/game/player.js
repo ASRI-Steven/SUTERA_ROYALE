@@ -1306,7 +1306,7 @@ export function createPlayer(ctx) {
         p.armed = me.cur >= 0 && !!me.weapons[me.cur] && !me.down && !st.revive;
         p.aim = st.ads || st.firing;
         p.guard = !p.armed && me.state === 'ground' && !st.swim && !me.down && ctx.now() - (me.lastPunch ?? -99) < 3; // habis meninju: kuda-kuda
-        p.pitch = st.pitch;
+        p.pitch = st.pitch; p.tuck = st.tuck || 0;
         p.dead = !me.alive;
         p.freefall = me.state === 'fall';
         p.chute = me.state === 'chute';
@@ -1377,8 +1377,10 @@ export function createPlayer(ctx) {
       const vfp = driving && st.vfp && st.vArmed && me.alive;
       const fp = (me.state === 'ground' && !st.tpp && !(st.landCam > 0) && me.alive) || vfp;
       const w = weapon();
+      // menempel dinding: sinar pendek dari mata searah pandang → senjata ditarik (vm tuck, pose.tuck); membidik / menembak: senjata kembali
+      st.tuck = w && me.state === 'ground' && me.alive && !st.swim && !st.ads && !st.firing && ctx.now() - me.lastShot > 0.3 ? clamp((/pistol|revolver/.test(w.inst.kind) ? 0.7 : 0.95) - col.ray(me.pos.x, -me.pos.z, me.pos.y + (st.prone ? 0.35 : st.crouch ? 1.0 : 1.5), Math.sin(st.yaw) * Math.cos(st.pitch), -Math.cos(st.yaw) * Math.cos(st.pitch), Math.sin(st.pitch), 1), 0, 0.4) / 0.4 : 0;
       const scoped = fp && st.ads && w && hasScope(w.inst) && ctx.now() > st.switchEnd;
-      vm.update({ dt, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, fov: camera.fov, zoom: w ? w.inst.zoom : 8, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
+      vm.update({ dt, tuck: fp ? st.tuck : 0, reloading: !!st.reloadEnd, healing: !!st.healEnd, ads: fp && st.ads && !st.reloadEnd, moving: driving ? Math.min(0.25, Math.abs(me.vehicle.speed) / 60) : Math.min(1, me.moveSpeed / 5), sprint: !driving && st.sprinting, mdx: st.mdx, mdy: st.mdy, grounded: driving || me.grounded, scoped, fov: camera.fov, zoom: w ? w.inst.zoom : 8, att: w ? w.inst.att : null, mag: w ? w.inst.mag : -1, fists: fp && !driving && !w && !st.swim && !me.down && !st.revive });
       st.mdx = st.mdy = 0;
       const targetFov = fp && st.ads && w ? adsFov(w.inst) : driving && st.vArmed && st.ads && w ? Math.max(42, w.def.fovAds) : st.inAir && me.alive ? Math.min(89, st.airFov || 75) : 75; // kamera belakang: zoom bidik; di udara: FOV gaya terjun
       camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-dt * 14));
