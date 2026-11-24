@@ -1354,11 +1354,39 @@ export function createBots(ctx, n = 50) {
   }
 
   // ---------- Keputusan (4× per detik) ----------
+  // ---------- Pintu rumah (col.doors): bot membuka pintu tertutup di depannya (steer), menutupnya di think ----------
+  let camRef = null;
+  const doorsOf = new Map(); // indeks gedung → pintu rumahnya (dibuat saat pertama diminta)
+  const houseDoors = (bi) => { let L = doorsOf.get(bi); if (!L) { L = col.doors.filter((D) => D.b === bi); doorsOf.set(bi, L); } return L; };
+  function doorSound(D, open) {
+    if (!camRef) return;
+    const dx = D.x - camRef.x, dz = -D.y - camRef.z, d = Math.hypot(dx, dz);
+    if (d > 35) return;
+    const yaw = ctx.viewYaw ? ctx.viewYaw() : 0, muffled = d > 2 && !col.los(camRef.x, -camRef.z, camRef.y, D.x - D.nx * 0.3, D.y - D.ny * 0.3, 1.4) && !col.los(camRef.x, -camRef.z, camRef.y, D.x + D.nx * 0.5, D.y + D.ny * 0.5, 1.4);
+    audio.houseDoor(open, (1 - d / 35) ** 2, -Math.sin(Math.atan2(dx, dz) - yaw), muffled);
+  }
+  function shut(b, D, now) { if (D.open && col.setDoor(D, false, agents, now)) { doorSound(D, false); return true; } return false; }
+  function doorThink(b, now) {
+    const a = b.ai, x = b.pos.x, y = -b.pos.z;
+    // bertahan / memulihkan diri di dalam rumah: tutup pintu rumah itu yang ≤ 6 m
+    if ((a.mode === 'hold' || b.healEnd) && Math.abs(b.pos.y) < 0.5 && now - (a.shutAt || -99) > 4) {
+      const bi = col.inBuilding(x, y);
+      if (bi >= 0) { a.shutAt = now; for (const D of houseDoors(bi)) if (D.open && Math.hypot(D.x - x, D.y - y) < 6) shut(b, D, now); }
+    }
+    // baru melewati pintu yang dibukanya sendiri (≥ 1,6 m di seberangnya): kadang ditutup lagi (bot hati-hati)
+    const L = a.doorLast;
+    if (L && L.open) {
+      const v = (x - L.x) * L.nx + (y - L.y) * L.ny;
+      if (Math.abs(v - L.T / 2) >= 1.6 && Math.sign(v - L.T / 2) !== a.doorSide) { a.doorLast = null; if (Math.hypot(L.x - x, L.y - y) < 4 && Math.random() < SKILL.wary * 0.4) shut(b, L, now); }
+      else if (Math.hypot(L.x - x, L.y - y) > 8) a.doorLast = null;
+    } else a.doorLast = null;
+  }
   function think(b, now) {
     const a = b.ai;
     if (a.mode === 'drive') { thinkDrive(b, now); return; }
     if (b.state === 'ground' && !nav.blockedAt(b.pos.x, -b.pos.z, lvOf(b))) { a.bcX = b.pos.x; a.bcY = -b.pos.z; a.bcH = b.pos.y; } // jejak titik bebas
     if (a.mode === 'ride') { thinkRide(b, now); return; }
+    if (col.setDoor && b.state === 'ground') doorThink(b, now);
     let enemy = perceive(b, now);
     const unarmed = !b.weapons.some(Boolean);
     // tangan kosong dan dipukul/ditembak dari jarak sangat dekat oleh yang tidak terlihat → berbalik melawan
@@ -1664,6 +1692,13 @@ export function createBots(ctx, n = 50) {
     sp.x += (mx - sp.x) * k;
     sp.y += (my - sp.y) * k;
     const ay = b.pos.y; // tinggi kaki (lantai 2 / tangga)
+    { // pintu rumah tertutup di arah gerak (jalan nav maupun bertarung/menghindar): dibuka dulu, tidak didorong
+      const mv = Math.hypot(mx, my), vx = mv > 0.5 ? mx / mv : sp.x, vy = mv > 0.5 ? my / mv : sp.y, vl = Math.hypot(vx, vy);
+      if (col.doorAhead && mv > 0.5 && vl > 0.1) {
+        const D = col.doorAhead(x, y, ay, vx / vl, vy / vl, a.stuckT > 0.4 ? 2.0 : 1.3);
+        if (D && col.setDoor(D, true, null, now, b)) { a.doorAt = now; a.doorLast = D; a.doorSide = Math.sign((x - D.x) * D.nx + (y - D.y) * D.ny - D.T / 2); doorSound(D, true); }
+      }
+    }
     let r = col.step(x, y, x + sp.x * dt, y + sp.y * dt, 0.35, false, ay);
     if (V) { const q2 = V.pushOut(r.x, r.y, 0.35); if (q2.x !== r.x || q2.y !== r.y) r = col.guard(r.x, r.y, col.resolve(q2.x, q2.y, 0.35, false, ay), ay, 0.35); } // tidak menembus kendaraan (dorongan yang menyeberang dinding ditolak)
     const moved = Math.hypot(r.x - x, r.y - y);
@@ -1821,6 +1856,7 @@ export function createBots(ctx, n = 50) {
     // dt detik, now detik, flight = { t, pos(t) }, cam = posisi kamera
     update(dt, now, flight, cam) {
       budget = 4 + Math.round(n / 20); // jatah pencarian jalur/perlindungan per frame
+      camRef = cam || null;
       frameT0 = performance.now();
       for (const b of bots) {
         if (!b.alive && b.state === 'dead') {

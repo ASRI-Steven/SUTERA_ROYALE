@@ -428,6 +428,20 @@ export function createPlayer(ctx) {
     });
     return best;
   }
+  // pintu rumah di depan pemain (≤ 1,9 m, menghadapnya): F buka / tutup (map/collide.js setDoor; tutup ditolak bila ada
+  // yang berdiri di ambang atau di busur ayun)
+  function doorFacing() {
+    if (!col.doorNear || me.state !== 'ground') return null;
+    const x = me.pos.x, y = -me.pos.z, D = col.doorNear(x, y, me.pos.y, 1.9);
+    if (!D) return null;
+    const cx = D.x + D.nx * D.T / 2 - x, cy = D.y + D.ny * D.T / 2 - y, L = Math.hypot(cx, cy);
+    return L < 0.6 || (cx * Math.sin(st.yaw) - cy * Math.cos(st.yaw)) / L >= 0.3 ? D : null;
+  }
+  function toggleDoor(D) {
+    const now = ctx.now(), open = !D.open;
+    if (!col.setDoor(D, open, ctx.agents, now, me)) { hud.toast('Pintu terhalang'); return; }
+    audio.houseDoor(open, 0.9, 0, false);
+  }
   function interact() {
     if (st.swim) return;
     if (me.state === 'plane') { ctx.jumpOut(); return; }
@@ -439,6 +453,7 @@ export function createPlayer(ctx) {
     if (st.lootUI) { closeLoot(true); return; }
     if (v && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { ctx.enterVehicle(v); return; }
     { const lf = !v && col.liftAt ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null; if (lf && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { openLiftPick(lf); return; } }
+    { const dr = !v ? doorFacing() : null; if (dr && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3)) { toggleDoor(dr); return; } }
     if (!v && !it && ctx.vehicles && ctx.vehicles.fullNear(me)) { hud.toast('Kendaraan penuh'); return; }
     if (!it) { startVault(); return; } // F juga untuk melompati jendela
     if (it.def.kind === 'crate') { openLoot(it); return; } // buka peti: panel inventaris (kiri) + isi peti (kanan)
@@ -1046,8 +1061,9 @@ export function createPlayer(ctx) {
     if (cr && (!cr.alive || Math.hypot(cr.x - me.pos.x, cr.y + me.pos.z) > 2.8 || Math.abs(cr.z - me.pos.y) > 1.3)) { st.crate = null; if (st.lootUI) closeLoot(false); }
     if (st.lootUI) hud.lootPanel(lootModel(), lootH);
     const lf = !nv && col.liftAt && (!it || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) > 1.3) ? col.liftAt(me.pos.x, -me.pos.z, me.pos.y) : null;
+    let dr = null;
     if (st.liftPick && (!lf || lf.L !== st.liftPick.L || Math.hypot(me.pos.x - st.liftPick.x, -me.pos.z - st.liftPick.y) > 2.2)) closeLiftPick(); // menjauh dari pintu lift
-    st.prompt = st.lootUI || st.liftPick ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? 'Lift · pilih lantai' : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : vaultSpot() ? 'Lompati (atau Spasi)' : null;
+    st.prompt = st.lootUI || st.liftPick ? null : it && (!nv || Math.hypot(it.x - me.pos.x, it.y + me.pos.z) <= 1.3) && !lf ? (it.def.kind === 'crate' ? 'Buka peti jarahan' : 'Ambil ' + itemName(it)) : nv ? 'Naik ' + nv.def.name : lf ? 'Lift · pilih lantai' : !it && ctx.vehicles && ctx.vehicles.fullNear(me) ? 'Kendaraan penuh' : (dr = doorFacing()) ? (dr.open ? 'Tutup pintu' : 'Buka pintu') : vaultSpot() ? 'Lompati (atau Spasi)' : null;
   }
   const folT = new THREE.Vector3();
   function air(dt) {
