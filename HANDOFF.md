@@ -1354,3 +1354,23 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   cukup ubah konstanta); tuck penuh orang pertama: laras melintas dekat bidikan tengah; menutup pintu kamar mandi dari luar ditolak
   bila berdiri di busur ayun dekat engsel; daun terbuka tanpa collider (2 pintu di rumah #463 menimpa benda padat); bot tidak
   berjalan ke pintu untuk menutup; sisa 5–7 buka-ulang cepat per 5 menit.
+
+## 39. Senjata M2 (24 Nov, dibangun ulang dari main) — SUDAH di main, `?v=202611242041`; BELUM lewat gerbang visual Steven
+
+- **Tampilan bidik**: lensa diskalakan saat ADS menjadi cakram pandang (`viewScale` di `weapons.js`; `fill`/`relief` per optik di
+  `weapons.json`: s2 0,68/0,06, s4 0,94/0,06, s8 0,96/0,068) → donat hitam 2× hilang. Shader lensa melukis bibir eyecup sendiri,
+  varian `LENS_DEPTH` (mesh `optic_eye_depth`) supaya kabut/rays post tidak bocor; rumah optik disembunyikan saat `ads > 0,85` pada
+  optik pembesar. Retikel 2×/4× diskalakan `LENS_RS` (2,6/2,4) — **bukan mil sejati lagi**. `postfx.js`: tepi `uScope` 0,972–1,0.
+- **Tiga perintis** (Garuda, P9, Rajawali) dibangun ulang di `tools/blender/weapons.py` (potongan boolean nyata; `gunkit.cut` kini
+  satu modifier per pemotong, berurutan). Tris LOD0: pistol 7.174, ar 31.972, sniper 24.626; GLB 1,98 MB (Draco). P9 mengekspor
+  node `pistol_slide` (pemisahan runtime lama tetap sebagai fallback) → **GLB dan JS harus selalu dirilis bersama**. Shader VM:
+  kind 3 stipple, kind 7 rusuk karet, kotoran dari bake `vwx`; kunci cache `vm6`. Delapan senjata lain: geometri tetap, hanya
+  di-bake ulang (tampilan sedikit berubah).
+- **Diuji** (headless): ADS 2×/4×/8× diam & bergerak; tiga perintis orang pertama (pinggul, inspeksi, ADS, isi ulang, tembak); skin
+  `gun_reog`; setelah digabung dengan Terjun M5 + Bangunan M5: pertandingan cabut/tembak/bidik/isi ulang/kill ×3 dengan efek Merak,
+  0 galat konsol. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: waktu GPU/FPS nyata, 21 skin lain, orang ketiga/loot/lobi/ikon HUD dengan GLB baru, fallback bila GLB gagal,
+  ponsel.
+- **Kekurangan (untuk gerbang visual)**: ADS besi Rajawali — blok popor/receiver menutup tengah-bawah layar; grip & pelindung picu
+  P9 masih kasar; popor Garuda pelat sederhana; bayangan eye-box 4× saat bergerak mungkin terlalu kuat; retikel 2× pucat di latar
+  terang; retikel 8× tidak diperbesar. M3 (delapan senjata sisanya), M4 (LOD1/model dunia), M5, `setGrip`: belum dimulai.
