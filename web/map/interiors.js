@@ -56,8 +56,40 @@ const isRect = (E, tol) => E.length === 4 && E.every((e, j) => Math.abs(e.ux * E
 const onEdge = (e) => (s, v) => [e.a[0] + e.ux * s + e.nx * v, e.a[1] + e.uy * s + e.ny * v];
 
 // ---------- Tata letak ----------
+// lingkungan perencanaan (jalan, tapak gedung lain) per peta — dibuat sekali, dipakai planHomes, isHall, fitHouseHeights
+const SITES = new WeakMap();
+function siteOf(D) {
+  let S = SITES.get(D);
+  if (!S) { S = makeSite(D); SITES.set(D, S); }
+  return S;
+}
+function footOf(D, i) {
+  const flat = D.buildings.r[i], n = flat.length >> 1, pts = [];
+  for (let j = 0; j < n; j++) pts.push([flat[2 * j] * M, flat[2 * j + 1] * M]);
+  if (signedArea(pts) < 0) pts.reverse();
+  return pts;
+}
+// gedung jenis 0 = aula (gudang/podium > 1500 m² yang denahnya bisa jadi aula), bukan rumah tapak — aturan sama dengan planHomes.
+// world.js memakai ini untuk atap: rumah tapak selalu beratap miring.
+const HALLS = new WeakMap();
+export function isHall(D, i) {
+  if (D.buildings.k[i] !== 0) return false;
+  let m = HALLS.get(D);
+  if (!m) HALLS.set(D, (m = new Map()));
+  if (m.has(i)) return m.get(i);
+  const pts = footOf(D, i), area = Math.abs(signedArea(pts)), S = siteOf(D);
+  let r = false;
+  if (area > 1500 && pts.length >= 3 && pts.length <= 160) { S.fst = 0; r = !!planShop(i, pts, area, D.buildings.h[i] * M, S, true); }
+  m.set(i, r);
+  return r;
+}
 export function planHomes(D) {
-  const B = D.buildings, homes = new Map();
+  const B = D.buildings, homes = new Map(), site = siteOf(D);
+  planAll(D, B, homes, site);
+  return finishHomes(homes);
+}
+function makeSite(D) {
+  const B = D.buildings;
   // ruas jalan per sel 50 m (untuk arah pintu depan)
   // jalan: "utama" = jalan perumahan ke atas (bukan jalan servis/gang belakang, tol, pejalan kaki) → arah pintu depan
   const MAIN = new Set(['trunk', 'primary', 'secondary', 'tertiary', 'unclassified', 'residential', 'living_street']);
@@ -127,7 +159,9 @@ export function planHomes(D) {
       return false;
     };
   };
-  const site = { roadDist, occupied, heightUnder, neighborOcc };
+  return { roadDist, occupied, heightUnder, neighborOcc };
+}
+function planAll(D, B, homes, site) {
   for (let i = 0; i < B.r.length; i++) {
     const kind = B.k[i];
     if (kind > 3) continue; // 5 = kanopi terbuka (world.js canopyRoof): bisa dilewati, tanpa interior
@@ -147,6 +181,8 @@ export function planHomes(D) {
         : planShop(i, pts, area, h, site);
     if (H) { H.fst = fst; H.blind = (D.blind && D.blind.get(i)) || null; homes.set(i, H); } // sisi tanpa jendela (menempel gedung lain, world.js)
   }
+}
+function finishHomes(homes) {
   // menara di atas podium: pintu lobinya membuka ke dalam podium → kosongkan perabot podium di depan pintu itu
   for (const T of homes.values()) for (const d of T.kind === 'tower' ? T.doors : []) {
     if (!d.inner) continue;
@@ -497,12 +533,14 @@ function planShop(i, pts, area, h, { roadDist, occupied, fst, neighborOcc }, hal
   if (!ranges.length) return null;
   ranges.sort((p, q) => p.ops[0][0] - q.ops[0][0]);
   for (const r of ranges) { r.A = r.ops[0][0]; r.B = r.ops[r.ops.length - 1][1]; r.e = edges[r.k0]; }
-  for (const r of ranges) for (const [a, b] of r.ops) for (let k = r.k0; k <= r.k1; k++) { // bukaan bisa melewati sudut → potong per sisi
-    const e = edges[k], s0 = Math.max(a, e.u0) - e.u0, s1 = Math.min(b, e.u0 + e.len) - e.u0;
-    if (s1 - s0 < 0.02) continue;
+  for (const r of ranges) for (const [a, b] of r.ops) for (let k = r.k0; k <= r.k1; k++) { // bukaan yang melewati sudut ditiadakan
+    // (dulu dipotong per sisi → sisa celah 0,03–1,2 m yang tampak berlubang tapi tidak bisa dilewati); shader world.js memakai aturan sama
+    const e = edges[k], s0 = a - e.u0, s1 = b - e.u0;
+    if (s0 < -0.01 || s1 > e.len + 0.01) continue;
     const sm = (s0 + s1) / 2;
     H.doors.push({ e, s0, s1, u0: e.u0 + s0, u1: e.u0 + s1, h: L.top, x: e.a[0] + e.ux * sm, y: e.a[1] + e.uy * sm });
   }
+  if (!H.doors.length) return null;
   H.open = { A: [ranges[0].A, ranges[0].B], B: ranges[1] ? [ranges[1].A, ranges[1].B] : [-9, -9], P: L.P, p: L.p, top: L.top };
   // kanopi: ruko = satu kanopi menerus sepanjang deret bukaan; aula = kanopi bertiang di tiap pintu masuk (per sisi)
   H.canopies = [];
