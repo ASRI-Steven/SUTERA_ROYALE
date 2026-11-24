@@ -345,17 +345,34 @@ export function engineLevel(v) {
   });
   if (n) n.gain.setTargetAtTime(v * 0.16, ctx.currentTime, 0.3);
 }
+function windNode() { // desis (bandpass, nada bisa digeser) + gemuruh rendah (lowpass 140 Hz) dari satu sumber derau
+  const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain(), lp = ctx.createBiquadFilter(), rg = ctx.createGain();
+  src.buffer = noise; src.loop = true;
+  f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.5;
+  lp.type = 'lowpass'; lp.frequency.value = 140;
+  g.gain.value = 0; rg.gain.value = 0;
+  src.connect(f).connect(g).connect(master);
+  src.connect(lp).connect(rg).connect(master);
+  src.start();
+  wnd.f = f; wnd.rg = rg;
+  return g;
+}
 export function windLevel(v) {
-  const n = loop(wnd, () => {
-    const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
-    src.buffer = noise; src.loop = true;
-    f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.5;
-    g.gain.value = 0;
-    src.connect(f).connect(g).connect(master);
-    src.start();
-    return g;
-  });
-  if (n) n.gain.setTargetAtTime(v * 0.35, ctx.currentTime, 0.25);
+  const n = loop(wnd, windNode);
+  if (!n) return;
+  const t = ctx.currentTime;
+  n.gain.setTargetAtTime(v * 0.35, t, 0.25);
+  wnd.f.frequency.setTargetAtTime(900, t, 0.2); wnd.f.Q.setTargetAtTime(0.5, t, 0.2);
+  wnd.rg.gain.setTargetAtTime(0, t, 0.25);
+}
+// angin terjun: speedK 0..1,2 (laju/60 m/dtk) → keras & gemuruh; tone 0..1 (meluncur/menukik) → desis lebih tinggi & tajam
+export function airWind(speedK, tone = 0) {
+  const n = loop(wnd, windNode);
+  if (!n) return;
+  const t = ctx.currentTime;
+  n.gain.setTargetAtTime(0.06 + 0.34 * speedK * speedK, t, 0.25);
+  wnd.f.frequency.setTargetAtTime(420 + 1500 * tone, t, 0.3); wnd.f.Q.setTargetAtTime(0.5 + 0.5 * tone, t, 0.3);
+  wnd.rg.gain.setTargetAtTime(0.2 * speedK, t, 0.3);
 }
 
 // ---------- Kendaraan ----------
