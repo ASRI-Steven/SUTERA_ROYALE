@@ -112,7 +112,7 @@ function buildGraph(D, col) {
     }
   });
   // Data OSM yang disederhanakan memutus banyak simpang T (ujung jalan menempel di tengah ruas lain tanpa titik
-  // bersama) → graf pecah ratusan bagian dan A* gagal. Sambungkan: (1) ujung buntu ke ruas terdekat ≤ 9 m,
+  // bersama) → graf pecah ratusan bagian dan A* gagal. Sambungkan: (1) ujung buntu ke ruas terdekat ≤ 9 m yang jalurnya bebas,
   // (2) bagian kecil ke bagian utama lewat sambungan pendek yang tidak menembus gedung.
   const link = (a, b) => { const d = Math.hypot(X[a] - X[b], Y[a] - Y[b]); adj[a].push(b, d); adj[b].push(a, d); };
   const clearPath = (ax, ay, bx, by) => { const L = Math.hypot(bx - ax, by - ay), n = Math.ceil(L / 1.5); for (let i = 1; i < n; i++) { const t = i / n; if (col.blocked(ax + (bx - ax) * t, ay + (by - ay) * t, 0.3)) return false; } return true; };
@@ -135,7 +135,7 @@ function buildGraph(D, col) {
           const dx = X[v] - X[u], dy = Y[v] - Y[u], L = dx * dx + dy * dy;
           const t = L > 0 ? Math.max(0, Math.min(1, ((X[i] - X[u]) * dx + (Y[i] - Y[u]) * dy) / L)) : 0;
           const px = X[u] + dx * t, py = Y[u] + dy * t, d = Math.hypot(px - X[i], py - Y[i]);
-          if (d < bd) { bd = d; best = { u, v, t, px, py }; }
+          if (d < bd && clearPath(X[i], Y[i], px, py)) { bd = d; best = { u, v, t, px, py }; } // K1: tidak menyambung menembus tembok kompleks/gedung
         }
       }
       if (!best) continue;

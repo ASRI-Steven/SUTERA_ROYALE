@@ -35,10 +35,11 @@ if (stages.has('buildings')) { const c = stageBuildings(D, log); counts.building
 if (stages.has('walls')) {
   // gapura lama (benda lingkungan raw) = petunjuk letak gapura utama (simpul barrier OSM)
   if (opt.props) { const Pr = JSON.parse(fs.readFileSync(opt.props[0], 'utf8')); D._oldGates = (Pr.gates || []).map((g) => ({ x: g.x * 0.1, y: g.y * 0.1, name: g.n >= 0 ? Pr.names[g.n] : '' })); }
+  { const { doorLoader } = await import('./tidy/doors.mjs'); const fn = await doorLoader(); D._doorsFn = () => fn(D); D._doors = D._doorsFn(); log('walls: pintu luar + bagian luar gedung (planHomes/createCollider)', D._doors.filter((d) => !d.p).length, '+', D._doors.filter((d) => d.p).length); }
   const { stageWalls, WP } = await import('./tidy/walls.mjs'); params.walls = WP; counts.walls = stageWalls(D, log, warnings); }
 if (stages.has('trees')) { if (!fs.existsSync(new URL('./tidy/trees.mjs', import.meta.url))) { console.error('tahap trees (M4) belum dibuat'); process.exit(2); } const { stageTrees, TP } = await import('./tidy/trees.mjs'); params.trees = TP; counts.trees = stageTrees(D, log, warnings); }
 
-delete D._oldGates;
+delete D._oldGates; delete D._doors; delete D._doorsFn;
 const bad = checkBuildings(D);
 for (const b of bad) warnings.push(`gedung ${b[0]} masih ${b[2]} m dari as jalan ${b[1]}`);
 D.meta.layout = { v: 1, stages: [...stages], params, counts, warnings };

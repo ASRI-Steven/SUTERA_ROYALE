@@ -2,12 +2,13 @@
 // Rancangan: docs/rancangan/2026-11-24/tataletak.md bagian 5 (pendekatan C: fabrik rumah ∪ isi ring cluster).
 // Raster 1 m seluruh kawasan; batas kompleks = kontur nol medan jarak f (marching squares), jadi tembok lurus sejajar
 // jalan umum dan melengkung halus di lahan bebas. Tiap jalan lokal/servis yang memotong tembok mendapat gerbang.
-import { M, UMUM, LOKAL, SERVIS, SIDEWALK, toPts, area, centroid, pip, bbox, ptSeg, segX, Grid } from './geom.mjs';
+import { M, UMUM, LOKAL, SERVIS, SIDEWALK, toPts, toFlat, quant, area, centroid, pip, bbox, ptSeg, segX, polyPoly, Grid } from './geom.mjs';
+import { checkBuildings } from './layout.mjs';
 
 export const WP = {
   RC: 12, APRON: 3.5, LOCAL_NEAR: 14, LOCAL_SIDE: 7, SERV_NEAR: 7, PUB_PAD: 2.6, PUB_PAD_MIN: 1.0, HOUSE_GAP: 2.0, BLD_PAD: 1.8, WATER_PAD: 0.5,
   SLOT: 3.5, MIN_HOUSES: 8, RING_HOUSES: 8, DP: 0.45, MIN_RUN: 0.3, GATE_SPACING: 160, DOOR_W: 2.0, GATE_PAD: 1.25, GATE_WALL: 0.6, SERV_PAD: 0.9,
-  DOOR_FROM_GATE: 12, DOOR_SNAP: 14, SECTOR_WALL: 60,
+  DOOR_FROM_GATE: 12, DOOR_SNAP: 14, SECTOR_WALL: 60, SNAP_RUN: 6, SNAP_IN: 30, SNAP_END: 9, SNAP_PAD: 0.7, BOUND_NEAR: 3.0, GATE_LONG: 2.5, DOOR_CLEAR: 2.2, BLD_MIN: 0.8, DOOR_HARD: 1.6,  ROW_GAP: 2.2, ROW_MAX: 12, POCKET: 4000, STRIP: 2.5, MOVE_STEP: 1.2, MOVE_MAX: 4.0, MOVE_GAP: 0.5,
   // keputusan Steven (HANDOFF §35.2 no. 4): gapura "Sutera Sitara" tetap sebagai hiasan boulevard
   DECO: ['Sutera Sitara'],
   // gapura lama yang dihapus: The Gramercy (melintang jalan umum) + gapura di ring tanpa gedung
@@ -40,7 +41,38 @@ function dp(pts, tol) { // Douglas–Peucker (garis terbuka)
   return pts.filter((_, i) => keep[i]);
 }
 
+// Rumah fabrik yang pintunya tidak bisa mendapat ruang bebas (menghadap jalan kampung/jalan luar yang menempel) dikeluarkan
+// dari kompleks (diperlakukan seperti gedung non-perumahan: tembok lewat di belakangnya), lalu medan dihitung ulang.
 export function stageWalls(D, log, warnings) {
+  const excl = new Set(), moved = [], removed = [], movedBy = new Map();
+  for (let pass = 0; ; pass++) {
+    const w = [], r = build(D, log, w, excl, pass >= 9);
+    if (r.move) { // T3b: rumah kompleks berhadapan pintu dengan gedung luar pada celah < 3,5 m → digeser menjauh, kalau tidak muat dibuang
+      const B = D.buildings, done = new Set();
+      for (const [bi, v] of r.move) {
+        if (done.has(bi)) continue;
+        const grp = [bi]; for (const [bj] of r.move) if (bj !== bi && !done.has(bj) && polyPoly(toPts(B.r[bi]), toPts(B.r[bj])) < 0.3) grp.push(bj); // rumah gandeng ikut bersama
+        for (const g of grp) done.add(g);
+        const old = grp.map((g) => B.r[g]), base0 = new Set(checkBuildings(D).map((q) => q[0]));
+        let ok = false;
+        const tot = Math.max(...grp.map((g) => movedBy.get(g) || 0)) + WP.MOVE_STEP;
+        if (tot <= WP.MOVE_MAX + 1e-6) for (const dist of [WP.MOVE_STEP]) {
+          grp.forEach((g, q) => { B.r[g] = toFlat(quant(toPts(old[q]).map(([x, y]) => [x + v[0] * dist, y + v[1] * dist]))); });
+          const ps = grp.map((g) => toPts(B.r[g])), bb = ps.map(bbox);
+          let hit = checkBuildings(D).some((q) => grp.includes(q[0]) && !base0.has(q[0]));
+          for (let bj = 0; bj < B.r.length && !hit; bj++) { if (grp.includes(bj) || B.r[bj].length < 6) continue; const pj = toPts(B.r[bj]), b2 = bbox(pj); ps.forEach((p, q) => { if (!hit && b2[0] < bb[q][2] + 1 && b2[2] > bb[q][0] - 1 && b2[1] < bb[q][3] + 1 && b2[3] > bb[q][1] - 1 && polyPoly(p, pj) < WP.MOVE_GAP) hit = true; }); }
+          if (!hit) { ok = true; for (const g of grp) { B.f[g] |= 32; movedBy.set(g, tot); if (!moved.includes(g)) moved.push(g); } break; }
+        }
+        if (!ok) grp.forEach((g) => { B.r[g] = []; B.f[g] |= 8; removed.push(g); const z = moved.indexOf(g); if (z >= 0) moved.splice(z, 1); });
+      }
+      log('walls: T3b rumah berhadapan pintu dengan gedung luar → digeser', moved.join(',') || '-', 'dibuang', removed.join(',') || '-');
+      D._doors = D._doorsFn(); continue;
+    }
+    if (r.retry) { for (const b of r.retry) excl.add(b); log('walls: rumah berpintu ke luar dikeluarkan dari kompleks', r.retry.length, '→ hitung ulang (total', excl.size + ')'); continue; }
+    warnings.push(...w); r.outHouses = excl.size; r.t3b = { shifted: moved, removed }; D.walls.outHouses = [...excl].sort((a, b) => a - b); return r;
+  }
+}
+function build(D, log, warnings, excl, final) {
   const B = D.buildings, R = D.roads, crop = D.meta.crop.map((v) => v * M);
   const X0 = Math.floor(crop[0]) - 2, Y0 = Math.floor(crop[1]) - 2, W = Math.ceil(crop[2]) + 2 - X0, H = Math.ceil(crop[3]) + 2 - Y0, N = W * H;
   const ci = (x) => Math.floor(x - X0), cj = (y) => Math.floor(y - Y0), cx = (i) => X0 + i + 0.5, cy = (j) => Y0 + j + 0.5;
@@ -71,7 +103,7 @@ export function stageWalls(D, log, warnings) {
   const fabric = [];
   for (let bi = 0; bi < polys.length; bi++) {
     const p = polys[bi];
-    if (!p || B.k[bi] !== 0 || !(B.f[bi] & 1) || (B.f[bi] & 4) || Math.abs(area(p)) >= 1500 || B.h[bi] * M >= 11) continue;
+    if (!p || excl.has(bi) || B.k[bi] !== 0 || !(B.f[bi] & 1) || (B.f[bi] & 4) || Math.abs(area(p)) >= 1500 || B.h[bi] * M >= 11) continue;
     const c = centroid(p);
     if (nonRes.some((q) => pip(c[0], c[1], q.p))) continue;
     fabric.push(bi);
@@ -79,6 +111,7 @@ export function stageWalls(D, log, warnings) {
   const isFab = new Uint8Array(polys.length); for (const bi of fabric) isFab[bi] = 1;
   const mH = new Uint8Array(N);
   for (const bi of fabric) { fillPoly(polys[bi], (k) => { mH[k] = 1; }); polyBand(polys[bi], 0.71, (k) => { mH[k] = 1; }); }
+  for (const d of D._doors || []) if (d.p && isFab[d.bi]) { fillPoly(d.p, (k) => { mH[k] = 1; }); polyBand(d.p, 0.5, (k) => { mH[k] = 1; }); } // teras/tangga luar rumah ikut dijaga
   const dH = edt(mH, W, H);
   // ---------- F = rumah ∪ koridor jalan lokal dekat rumah ∪ aspal servis dekat rumah
   const roads = R.r.map((r, i) => { const cls = D.classes[R.c[i]]; return { i, cls, kind: UMUM.has(cls) ? 'U' : LOKAL.has(cls) ? 'L' : 'S', line: toPts(r), w: R.w[i] * M, s: R.s ? R.s[i] * M : (SIDEWALK[cls] || 0) }; }).filter((r) => r.line.length >= 2);
@@ -101,7 +134,6 @@ export function stageWalls(D, log, warnings) {
   const f = edt(mNA, W, H);
   for (let k = 0; k < N; k++) f[k] -= WP.RC - WP.APRON;
   log('walls: raster', W, '×', H, 'rumah fabrik', fabric.length);
-  if (process.env.TIDY_PROBE) for (const q of process.env.TIDY_PROBE.split(';')) { const [x, y] = q.split(',').map(Number), k = cj(y) * W + ci(x); console.log('probe', x, y, 'dH', dH[k].toFixed(1), 'mF', mF[k], 'dF', dF[k].toFixed(1), 'f0', f[k].toFixed(1)); }
   // ---------- ∪ isi ring residential berisi ≥ 8 rumah fabrik (ring induk tidak dipakai)
   const resid = clusters.filter((c) => c.kind === 'residential');
   const fc = fabric.map((bi) => centroid(polys[bi]));
@@ -122,23 +154,24 @@ export function stageWalls(D, log, warnings) {
   for (const r of roads) { if (r.kind === 'U') continue; for (let k = 0; k + 1 < r.line.length; k++) band(r.line[k][0], r.line[k][1], r.line[k + 1][0], r.line[k + 1][1], r.w / 2, (q) => { mL[q] = 1; }); }
   const dL = edt(mL, W, H);
   // ---------- − koridor jalan umum, air, luar kawasan, gedung non-fabrik
+  const hard2 = new Uint8Array(N), hardE = new Uint8Array(N); // hard2 = hard tanpa tapak gedung (jalan umum, air, luar kawasan, kampung); hardE = kampung saja
   const hard = new Uint8Array(N); // sel yang tidak boleh masuk kompleks: jalan umum + trotoar, air, luar kawasan, tapak gedung non-fabrik, kampung
   const sub = (k, g) => { if (g < f[k]) f[k] = g; };
   for (const r of roads) {
     if (r.kind !== 'U') continue;
     const base = r.w / 2 + r.s;
-    for (let k = 0; k + 1 < r.line.length; k++) band(r.line[k][0], r.line[k][1], r.line[k + 1][0], r.line[k + 1][1], base + WP.PUB_PAD + 1.5, (q, d) => { if (d < base) hard[q] = 1; sub(q, Math.max(d - base - Math.max(dL[q] < 3.2 ? 0.2 : WP.PUB_PAD_MIN, Math.min(WP.PUB_PAD, dH[q] - WP.HOUSE_GAP, dL[q] - 0.8)), Math.min(0.75 - dL[q], d - r.w / 2 - 0.35))); }); // jalan lingkungan yang menempel jalan umum tetap di dalam: tembok di trotoar jalan umum
+    for (let k = 0; k + 1 < r.line.length; k++) band(r.line[k][0], r.line[k][1], r.line[k + 1][0], r.line[k + 1][1], base + WP.PUB_PAD + 1.5, (q, d) => { if (d < base) hard[q] = hard2[q] = 1; sub(q, Math.max(d - base - Math.max(dL[q] < 3.2 ? 0.2 : WP.PUB_PAD_MIN, Math.min(WP.PUB_PAD, dH[q] - WP.HOUSE_GAP, dL[q] - 0.8)), Math.min(0.75 - dL[q], d - r.w / 2 - 0.35))); }); // jalan lingkungan yang menempel jalan umum tetap di dalam: tembok di trotoar jalan umum
   }
-  for (const w of D.water) signed(toPts(w), 6, (k, s) => { if (s > -WP.WATER_PAD) hard[k] = 1; sub(k, -s - WP.WATER_PAD); });
-  (D.waterways.r || []).forEach((r, i) => { const hw = D.waterways.w[i] * M / 2, L = toPts(r); if (hw < 1.5) return; for (let k = 0; k + 1 < L.length; k++) band(L[k][0], L[k][1], L[k + 1][0], L[k + 1][1], hw + 2.5, (q, d) => { if (d < hw + WP.WATER_PAD) hard[q] = 1; sub(q, d - hw - WP.WATER_PAD); }); });
+  for (const w of D.water) signed(toPts(w), 6, (k, s) => { if (s > -WP.WATER_PAD) hard[k] = hard2[k] = 1; sub(k, -s - WP.WATER_PAD); });
+  (D.waterways.r || []).forEach((r, i) => { const hw = D.waterways.w[i] * M / 2, L = toPts(r); if (hw < 1.5) return; for (let k = 0; k + 1 < L.length; k++) band(L[k][0], L[k][1], L[k + 1][0], L[k + 1][1], hw + 2.5, (q, d) => { if (d < hw + WP.WATER_PAD) hard[q] = hard2[q] = 1; sub(q, d - hw - WP.WATER_PAD); }); });
   const boundary = toPts(D.boundary), inAreaM = new Uint8Array(N);
   fillPoly(boundary, (k) => { inAreaM[k] = 1; });
-  for (let k = 0; k < N; k++) if (!inAreaM[k]) { f[k] = Math.min(f[k], -6); hard[k] = 1; }
+  for (let k = 0; k < N; k++) if (!inAreaM[k]) { f[k] = Math.min(f[k], -6); hard[k] = hard2[k] = 1; }
   polyBand(boundary, 2.5, (k, d) => sub(k, inAreaM[k] ? d : -d));
   // kampung enclave (lubang batas kawasan) tidak ditembok: seluruh poligonnya + 2 m di luar kompleks
   const subH = (k, g) => sub(k, Math.max(g, WP.HOUSE_GAP + 0.3 - dH[k])); // tidak pernah < 2,3 m dari rumah fabrik
-  for (const h of D.boundaryHoles || []) signed(toPts(h), 6, (k, s) => { if (s > 0) hard[k] = 1; subH(k, -s - 2); });
-  for (let bi = 0; bi < polys.length; bi++) { if (!polys[bi] || isFab[bi] || B.k[bi] === 5 || (B.f[bi] & 4)) continue; signed(polys[bi], 6, (k, s) => { if (s >= 0) { hard[k] = 1; sub(k, -s - WP.BLD_PAD); } else subH(k, -s - WP.BLD_PAD); }); }
+  for (const h of D.boundaryHoles || []) signed(toPts(h), 6, (k, s) => { if (s > 0) hard[k] = hard2[k] = hardE[k] = 1; subH(k, -s - 2); });
+  for (let bi = 0; bi < polys.length; bi++) { if (!polys[bi] || isFab[bi] || B.k[bi] === 5 || (B.f[bi] & 4)) continue; signed(polys[bi], 6, (k, s) => { if (s >= 0) { hard[k] = 1; sub(k, -s - WP.BLD_PAD); } else sub(k, Math.max(-s - WP.BLD_PAD, -s - dH[k] - 0.71)); }); } // celah sempit gedung ↔ rumah: tembok di garis tengah
   // ---------- celah luar yang sempit (< 2 × SLOT m: dua tembok sejajar berdempetan, lekuk di sekitar gedung) ditutup
   {
     const mR = new Uint8Array(N); for (let k = 0; k < N; k++) mR[k] = f[k] > 0 ? 1 : 0;
@@ -146,6 +179,96 @@ export function stageWalls(D, log, warnings) {
     const d2 = edt(m2, W, H); let filled = 0;
     for (let k = 0; k < N; k++) if (!mR[k] && !hard[k] && d2[k] > WP.SLOT + 0.5) { f[k] = Math.min(2, d2[k] - WP.SLOT); filled++; }
     log('walls: sel celah sempit ditutup', filled);
+  }
+  const mBd = new Uint8Array(N); for (let k = 0; k < N; k++) mBd[k] = inAreaM[k] ? 0 : 1;
+  const mNB = new Uint8Array(N); for (let bi = 0; bi < polys.length; bi++) if (polys[bi] && !isFab[bi] && B.k[bi] !== 5 && !(B.f[bi] & 4)) fillPoly(polys[bi], (k) => { mNB[k] = 1; });
+  const dNB = edt(mNB, W, H); // jarak ke tapak gedung non-fabrik: pita jalan dalam tidak menempelkan tembok ke gedung
+  const dBd = edt(mBd, W, H), mOut = new Uint8Array(N); // jarak ke luar kawasan; sel pita jalan yang dipaksa di luar
+  const RGl = new Grid(40);
+  for (const r of roads) for (let k = 0; k + 1 < r.line.length; k++) { const a = r.line[k], b = r.line[k + 1]; RGl.add([r, k], Math.min(a[0], b[0]) - 14, Math.min(a[1], b[1]) - 14, Math.max(a[0], b[0]) + 14, Math.max(a[1], b[1]) + 14); }
+  const asphalt = (x, y, pad = 0, skip = -1) => { for (const [r, k] of RGl.query(x, y, x, y)) { if (r.i === skip) continue; const a = r.line[k], b = r.line[k + 1]; if (ptSeg(x, y, a[0], a[1], b[0], b[1]) < r.w / 2 + pad) return r; } return null; };
+  // ---------- penampang jalan lokal/servis seragam: tiap potongan as 1 m seluruhnya di dalam atau seluruhnya di luar
+  // (menurut tanda f di as, deret < SNAP_RUN m ikut tetangganya). Kontur lalu hanya memotong aspal tegak lurus di gerbang
+  // dan tidak pernah menyusuri aspal. Bila bertumpuk di simpang, "luar" menang.
+  {
+    const ins = [], outs = [];
+    for (const r of roads) {
+      if (r.kind === 'U') continue;
+      const pcs = [];
+      for (let k = 0; k + 1 < r.line.length; k++) { const a = r.line[k], c = r.line[k + 1], L = Math.hypot(c[0] - a[0], c[1] - a[1]), n = Math.max(1, Math.ceil(L)); for (let q = 0; q < n; q++) { const t0 = q / n, t1 = (q + 1) / n, x0 = a[0] + (c[0] - a[0]) * t0, y0 = a[1] + (c[1] - a[1]) * t0, x1 = a[0] + (c[0] - a[0]) * t1, y1 = a[1] + (c[1] - a[1]) * t1, kk = cj((y0 + y1) / 2) * W + ci((x0 + x1) / 2); pcs.push({ x0, y0, x1, y1, in: kk >= 0 && kk < N && f[kk] > 0 && !hard[kk] ? 1 : 0, ok: kk >= 0 && kk < N && dBd[kk] > 3 }); } }
+      if (pcs.length) { pcs[0].end = 0; pcs[pcs.length - 1].end = 1; }
+      // deret pendek ikut tetangga (kecuali di ujung jalan); jalan yang hanya < SNAP_IN m menembus kompleks (dua gerbang
+      // berdempetan) dianggap lewat di luar
+      for (const v of [0, 1]) for (let i = 0; i < pcs.length;) { let j = i; while (j + 1 < pcs.length && pcs[j + 1].in === pcs[i].in) j++; const flip = pcs[i].in === v && i > 0 && j < pcs.length - 1 && j - i + 1 < (v ? WP.SNAP_IN : WP.SNAP_RUN); if (flip) for (let q = i; q <= j; q++) pcs[q].in = 1 - v; i = j + 1; } // dulu deret luar pendek → dalam, lalu deret dalam pendek → luar
+      // ujung buntu: potongan < SNAP_END m di ujung jalan yang tidak tersambung jalan lain ikut tetangganya (tidak ada
+      // gerbang untuk buntut jalan beberapa meter di balik tembok)
+      if (pcs.length > 1) for (const end of [0, 1]) {
+        const e = end ? pcs[pcs.length - 1] : pcs[0], ex = end ? e.x1 : e.x0, ey = end ? e.y1 : e.y0;
+        let n = 1; while (n < pcs.length && pcs[end ? pcs.length - 1 - n : n].in === e.in) n++;
+        if (n >= pcs.length || n >= WP.SNAP_END || asphalt(ex, ey, 0.5, r.i)) continue;
+        if (e.in === 0) { let hd = false; for (let q = 0; q < n; q++) { const z = pcs[end ? pcs.length - 1 - q : q], kk = cj((z.y0 + z.y1) / 2) * W + ci((z.x0 + z.x1) / 2); if (!(kk >= 0 && kk < N) || hard[kk]) hd = true; } if (hd) continue; }
+        for (let q = 0; q < n; q++) pcs[end ? pcs.length - 1 - q : q].in = 1 - e.in;
+      }
+      for (const q of pcs) if (q.ok) (q.in ? ins : outs).push([q, r.w / 2 + WP.SNAP_PAD]);
+    }
+    let up = 0, down = 0;
+    const cap = (q, hw, fn) => { if (q.end === undefined) return; const x = q.end ? q.x1 : q.x0, y = q.end ? q.y1 : q.y0; band(x, y, x, y, hw, fn); }; // ujung jalan: tutup bundar
+    const fu = (k) => { if (!hard[k] && dNB[k] > WP.BLD_MIN && f[k] < 0.6) { f[k] = 0.6; up++; } }, fd = (k) => { mOut[k] = 1; if (f[k] > -0.6 && dH[k] > 0.3) { f[k] = -0.6; down++; } };
+    for (const [q, hw] of ins) { flatBand(q.x0, q.y0, q.x1, q.y1, hw, fu); cap(q, hw, fu); }
+    for (const [q, hw] of outs) { flatBand(q.x0, q.y0, q.x1, q.y1, hw, fd); cap(q, hw, fd); }
+    log('walls: penampang jalan diseragamkan, sel naik', up, 'turun', down);
+  }
+  // ---------- ruang bebas pintu: R m di depan tiap pintu luar ikut sisi gedungnya (rumah kompleks → dalam, gedung lain → luar)
+  {
+    const doors = D._doors || [], newEx = new Set(), move = new Map();
+    // dua pintu berhadapan (rumah kompleks ↔ gedung luar): sel ikut pintu yang lebih dekat → tembok di tengah
+    const dO = new Map(), dI = new Map(), dOb = new Map(); // dOb: gedung luar pemilik zona
+    for (const d of doors) { const m = isFab[d.bi] ? dI : dO, put = (k, dd) => { if (dd < (m.get(k) ?? 99)) { m.set(k, dd); if (m === dO) dOb.set(k, d.bi); } };
+      if (d.p) { fillPoly(d.p, (k) => put(k, 0)); polyBand(d.p, 0.8, (k) => put(k, 0.1)); } else band(d.x, d.y, d.x, d.y, WP.DOOR_CLEAR, put); }
+    for (const [k, dd] of dO) if (dd <= (dI.get(k) ?? 99) && f[k] > -0.6 && dH[k] > 0) f[k] = -0.6;
+    for (const [k, dd] of dI) if (!hard[k] && !mOut[k] && dd < (dO.get(k) ?? 99) && f[k] < 0.6 && dd <= 0.1) f[k] = 0.6; // kanopi rumah kompleks
+    for (const d of doors) {
+      if (!isFab[d.bi] || d.p) continue;
+      let bad = false; band(d.x, d.y, d.x, d.y, WP.DOOR_HARD, (k) => { if (hardE[k] || mOut[k]) bad = true; }); // batas kawasan/air tidak bertembok: bukan alasan
+      if (bad) { newEx.add(d.bi); continue; }
+      // ruang bebas pintu rumah kompleks bertumpuk dengan zona gedung luar (pintu/kanopi/tangga luarnya): tembok tidak muat
+      // di celahnya → rumah digeser menjauh dari gedung itu (T3b), MOVE_STEP m tiap putaran
+      if (!final && !move.has(d.bi)) { let ob = -1; band(d.x, d.y, d.x, d.y, WP.DOOR_HARD, (k) => { const z = dO.get(k); if (z !== undefined && (z <= 0.1 || z < WP.DOOR_CLEAR - 0.3) && ob < 0) ob = dOb.get(k); });
+        if (ob >= 0 && excl.has(ob)) { newEx.add(d.bi); continue; } // menempel rumah yang sudah dikeluarkan: ikut keluar
+        if (ob >= 0 && polys[ob]) { const P = polys[ob], q = [0, 0, 0]; let best = 1e9, bx = 0, by = 0;
+          for (let a = 0, c = P.length - 1; a < P.length; c = a++) { const dd = ptSeg(d.x, d.y, P[c][0], P[c][1], P[a][0], P[a][1], q); if (dd < best) { best = dd; bx = q[0]; by = q[1]; } }
+          if (best > 0.05) move.set(d.bi, [(d.x - bx) / best, (d.y - by) / best]); } }
+    }
+    for (const bi of newEx) move.delete(bi);
+    if (move.size) return { move };
+    // rumah yang menempel (celah < ROW_GAP m, tidak muat tembok) ikut keluar bersama deretnya, paling banyak ROW_MAX rumah
+    if (newEx.size && !final) {
+      const HG = new Grid(40); for (const bi of fabric) { const b = bbox(polys[bi]); HG.add(bi, b[0], b[1], b[2], b[3]); }
+      const todo = [...newEx];
+      while (todo.length && newEx.size < WP.ROW_MAX * 4) { const bi = todo.pop(), b = bbox(polys[bi]); for (const o of HG.query(b[0] - WP.ROW_GAP, b[1] - WP.ROW_GAP, b[2] + WP.ROW_GAP, b[3] + WP.ROW_GAP)) if (!newEx.has(o) && polyPoly(polys[bi], polys[o]) < WP.ROW_GAP) { newEx.add(o); todo.push(o); } }
+      return { retry: [...newEx] };
+    }
+    if (newEx.size) warnings.push(`${newEx.size} rumah kompleks berpintu < ${WP.DOOR_HARD} m dari jalan luar/kampung`);
+  }
+  // ---------- kantong lahan di antara kompleks dan batas kawasan yang tidak dicapai jalan (tanpa jalan umum/jalan luar/air/
+  // kampung) ikut ke dalam, seperti lubang: kalau tidak, ia terkurung tembok dan batas kawasan
+  {
+    // putaran 0: kantong yang benar-benar terkurung; putaran 1: kantong yang hanya tersambung lewat jalur < STRIP m di
+    // sepanjang batas kawasan (jalur itu sendiri sisi tanpa tembok yang ditutup di tiap ujung tembok), paling besar POCKET sel
+    const qq = new Int32Array(N); let pockets = 0, cells = 0;
+    for (const strip of [0, WP.STRIP]) {
+      const pl = new Uint8Array(N);
+      for (let k0 = 0; k0 < N; k0++) {
+        if (pl[k0] || !inAreaM[k0] || f[k0] > 0 || dBd[k0] < strip) continue;
+        let head = 0, tail = 0, clean = true; qq[tail++] = k0; pl[k0] = 1;
+        while (head < tail) { const k = qq[head++]; if (hard2[k] || mOut[k]) clean = false; const i = k % W, j = (k - i) / W; for (const q of [i > 0 ? k - 1 : -1, i < W - 1 ? k + 1 : -1, j > 0 ? k - W : -1, j < H - 1 ? k + W : -1]) if (q >= 0 && !pl[q] && inAreaM[q] && f[q] <= 0 && dBd[q] >= strip) { pl[q] = 1; qq[tail++] = q; } }
+        if (!clean || (strip && tail > WP.POCKET)) continue;
+        for (let q = 0; q < tail; q++) { const k = qq[q]; f[k] = 2;
+          if (strip) { const i = k % W, j = (k - i) / W; for (let dj = -4; dj <= 4; dj++) for (let di = -4; di <= 4; di++) { const i2 = i + di, j2 = j + dj; if (i2 < 0 || j2 < 0 || i2 >= W || j2 >= H) continue; const k2 = j2 * W + i2; if (inAreaM[k2] && f[k2] <= 0 && dBd[k2] < strip && !hard2[k2] && !mOut[k2]) f[k2] = 2; } } }
+        pockets++; cells += tail;
+      }
+    }
+    log('walls: kantong di tepi kawasan diserap', pockets, 'sel', cells);
   }
   // ---------- lubang ikut ke dalam; komponen berisi < 8 rumah dibuang
   const lab = new Int32Array(N); // 0 belum, −1 luar, > 0 id komponen
@@ -196,9 +319,11 @@ export function stageWalls(D, log, warnings) {
   const waters = D.water.map(toPts).map((p) => ({ p, b: bbox(p) }));
   const canal = (D.waterways.r || []).map((r, i) => ({ L: toPts(r), hw: D.waterways.w[i] * M / 2 })).filter((c) => c.hw >= 1.5);
   const BSeg = new Grid(40);
-  for (let a = 0, c = boundary.length - 1; a < boundary.length; c = a++) BSeg.add([boundary[c], boundary[a]], Math.min(boundary[c][0], boundary[a][0]) - 2, Math.min(boundary[c][1], boundary[a][1]) - 2, Math.max(boundary[c][0], boundary[a][0]) + 2, Math.max(boundary[c][1], boundary[a][1]) + 2);
+  for (let a = 0, c = boundary.length - 1; a < boundary.length; c = a++) BSeg.add([boundary[c], boundary[a]], Math.min(boundary[c][0], boundary[a][0]) - 8, Math.min(boundary[c][1], boundary[a][1]) - 8, Math.max(boundary[c][0], boundary[a][0]) + 8, Math.max(boundary[c][1], boundary[a][1]) + 8);
+  // ujung tembok di batas kawasan ditutup tegak lurus ke garis batas (+ 0,6 m lewat), supaya tidak ada celah di antara keduanya
+  const toBound = (x, y) => { let best = 1e9, bx = x, by = y; const o = [0, 0, 0]; for (const [a, b] of BSeg.query(x, y, x, y)) { const d = ptSeg(x, y, a[0], a[1], b[0], b[1], o); if (d < best) { best = d; bx = o[0]; by = o[1]; } } if (best > 7) return null; const L = best || 1; return best < 0.05 ? [bx, by] : [bx + (bx - x) / L * 0.25, by + (by - y) / L * 0.25]; };
   const kindAt = (x, y) => {
-    for (const [a, b] of BSeg.query(x, y, x, y)) if (ptSeg(x, y, a[0], a[1], b[0], b[1]) < 0.9) return 3;
+    for (const [a, b] of BSeg.query(x, y, x, y)) if (ptSeg(x, y, a[0], a[1], b[0], b[1]) < WP.BOUND_NEAR) return 3;
     for (const w of waters) { if (x < w.b[0] - 2 || x > w.b[2] + 2 || y < w.b[1] - 2 || y > w.b[3] + 2) continue; if (pip(x, y, w.p)) return 2; for (let a = 0, c = w.p.length - 1; a < w.p.length; c = a++) if (ptSeg(x, y, w.p[c][0], w.p[c][1], w.p[a][0], w.p[a][1]) < WP.WATER_PAD + 0.5) return 2; }
     for (const c of canal) for (let k = 0; k + 1 < c.L.length; k++) if (ptSeg(x, y, c.L[k][0], c.L[k][1], c.L[k + 1][0], c.L[k + 1][1]) < c.hw + WP.WATER_PAD + 0.5) return 2;
     return 0;
@@ -206,13 +331,10 @@ export function stageWalls(D, log, warnings) {
   const BG = new Grid(40);
   polys.forEach((p, i) => { if (p && B.k[i] !== 5) { const b = bbox(p); BG.add(i, b[0], b[1], b[2], b[3]); } });
   const bldDist = (x, y, lim) => { let best = lim; for (const bi of BG.query(x - lim, y - lim, x + lim, y + lim)) { const p = polys[bi]; if (pip(x, y, p)) return 0; for (let a = 0, c = p.length - 1; a < p.length; c = a++) best = Math.min(best, ptSeg(x, y, p[c][0], p[c][1], p[a][0], p[a][1])); } return best; };
-  const RGl = new Grid(40);
-  for (const r of roads) for (let k = 0; k + 1 < r.line.length; k++) { const a = r.line[k], b = r.line[k + 1]; RGl.add([r, k], Math.min(a[0], b[0]) - 14, Math.min(a[1], b[1]) - 14, Math.max(a[0], b[0]) + 14, Math.max(a[1], b[1]) + 14); }
-  const asphalt = (x, y, pad = 0, skip = -1) => { for (const [r, k] of RGl.query(x, y, x, y)) { if (r.i === skip) continue; const a = r.line[k], b = r.line[k + 1]; if (ptSeg(x, y, a[0], a[1], b[0], b[1]) < r.w / 2 + pad) return r; } return null; };
 
   // tembok tidak berdiri di aspal: titik (dipadatkan ≤ 2 m) yang jatuh di aspal jalan lokal/servis digeser tegak lurus as
   // jalan ke tepi terdekat + 0,5 m, asal tetap ≥ 1,6 m dari gedung; sisanya dicatat sebagai peringatan
-  let nudged = 0, stuck = 0;
+  let nudged = 0, stuck = 0, sealOpen = 0;
   const nudge = (P) => {
     const dense = [P[0]];
     for (let i = 1; i < P.length; i++) { const a = P[i - 1], b = P[i], L = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.ceil(L / 2)); for (let q = 1; q <= n; q++) dense.push([a[0] + (b[0] - a[0]) * q / n, a[1] + (b[1] - a[1]) * q / n]); }
@@ -223,19 +345,20 @@ export function stageWalls(D, log, warnings) {
       for (const [r, k] of RGl.query(x, y, x, y)) {
         if (r.kind === 'U') continue;
         const a = r.line[k], b = r.line[k + 1], d = ptSeg(x, y, a[0], a[1], b[0], b[1], o), lim = r.w / 2 + 0.5;
-        if (d >= lim - 0.05 || o[2] <= 0 || o[2] >= 1) continue;
+        if (d >= lim - 0.05) continue;
         const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; let nx = -(b[1] - a[1]) / L, ny = (b[0] - a[0]) / L;
         if ((x - o[0]) * nx + (y - o[1]) * ny < 0) { nx = -nx; ny = -ny; }
-        const x2 = o[0] + nx * lim, y2 = o[1] + ny * lim;
-        if (bldDist(x2, y2, 1.6) < 1.6) { stuck++; continue; }
-        dense[i] = [x2, y2]; any = true; nudged++; break;
+        if ((o[2] <= 0 || o[2] >= 1) && d > 0.05) { nx = (x - o[0]) / d; ny = (y - o[1]) / d; } // di luar ujung ruas: dorong menjauh dari titik ujung
+        let ok = false; for (const off of [0.5, 0.3]) { const x2 = o[0] + nx * (r.w / 2 + off), y2 = o[1] + ny * (r.w / 2 + off); if (bldDist(x2, y2, 0.45) < 0.45) continue; dense[i] = [x2, y2]; ok = true; break; }
+        if (ok) { any = true; nudged++; } else stuck++;
+        break;
       }
     }
     if (!any) return;
-    const sm = dp(dense, 0.25); P.length = 0; for (const q of sm) P.push(q);
+    const sm = dp(dense, 0.12); P.length = 0; for (const q of sm) P.push(q);
   };
   // ---------- per lingkar: jenis ruas, gerbang, pintu pejalan, garis tembok
-  const lines = [], gates = [], compounds = [];
+  const lines = [], gates = [], compounds = [], openings = [];
   const oldGates = (D._oldGates || []);
   for (const pts0 of loops) {
     const m0 = pts0[0], l0 = lab[cj(m0[1]) * W + ci(m0[0])] > 0 ? lab[cj(m0[1]) * W + ci(m0[0])] : 0;
@@ -246,6 +369,18 @@ export function stageWalls(D, log, warnings) {
     if (!comp || comp.cid === undefined) continue;
     // sederhanakan lingkar per jenis: titik jenis berubah dipertahankan
     const kinds0 = pts0.map(([x, y]) => kindAt(x, y));
+    // jalan lokal/servis yang memotong lingkar di dekat batas kawasan tetapi berlanjut DI DALAM kawasan = gerbang biasa
+    // (tanpa ini potongan itu dianggap sisi batas kawasan: tanpa tembok, tanpa gerbang, lalu ditutup tembok melintang jalan)
+    { const n0 = pts0.length, G3 = new Grid(40); let any3 = false;
+      for (let k = 0; k < n0; k++) if (kinds0[k] === 3 || kinds0[(k + 1) % n0] === 3) { const a = pts0[k], b = pts0[(k + 1) % n0]; G3.add(k, Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1])); any3 = true; }
+      if (any3) for (const r of roads) { if (r.kind === 'U') continue; for (let q = 0; q + 1 < r.line.length; q++) { const a = r.line[q], b = r.line[q + 1];
+        for (const k of G3.query(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]))) {
+          const p = pts0[k], p2 = pts0[(k + 1) % n0], t = segX(a[0], a[1], b[0], b[1], p[0], p[1], p2[0], p2[1]); if (t < 0) continue;
+          const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t, L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+          let ok = true; for (const d of [-5, -2.5, 2.5, 5]) { const kk = cj(y + uy * d) * W + ci(x + ux * d); if (!(kk >= 0 && kk < N) || !inAreaM[kk]) ok = false; }
+          if (!ok) continue;
+          const R = r.w / 2 + 4.5; for (let dj = -24; dj <= 24; dj++) { const j = (k + dj + n0) % n0; if (kinds0[j] === 3 && Math.hypot(pts0[j][0] - x, pts0[j][1] - y) < R) kinds0[j] = 0; }
+        } } } }
     let s0 = 0; while (s0 < pts0.length && kinds0[s0] === kinds0[(s0 + pts0.length - 1) % pts0.length]) s0++;
     if (s0 === pts0.length) s0 = 0;
     const pts = [], kd = []; // kd[i] = jenis ruas pts[i] → pts[i+1]
@@ -281,7 +416,7 @@ export function stageWalls(D, log, warnings) {
     for (const g of myGates) { if (G2.some((o) => o.r === g.r && Math.min(Math.abs(o.s - g.s), LEN - Math.abs(o.s - g.s)) < 3)) continue; G2.push(g); }
     for (const g of G2) {
       const serv = g.r.kind === 'S', half = serv ? g.r.w / 2 + WP.SERV_PAD : g.r.w / 2 + WP.GATE_PAD, hc = serv ? half : half + WP.GATE_WALL, nx = -g.uy, ny = g.ux;
-      const walk = (dir) => { let s = 0; for (; s < hc * 4; s += 0.25) { const q = at(g.s + dir * s), lat = Math.abs((q.x - g.x) * nx + (q.y - g.y) * ny); if (lat >= hc) break; } return s; };
+      const walk = (dir) => { let s = 0; for (; s < hc * 4; s += 0.25) { const q = at(g.s + dir * s), lat = Math.abs((q.x - g.x) * nx + (q.y - g.y) * ny), lon = Math.abs((q.x - g.x) * g.ux + (q.y - g.y) * g.uy); if (lat >= hc || (lon >= WP.GATE_LONG && lat >= g.r.w / 2 + 0.3)) break; } return s; };
       g.half = half; g.hc = hc; g.a0 = g.s - walk(-1); g.a1 = g.s + walk(1);
     }
     // bukaan bertumpuk / terlalu rapat → satu bukaan polos (tanpa pilar)
@@ -291,14 +426,14 @@ export function stageWalls(D, log, warnings) {
     if (groups.length > 1) { const A = groups[0], Z = groups[groups.length - 1]; if (A.a0 + LEN < Z.a1 + 2.0) { Z.list.push(...A.list); Z.a1 = Math.max(Z.a1, A.a1 + LEN); groups.shift(); } }
     for (const gr of groups) {
       const plain = gr.list.length > 1 || gr.list.some((g) => { // pilar tidak boleh di aspal jalan lain / di gedung
-        const nx = -g.uy, ny = g.ux; for (const sdn of [1, -1]) { const px = g.x + nx * sdn * g.half, py = g.y + ny * sdn * g.half; if (asphalt(px, py, 0.6, g.r.i) || bldDist(px, py, 1.2) < 1.2) return true; } return false; });
+        const nx = -g.uy, ny = g.ux; for (const sdn of [1, -1]) { const px = g.x + nx * sdn * g.half, py = g.y + ny * sdn * g.half; const kq = cj(py) * W + ci(px); if (!inAreaM[kq] || dBd[kq] < 1.0) return true; if (asphalt(px, py, 0.6, g.r.i) || bldDist(px, py, 1.2) < 1.2) return true; const qx = g.x + nx * sdn * g.hc, qy = g.y + ny * sdn * g.hc; if (bldDist(qx, qy, 0.8) < 0.8) return true; } return false; });
       const o = { s0: gr.a0, s1: gr.a1, plain, gi: [] };
       for (const g of gr.list) {
         const gi = gates.push({ x: Math.round(g.x / M), y: Math.round(g.y / M), a: Math.round(((Math.atan2(g.uy, g.ux) * 180 / Math.PI + 360) % 360) * 10), w: Math.round(g.r.w / M), h: Math.round(g.half / M), k: g.r.kind === 'S' ? 2 : 1, c: comp.cid, ci: -1, road: g.r.i, ...(plain ? { p: 1 } : {}) }) - 1;
         o.gi.push(gi);
         if (!plain) { // corong: ujung tembok ditarik sejajar jalan sampai garis gerbang
-          const nx = -g.uy, ny = g.ux, con = (s) => { const q = at(s), lat = (q.x - g.x) * nx + (q.y - g.y) * ny, sg = lat >= 0 ? 1 : -1; return [g.x + nx * sg * g.hc, g.y + ny * sg * g.hc]; };
-          o.c0 = con(gr.a0); o.c1 = con(gr.a1);
+          const nx = -g.uy, ny = g.ux; // lingkar berlawanan jarum jam, dalam di kiri: arah maju lingkar = −n
+          o.c0 = [g.x + nx * g.hc, g.y + ny * g.hc]; o.c1 = [g.x - nx * g.hc, g.y - ny * g.hc];
         }
       }
       open.push(o);
@@ -315,14 +450,15 @@ export function stageWalls(D, log, warnings) {
       if (ptSeg(q.x, q.y, a.x, a.y, b.x, b.y) > (loose ? 0.8 : 0.3) || Math.hypot(b.x - a.x, b.y - a.y) < (loose ? 5.6 : 6.2)) return false; // ruas lurus ≥ 6 m
       for (const o of open) { const d = Math.min(Math.abs(wrap(s) - wrap(o.s0)), Math.abs(wrap(s) - wrap(o.s1)), LEN - Math.abs(wrap(s) - wrap(o.s0)), LEN - Math.abs(wrap(s) - wrap(o.s1))); if (d < (loose ? 5 : WP.DOOR_FROM_GATE)) return false; }
       const ox = q.ty, oy = -q.tx; // keluar = kanan arah jalan
-      for (const d of [1.2, 2.4, 3.6]) { const x = q.x + ox * d, y = q.y + oy * d, k = cj(y) * W + ci(x); if (!inAreaM[k] || kindAt(x, y) !== 0 || bldDist(x, y, 0.8) < 0.8) return false; }
-      for (const d of [1.2, 2.4]) { const x = q.x - ox * d, y = q.y - oy * d; if (bldDist(x, y, 0.8) < 0.8) return false; }
-      if (asphalt(q.x, q.y, 0.5)) return false;
+      const bl = loose === 2 ? 0.5 : 0.8; // mode 2: pintu ke lorong 1,8 m di belakang gedung panjang
+      for (const d of loose === 2 ? [1.2] : [1.2, 2.4, 3.6]) { const x = q.x + ox * d, y = q.y + oy * d, k = cj(y) * W + ci(x); if (!inAreaM[k] || kindAt(x, y) === 2 || bldDist(x, y, bl) < bl) return false; }
+      for (const d of loose === 2 ? [1.2] : [1.2, 2.4]) { const x = q.x - ox * d, y = q.y - oy * d; if (bldDist(x, y, bl) < bl) return false; }
+      if (!loose && asphalt(q.x, q.y, 0.5)) return false;
       return true;
     };
     const doors = [];
     const addDoor = (target, lo, hi) => { // titik sah terdekat ke target dalam [lo, hi]; putaran kedua dengan syarat longgar
-      for (const loose of [false, true]) for (let d = 0; d <= (loose ? 30 : 14); d += 1) for (const s of d ? [target + d, target - d] : [target]) { if (s < lo + 4 || s > hi - 4) continue; if (doors.some((q) => Math.abs(q - s) < 8)) continue; if (doorOk(s, loose)) { doors.push(s); return true; } }
+      for (const loose of [0, 1, 2]) for (let d = 0; d <= (loose ? 30 : 14); d += 1) for (const s of d ? [target + d, target - d] : [target]) { if (s < lo + 4 || s > hi - 4) continue; if (doors.some((q) => Math.abs(q - s) < 8)) continue; if (doorOk(s, loose)) { doors.push(s); return true; } }
       return false;
     };
     let doorMiss = 0;
@@ -342,6 +478,28 @@ export function stageWalls(D, log, warnings) {
       ex.sort((p, q) => p[0] - q[0]);
       let p0 = a0, pe = ea;
       for (const e of [...ex, null]) { place(p0, e ? e[0] : a1, pe, e ? true : eb); if (e) { p0 = e[1]; pe = true; } }
+    }
+    // periksa ulang: jarak antar-bukaan sepanjang tembok ≤ GATE_SPACING, ujung buntu ≤ setengahnya (pintu yang tergeser
+    // jauh dari sasarannya bisa meninggalkan selang lebih panjang)
+    for (let it = 0; it < 3; it++) {
+      let added = false;
+      for (const run of runs) {
+        const ex = [];
+        for (const o of open) for (const sh of [0, LEN, -LEN]) { const m = (o.s0 + o.s1) / 2 + sh; if (m > run.s0 && m < run.s1) ex.push(m); }
+        for (const s of doors) for (const sh of [0, LEN, -LEN]) if (s + sh > run.s0 && s + sh < run.s1) ex.push(s + sh);
+        ex.sort((p, q) => p - q);
+        let pts2;
+        if (allWall) { if (!ex.length) continue; pts2 = [...ex, ex[0] + LEN]; }
+        else pts2 = [run.e0 === 2 ? run.s0 : null, ...ex, run.e1 === 2 ? run.s1 : null];
+        if (!allWall && !ex.length && run.s1 - run.s0 > 14 && pts2[0] === null && pts2[1] === null) { if (addDoor((run.s0 + run.s1) / 2, run.s0, run.s1)) added = true; continue; }
+        for (let i = 0; i + 1 < pts2.length; i++) {
+          const p = pts2[i], q = pts2[i + 1];
+          if (p !== null && q !== null) { if (q - p > WP.GATE_SPACING && addDoor((p + q) / 2, p, q)) added = true; }
+          else if (p === null && q !== null) { if (q - run.s0 > WP.GATE_SPACING / 2 && addDoor(Math.max(run.s0 + 5, q - WP.GATE_SPACING / 2 - 20), run.s0, q)) added = true; }
+          else if (p !== null && q === null) { if (run.s1 - p > WP.GATE_SPACING / 2 && addDoor(Math.min(run.s1 - 5, p + WP.GATE_SPACING / 2 + 20), p, run.s1)) added = true; }
+        }
+      }
+      if (!added) break;
     }
     // tiap kompleks ≥ 2 bukaan (≥ 3 bila > 3 ha); tiap kuadran bertembok ≥ 60 m punya ≥ 1 bukaan
     const cen = centroid(pts), ha = Math.abs(area(pts)) / 1e4;
@@ -375,16 +533,35 @@ export function stageWalls(D, log, warnings) {
       ops.sort((p, q) => p.a - q.a);
       let s = run.s0, eS = allWall ? null : run.e0, prev = null;
       const emit = (a, b, e0, e1, o0, o1) => {
-        if (b - a < WP.MIN_RUN) return;
-        const P = cut(a, b);
+        // ujung di batas kawasan: tembok ditarik tegak lurus ke garis batas; bila lintasannya melewati aspal (jalan yang
+        // menyatu dengan sisi batas), tembok berhenti di tepi aspal dan sisanya menjadi bukaan polos
+        const seal = (pt, atStart) => {
+          const q = toBound(pt[0], pt[1]); if (!q) return 3;
+          const L = Math.hypot(q[0] - pt[0], q[1] - pt[1]) || 1e-6; let cutT = -1, road = null;
+          for (let t = 0; t <= L; t += 0.2) { const r = asphalt(pt[0] + (q[0] - pt[0]) * t / L, pt[1] + (q[1] - pt[1]) * t / L, -0.25); if (r) { cutT = t; road = r; break; } }
+          if (cutT < 0) { if (atStart) clean.unshift(q); else clean.push(q); return 3; }
+          const sC = Math.max(0, cutT - 0.5); let e = [pt[0] + (q[0] - pt[0]) * sC / L, pt[1] + (q[1] - pt[1]) * sC / L];
+          if (sC > 0.4) { if (atStart) clean.unshift(e); else clean.push(e); }
+          else { // ujung tembok sendiri sudah di tepi aspal: mundurkan sampai lepas dari aspal
+            while (clean.length > 2 && asphalt(clean[atStart ? 0 : clean.length - 1][0], clean[atStart ? 0 : clean.length - 1][1], -0.1)) { if (atStart) clean.shift(); else clean.pop(); }
+            e = clean[atStart ? 0 : clean.length - 1]; }
+          const gi = gates.push({ x: Math.round((e[0] + q[0]) / 2 / M), y: Math.round((e[1] + q[1]) / 2 / M), a: Math.round(((Math.atan2(q[0] - pt[0], -(q[1] - pt[1])) * 180 / Math.PI + 360) % 360) * 10), w: Math.round((L - sC) / M), h: Math.round((L - sC) / 2 / M), k: 1, c: comp.cid, ci: -1, road: road.i, p: 1 }) - 1;
+          const fo = []; for (const [x, y] of [e, q]) fo.push(Math.round(x / M), Math.round(y / M));
+          openings.push({ c: comp.cid, g: [gi], p: fo }); sealOpen++;
+          return 0;
+        };
+        // ruas kosong di antara pilar gerbang dan batas kawasan tetap ditutup (pilar → garis batas)
+        const stub = b - a < WP.MIN_RUN; if (stub && !((e0 === 3 && o1 && o1.c0) || (e1 === 3 && o0 && o0.c1))) return;
+        const P = stub ? [] : cut(a, b);
         if (o0 && o0.c1) P.unshift(o0.c1); if (o1 && o1.c0) P.push(o1.c0);
         const clean = [P[0]]; for (let i = 1; i < P.length; i++) if (Math.hypot(P[i][0] - clean[clean.length - 1][0], P[i][1] - clean[clean.length - 1][1]) > 0.15) clean.push(P[i]);
-        if (clean.length < 2) return;
-        if (e0 === 3) { const a0 = clean[0], a1 = clean[1], L = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) || 1; clean.unshift([a0[0] - (a1[0] - a0[0]) / L * 1.6, a0[1] - (a1[1] - a0[1]) / L * 1.6]); }
-        if (e1 === 3) { const a0 = clean[clean.length - 1], a1 = clean[clean.length - 2], L = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) || 1; clean.push([a0[0] - (a1[0] - a0[0]) / L * 1.6, a0[1] - (a1[1] - a0[1]) / L * 1.6]); }
+        if (clean.length < (stub ? 1 : 2)) return;
+        if (e0 === 3) e0 = seal(clean[0], true);
+        if (e1 === 3) e1 = seal(clean[clean.length - 1], false);
         if (e0 === 2) { const a0 = clean[0], a1 = clean[1], L = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) || 1; clean.unshift([a0[0] - (a1[0] - a0[0]) / L * 1.1, a0[1] - (a1[1] - a0[1]) / L * 1.1]); }
         if (e1 === 2) { const a0 = clean[clean.length - 1], a1 = clean[clean.length - 2], L = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]) || 1; clean.push([a0[0] - (a1[0] - a0[0]) / L * 1.1, a0[1] - (a1[1] - a0[1]) / L * 1.1]); }
-        nudge(clean);
+        if (clean.length < 2) return;
+        if (!stub) nudge(clean);
         for (let i = 0; i + 1 < clean.length; i++) wallM += Math.hypot(clean[i + 1][0] - clean[i][0], clean[i + 1][1] - clean[i][1]);
         const flat = []; for (const [x, y] of clean) flat.push(Math.round(x / M), Math.round(y / M));
         lines.push({ p: flat, c: comp.cid, t: 0, e: [e0, e1] });
@@ -398,12 +575,37 @@ export function stageWalls(D, log, warnings) {
       emit(s, run.s1, prev ? eKind(prev) : eS, allWall ? 0 : run.e1, prev, null);
     }
     // jarak terjauh sepanjang tembok ke bukaan/keluar
+    // bukaan (gerbang, pintu, bukaan polos) sebagai potongan lingkar: dipakai audit (sumbat) dan peta
+    const fl = (P) => { const o = []; for (const [x, y] of P) o.push(Math.round(x / M), Math.round(y / M)); return o; };
+    for (const o of open) openings.push({ c: comp.cid, g: o.gi, p: fl(cut(o.s0, o.s1)) });
     let maxGap = 0;
     { const ex = []; for (const o of open) ex.push(wrap((o.s0 + o.s1) / 2)); for (const run of runs) { if (!allWall && run.e0 === 2) ex.push(wrap(run.s0)); if (!allWall && run.e1 === 2) ex.push(wrap(run.s1)); }
       for (const run of runs) for (let s = run.s0; s <= run.s1; s += 4) { let best = 1e9; for (const e of ex) for (const sh of [0, LEN, -LEN]) { const lo = Math.min(s, e + sh), hi = Math.max(s, e + sh); if (allWall || (lo >= run.s0 - 3 && hi <= run.s1 + 3)) best = Math.min(best, hi - lo); } if (best < 1e9) maxGap = Math.max(maxGap, best); else maxGap = Math.max(maxGap, 999); } }
     const names = resid.filter((c) => c.houses >= WP.RING_HOUSES && !c.parent && lab[cj(c.cen[1]) * W + ci(c.cen[0])] === cl).map((c) => c.i);
-    compounds.push({ id: comp.cid, houses: comp.houses, ha: +ha.toFixed(1), clusters: names, wall: Math.round(wallM), loop: Math.round(LEN), gates: open.filter((o) => !o.door).reduce((s, o) => s + o.gi.length, 0), doors: doors.length, maxGap: Math.round(maxGap), doorMiss });
+    compounds.push({ r: fl(pts), id: comp.cid, houses: comp.houses, ha: +ha.toFixed(1), clusters: names, wall: Math.round(wallM), loop: Math.round(LEN), gates: open.filter((o) => !o.door).reduce((s, o) => s + o.gi.length, 0), doors: doors.length, maxGap: Math.round(maxGap), doorMiss });
     if (doorMiss) warnings.push(`kompleks ${comp.cid}: ${doorMiss} pintu pejalan kaki tidak mendapat tempat sah`);
+  }
+  // ---------- periksa: tembok menyentuh gedung (tapak ± 0,2 m atau bagian luarnya) → rumah kompleks di celah sempit itu
+  // digeser menjauh dari gedung luar di sebelahnya (T3b); yang tanpa pasangan dicatat sebagai peringatan
+  {
+    const XG = new Grid(40), ex = (D._doors || []).filter((d) => d.p); ex.forEach((d, i) => { const b = bbox(d.p); XG.add(i, b[0], b[1], b[2], b[3]); });
+    const nearPt = (x, y, P) => { const q = [0, 0, 0]; let best = 1e9, bx = x, by = y; for (let a = 0, c = P.length - 1; a < P.length; c = a++) { const dd = pip(x, y, P) ? 0 : ptSeg(x, y, P[c][0], P[c][1], P[a][0], P[a][1], q); if (dd < best) { best = dd; bx = q[0]; by = q[1]; } } return [best, bx, by]; };
+    const move = new Map(), lone = new Set();
+    for (const L of lines) for (let j = 0; j + 3 < L.p.length; j += 2) {
+      const ax = L.p[j] * M, ay = L.p[j + 1] * M, bx = L.p[j + 2] * M, by = L.p[j + 3] * M, len = Math.hypot(bx - ax, by - ay), n = Math.max(1, Math.ceil(len / 0.5));
+      for (let q = 0; q <= n; q++) { const x = ax + (bx - ax) * q / n, y = ay + (by - ay) * q / n; let hit = -1;
+        for (const bi of BG.query(x - 0.3, y - 0.3, x + 0.3, y + 0.3)) if (nearPt(x, y, polys[bi])[0] < 0.2) hit = bi;
+        if (hit < 0) for (const i of XG.query(x, y, x, y)) if (pip(x, y, ex[i].p)) hit = ex[i].bi;
+        if (hit < 0 || !polys[hit]) continue;
+        // pasangan: rumah fabrik h dan gedung non-fabrik o yang mengapit titik ini
+        let h = -1, o = -1, dh = 4, dn = 4;
+        for (const bi of BG.query(x - 4, y - 4, x + 4, y + 4)) { const dd = nearPt(x, y, polys[bi])[0]; if (isFab[bi]) { if (dd < dh) { dh = dd; h = bi; } } else if (!(B.f[bi] & 4) && dd < dn) { dn = dd; o = bi; } }
+        if (h >= 0 && o >= 0) { if (!move.has(h)) { const c = centroid(polys[h]), z = nearPt(c[0], c[1], polys[o]), dl = Math.hypot(c[0] - z[1], c[1] - z[2]) || 1; move.set(h, [(c[0] - z[1]) / dl, (c[1] - z[2]) / dl]); } }
+        else lone.add(hit);
+      }
+    }
+    if (move.size && !final) return { move };
+    for (const bi of [...lone, ...move.keys()]) warnings.push(`tembok menyentuh gedung ${bi}`);
   }
   compounds.sort((a, b) => a.id - b.id);
 
@@ -435,8 +637,8 @@ export function stageWalls(D, log, warnings) {
   for (const L of lines) delete L.bb;
   if (pubCross) warnings.push(`${pubCross} ruas jalan umum memotong tembok`);
   const cnt = { compounds: compounds.length, housesIn: inFab, fabric: fabric.length, wallM: compounds.reduce((s, c) => s + c.wall, 0), loopM: compounds.reduce((s, c) => s + c.loop, 0), lines: lines.length,
-    gates: { k0: gates.filter((g) => g.k === 0).length, k1: gates.filter((g) => g.k === 1).length, k2: gates.filter((g) => g.k === 2).length, k3: gates.filter((g) => g.k === 3).length, polos: gates.filter((g) => g.p).length }, pubCross, nudged, stuck, maxGap: Math.max(...compounds.map((c) => c.maxGap)) };
-  D.walls = { lines, gates, compounds };
+    gates: { k0: gates.filter((g) => g.k === 0).length, k1: gates.filter((g) => g.k === 1).length, k2: gates.filter((g) => g.k === 2).length, k3: gates.filter((g) => g.k === 3).length, polos: gates.filter((g) => g.p).length }, pubCross, nudged, stuck, sealOpen, maxGap: Math.max(...compounds.map((c) => c.maxGap)) };
+  D.walls = { lines, gates, compounds, openings };
   log('walls:', JSON.stringify(cnt));
   return cnt;
 }
