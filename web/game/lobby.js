@@ -12,7 +12,7 @@ import { RARITY, CHAR_SKINS, GUN_SKINS, COLLECTIONS, skinById, charOutfit, apply
 import { questState, applyMatch, claimQuest, claimAll, rerollDaily, fmtLeft, fmtProgress } from './quests.js';
 import { matchHooks } from './hooks.js';
 import { tickSkins } from './skinfx.js';
-import { WEAPONS, createSkinFlame, setVmGlow, muzzleLocal } from './weapons.js';
+import { WEAPONS, createSkinFlame, setVmGlow, muzzleLocal, killPulse, killAnimTick } from './weapons.js';
 import * as audio from './audio.js';
 
 // ---------- ikon (garis, 24×24) ----------
@@ -173,9 +173,9 @@ function createStage({ scene, camera, col, sunDir }) {
     compileSkinAsync(hold, camera, scene).then(done, done);
   }
   function gunHide() { show.root.visible = false; }
-  // bunyi kill (pratinjau): denting bertema skin, hitungan beruntun n (spanduk kill dihapus 24 Nov)
+  // animasi kill (pratinjau): denting bertema skin + animasi kill di senjata etalase, hitungan beruntun n
   const killAt = new THREE.Vector3(S.x - rx * 1.25 + ux * 0.2, 0, S.z - rz * 1.25 + uz * 0.2);
-  function killPreview(id, n) { audio.killSting(n, gunTheme(id).voice, false); }
+  function killPreview(id, n) { const th = gunTheme(id); audio.killSting(n, th.voice, false); if (th.killAnim) killPulse(n, false); }
   let aimMode = 'squad';
   function aim(mode, i = 0) {
     if ((mode === 'member' || mode === 'gun') && !members[i]) mode = 'squad';
@@ -246,8 +246,9 @@ function createStage({ scene, camera, col, sunDir }) {
         if (show.th) {
           const heat = 0.5 + 0.5 * Math.sin(u * 0.9), cyc = (u % 3.5) / 1.2;
           setVmGlow(0.25 + 0.25 * Math.sin(u * 2.2), heat, 0, cyc < 1 ? 0.5 - cyc * 1.6 : -99);
+          const fk = killAnimTick(dt); // animasi kill (tombol "Animasi kill"): uSfK material yang sama + nyala membesar
           show.flame.mesh.visible = !!show.th.flame && show.obj.visible;
-          show.flame.update(heat, 0, 1, 1);
+          show.flame.update(heat + (fk - 1) * 0.6, 0, 1, fk);
         } else { setVmGlow(0, 0, 0, -99); show.flame.mesh.visible = false; }
       }
     },
@@ -354,7 +355,7 @@ export function createLobby(o) {
     const tools = gun ? `<div class="lb-pv">
         <div class="lb-kinds" role="group" aria-label="Peragakan di senjata">${SHOW_KINDS.map((k) => `<button type="button" data-kind="${k}" aria-pressed="${k === showKind}">${esc(WEAPONS[k].short)}</button>`).join('')}</div>
         <div class="lb-pv-a"><button type="button" class="lb-btn ghost" data-hear="${id}">${ic('sound', 'lb-i-s')}${th.voice ? 'Dengar tembakan' : 'Tembakan pabrik'}</button>
-        <button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Dengar bunyi kill</button></div></div>` : '';
+        ${th.killAnim ? `<button type="button" class="lb-btn ghost" data-killfx="${id}">${ic('spark', 'lb-i-s')}Animasi kill</button>` : ''}</div></div>` : '';
     return `<div class="lb-detail r-${s.rarity}" style="--rc:${r.color}"><div class="lb-detail-m"><span class="lb-rar">${esc(r.label)} · ${gun ? 'Skin senjata' : 'Skin karakter'} · ${esc(cl.name)}</span><h3>${esc(s.name)}</h3><p>${esc(s.desc || '')}</p>
       ${feats ? `<div class="lb-feats">${feats}</div>` : ''}${!has && lack > 0 && !gun ? '<p class="lb-hint">Selesaikan misi untuk mengumpulkan Koin Sutera.</p>' : ''}${tools}</div><div class="lb-detail-a">${act}</div></div>`;
   }
@@ -583,7 +584,7 @@ export function createLobby(o) {
     if (d.skin) { selSkin = d.skin; killN = 0; drawPanel(); preview(); return; }
     if (d.kind) { showKind = d.kind; for (const b of $$('[data-kind]')) b.setAttribute('aria-pressed', String(b.dataset.kind === showKind)); preview(); return; }
     if (d.hear) { const s = skinById(d.hear); audio.previewShot(showKind, s && s.th ? s.th.voice || null : null); return; }
-    if (d.killfx) { // pratinjau denting kill: hitungan beruntun naik tiap klik (1 → 5); kamera tetap di etalase
+    if (d.killfx) { // pratinjau animasi & denting kill: hitungan beruntun naik tiap klik (1 → 5); kamera tetap di etalase
       audio.unlockAudio();
       killN = killN % 5 + 1;
       stage.killPreview(d.killfx, killN);

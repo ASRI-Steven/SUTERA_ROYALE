@@ -9,6 +9,7 @@
 import * as THREE from 'three';
 import { gunTheme } from './skins.js';
 import * as audio from './audio.js';
+import { killPulse } from './weapons.js';
 
 const STREAK_S = 12; // jeda maks antar-kill supaya masih dihitung beruntun (dtk permainan)
 // bentuk partikel (shp.x): 0 pijar · 1 serpih · 2 bulu · 3 kelopak · 4 piksel · 5 cincin kejut · 6 pilar cahaya · 7 bulu merak · 8 kilat · 9 asap
@@ -218,15 +219,17 @@ export function createKillFx({ scene, hud }) {
       const th = gunTheme();
       // efek partikel dimatikan (18 Nov: "efek kill gausah"), spanduk kill dihapus (24 Nov); tinggal denting bertema skin
       play(streak, false, th);
+      if (th.killAnim) killPulse(streak, false); // senjata beranimasi (skin epik/legendaris), pengganti spanduk
     },
     // pemain melumpuhkan korban (main.js knock()): denting ringan, hitungan beruntun tidak naik
     knock(victim, head) {
       if (!victim || !victim.pos) return;
       const th = gunTheme(), n = clock - last <= STREAK_S ? Math.max(1, streak) : 1;
       play(n, true, th);
+      if (th.killAnim) killPulse(n, true);
     },
-    // pratinjau: denting kill bertema skin `id`, hitungan n. p tidak dipakai lagi sejak efek partikel dimatikan.
-    preview(p, n = 1, id) { const th = gunTheme(id); audio.killSting(n, th.voice, false); },
+    // pratinjau: denting kill bertema skin `id`, hitungan n (+ animasi kill di senjata etalase). p tidak dipakai lagi.
+    preview(p, n = 1, id) { const th = gunTheme(id); audio.killSting(n, th.voice, false); if (th.killAnim) killPulse(n, false); },
     update(dt) {
       clock += dt;
       if (sting && clock >= sting.due) { audio.killSting(sting.n, sting.voice, sting.knock); sting.due = Infinity; }

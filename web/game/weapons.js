@@ -290,7 +290,7 @@ function vmPatch(m, L) {
   m.userData.env0 = m.envMapIntensity;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
-    sh.uniforms.uSfT = SF_U.uSfT; sh.uniforms.uSfG = VM_G; // skin (lengan bisa berganti pola tanpa material baru)
+    sh.uniforms.uSfT = SF_U.uSfT; sh.uniforms.uSfG = VM_G; sh.uniforms.uSfK = VM_K; // skin (lengan bisa berganti pola tanpa material baru); uSfK = animasi kill
     sh.vertexShader = VM_VS_PARS + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>' + VM_VS);
     sh.fragmentShader = VM_FS_PARS + VM_SKIN_PARS + sh.fragmentShader
       .replace('#include <color_fragment>', '#include <color_fragment>' + VM_SKIN_COLOR + VM_FS_COLOR)
@@ -358,10 +358,31 @@ export function setVmArms(o = {}) {
 // ---------- Efek skin senjata pemain (diisi game/skins.js applyEquipped) ----------
 // tracer / flash: warna HDR [r, g, b] pelacak & kilatan moncong; flame: nyala moncong beranimasi (createSkinFlame);
 // glow: pakai pendar isi ulang/periksa/cabut; cue(ev): bunyi 'equip' | 'inspect' | 'reload' (game/audio.js). null = pabrik.
-const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null };
-export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null }, o || {}); SKIN.v++; }
+const SKIN = { v: 0, tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null };
+export function setSkinFx(o) { Object.assign(SKIN, { tracer: null, flash: null, flame: null, glow: false, cue: null, killAnim: false, color: null }, o || {}); SKIN.v++; }
 // pendar view-model dari luar pertandingan (etalase lobi memakai material yang sama): glow, panas, kilat, posisi sapuan
 export function setVmGlow(x, y, z, w) { VM_G.value.set(x, y, z, w); }
+// ---------- Animasi kill di senjata (pengganti spanduk kill, 24 Nov) ----------
+// Skin beranimasi (th.killAnim) bereaksi saat pemain kill: uSfK view-model (skinfx.js GUN_SKIN_GLSL) = x amplop denyut 0→1→0
+// (naik 0,12 dtk, turun ±1,1 dtk), y sapuan pegangan → moncong 0..1 (0,35 dtk), z beruntun (min(n,5) − 1) / 4, w fase acak.
+// Nyala moncong membesar ±2,2× selama ±0,5 dtk; mulai kill ke-3 cangkang aditif menyelubungi senjata ±1,5 dtk; senjata
+// berselebrasi singkat lewat pegas (hanya bila tidak membidik/menembak/beraksi). Lumpuhkan = denyut setengah, tanpa gerak.
+// killPulse dipanggil game/killfx.js (pertandingan) & lobby.js (etalase); killAnimTick sekali per frame (view-model / lobi).
+const VM_K = { value: new THREE.Vector4(0, 0, 0, 0) };
+const KILL = { t: 9, n: 1, str: 1, ph: 0, move: false, shell: false };
+export function killPulse(n = 1, knock = false) { Object.assign(KILL, { t: 0, n: Math.max(1, n | 0), str: knock ? 0.5 : 1, ph: Math.random() * 6.283, move: !knock, shell: !knock && n >= 3 }); }
+export function killAnimTick(dt) { // → pengali ukuran nyala moncong (1 = biasa)
+  const t = (KILL.t += dt);
+  if (t > 1.6) { VM_K.value.x = 0; return 1; }
+  const a = t < 0.12 ? t / 0.12 : Math.max(0, 1 - (t - 0.12) / 1.1), e = a * a * (3 - 2 * a);
+  VM_K.value.set(e * KILL.str, Math.min(1, t / 0.35), (Math.min(5, KILL.n) - 1) / 4, KILL.ph);
+  return t < 0.5 ? 1 + 1.2 * KILL.str * Math.sin(Math.PI * t / 0.5) : 1;
+}
+// selubung (kill ke-3+): salinan permukaan senjata dikembangkan menurut normal, fresnel tajam, aditif; satu material bersama
+const SHELL_U = { uExp: { value: 0.0035 }, uC: { value: new THREE.Color() }, uI: { value: 0 }, uT: SF_U.uSfT };
+const shellMat = new THREE.ShaderMaterial({ uniforms: SHELL_U, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  vertexShader: 'uniform float uExp; varying vec3 vN; varying vec3 vV;\nvoid main() { vec4 mv = modelViewMatrix * vec4(position + normal * uExp, 1.0); vN = normalize(normalMatrix * normal); vV = -mv.xyz; gl_Position = projectionMatrix * mv; }',
+  fragmentShader: 'uniform vec3 uC; uniform float uI, uT; varying vec3 vN; varying vec3 vV;\nvoid main() { float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2); float w = 0.7 + 0.3 * sin(uT * 22.0 + vV.y * 260.0 + vV.x * 90.0); gl_FragColor = vec4(uC * (f * w * uI), 1.0); }' });
 // titik moncong senjata `kind` di ruang senjata (untuk nyala moncong etalase lobi)
 export function muzzleLocal(kind, out = new THREE.Vector3()) { const m = nodeLocal(kind + '_muzzle', kind); return m ? out.copy(m) : out.set(0, 0.012, MUZZLE_Z[kind] || -0.6); }
 // nyala moncong beranimasi (billboard shader, skinfx.js FLAME_*): { mesh, set(flame), update(heat, kick, fade, scale) }.
@@ -577,10 +598,35 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     if (sk.sweepV > 0) { sk.sweepV = Math.max(0, sk.sweepV - dt * 1.8); sk.sweep = -0.95 + (1 - sk.sweepV) * 1.5; if (!sk.sweepV && !(st.inspect > 0)) sk.sweep = -99; }
     sk.glow = Math.max(0, sk.glow - dt * 1.6);
     VM_G.value.set(SKIN.glow ? Math.max(glow, sk.glow) : 0, sk.heat, sk.kick, SKIN.glow ? sk.sweep : -99);
+    const fk = killFx(dt, G, scoped); // animasi kill skin (blok di bawah)
     // nyala moncong di titik moncong senjata yang dipegang: membesar saat menembak & panas, memudar saat membidik
     const on = !!(SKIN.flame && G && G.g.parent && G.g.visible && !scoped);
     skinFlame.mesh.visible = on;
-    if (on) { G.muzzle.getWorldPosition(v); skinFlame.mesh.position.copy(v); skinFlame.update(sk.heat, sk.kick, 1 - st.ads * 0.85, FLASH_K[st.kind] || 1); }
+    if (on) { G.muzzle.getWorldPosition(v); skinFlame.mesh.position.copy(v); skinFlame.update(sk.heat + (fk - 1) * 0.6, sk.kick, Math.max(1 - st.ads * 0.85, (fk - 1) * 0.6), (FLASH_K[st.kind] || 1) * fk); }
+  }
+  // animasi kill (killPulse): uSfK, selebrasi pegas (tertunda sampai tidak membidik/menembak/beraksi, maks 1 dtk), selubung
+  // kill ke-3+ (cangkang per senjata dibuat sekali saat pertama dipakai, berbagi geometri; programnya dikompilasi lewat
+  // shellDummy di root). Scope 4×/8× terpasang & membidik: tanpa efek sama sekali.
+  const shellDummy = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3)).setAttribute('normal', new THREE.BufferAttribute(new Float32Array(9), 3)), shellMat);
+  shellDummy.geometry.setDrawRange(0, 0); shellDummy.frustumCulled = false; root.add(shellDummy);
+  let shellG = null;
+  function shellOf(G) {
+    if (!G.kShell) { G.kShell = []; const ms = []; G.g.traverse((o) => { let h = o; while (h && h !== G.g && !(h.name || '').startsWith('fp_hand')) h = h.parent; if (o.isMesh && h === G.g && o.material !== shellMat && o.geometry.attributes.normal) ms.push(o); }); // tanpa tangan/lengan
+      for (const o of ms) { const m = new THREE.Mesh(o.geometry, shellMat); m.frustumCulled = false; m.renderOrder = 34; m.visible = false; o.add(m); m.updateMatrix(); G.kShell.push(m); } }
+    return G.kShell;
+  }
+  function killFx(dt, G, scoped) {
+    const fk = killAnimTick(dt), live = KILL.t < 1.6 && SKIN.killAnim;
+    if (!live || scoped || !G) { VM_K.value.x = 0; KILL.move = false; }
+    if (KILL.move && KILL.t < 1 && st.ads < 0.1 && sk.kick < 0.08 && !st.act && !st.nade && !(st.swap > 0)) { // selebrasi: miring ±12° di sumbu laras, naik ±2 cm
+      KILL.move = false; spv[2] += (KILL.ph > 3.14 ? 1 : -1) * 6.5; spv[3] += 0.55; spv[4] -= 0.6;
+    }
+    if (KILL.t >= 1) KILL.move = false;
+    const sOn = !!(live && KILL.shell && G && !scoped && KILL.t < 1.5);
+    if (sOn && shellG !== G) { if (shellG) for (const m of shellG.kShell) m.visible = false; shellG = G; for (const m of shellOf(G)) m.visible = true; SHELL_U.uC.value.set(SKIN.color || '#ffd890'); }
+    if (!sOn && shellG) { for (const m of shellG.kShell) m.visible = false; shellG = null; }
+    if (sOn) { const a = KILL.t < 0.15 ? KILL.t / 0.15 : Math.max(0, 1 - (KILL.t - 0.15) / 1.35); SHELL_U.uI.value = a * (0.45 + 0.35 * (Math.min(5, KILL.n) - 3)) * (1 - 0.6 * st.ads); }
+    return live && !scoped ? fk : 1;
   }
   // ganti model prosedural dengan model Blender (laras −Z, asal di pegangan): titik bidik & moncong dari model;
   // magasin (<jenis>_mag) & pompa (shotgun_pump) adalah simpul terpisah di weapons.glb → dipasang ke senjata supaya bisa dianimasikan
