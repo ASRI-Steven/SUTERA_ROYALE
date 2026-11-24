@@ -646,7 +646,7 @@ export function buildWorld(D, opts = {}) {
   overlay(flatGeo(D.green.r.map((r, i) => ({ ring: V2(r), color: real ? tint(GREEN_COLOR[D.greenTypes[D.green.t[i]]] || '#7fae62', ({ forest: 0.6, golf: 0.92, pitch: 0.88, cemetery: 0.72 })[D.greenTypes[D.green.t[i]]] || 0.8, 0.25) : C(GREEN_COLOR[D.greenTypes[D.green.t[i]]] || '#7fae62') })), 0.06), { map: TEX.grass, surf: 'grass' });
   const waterC = C(PAL.water);
   // Air: danau hijau-biru, sungai/kanal hijau-cokelat (seperti Cisadane). Riak bergerak (normal dari gelombang + noise),
-  // kilau matahari (Phong), pantulan langit di sudut landai (fresnel), buih di tepi sungai (atribut side −1…1).
+  // kilau matahari (Phong), pantulan langit di sudut landai (fresnel), buih di tepi sungai (atribut side −1…1 & hw).
   const lakeC = real ? C('#27504c') : game ? C('#2c6470') : waterC, riverC = real ? C('#3f5238') : game ? C('#4a6344') : waterC; // realistis: hijau keruh
   const waterT = { value: 0 };
   const waterize = (m, depth = null) => { // depth: { tex, box } → transparan di bagian dangkal, warna menurut kedalaman
@@ -655,23 +655,33 @@ export function buildWorld(D, opts = {}) {
       sh.uniforms.uSkyW = skyU;
       if (real) { sh.uniforms.tSky = { value: real.dome }; sh.uniforms.uSkyP = { value: new THREE.Vector3(real.skyV0, real.skyGain, 0) }; }
       if (depth) { sh.uniforms.uDep = { value: depth.tex }; sh.uniforms.uDBox = { value: depth.box }; sh.defines = { ...(sh.defines || {}), WDEPTH: 1 }; }
-      sh.vertexShader = 'attribute float side;\nvarying float vSide;\nvarying vec3 vWP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSide = side;\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = `${real ? '#define WREAL\n' + SKY_GLSL : ''}\nuniform float uTime;\nuniform vec3 uSkyW;\nvarying float vSide;\nvarying vec3 vWP;
+      sh.vertexShader = 'attribute float side;\nattribute float hw;\nvarying float vSide;\nvarying float vHw;\nvarying vec3 vWP;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vSide = side;\n  vHw = hw;\n  vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = `${real ? '#define WREAL\n' + SKY_GLSL : ''}\nuniform float uTime;\nuniform vec3 uSkyW;\nvarying float vSide;\nvarying float vHw;\nvarying vec3 vWP;
 #ifdef WDEPTH
 uniform sampler2D uDep;
 uniform vec4 uDBox;
 #endif
 float wh21(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-float wnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wh21(i), wh21(i + vec2(1.0, 0.0)), f.x), mix(wh21(i + vec2(0.0, 1.0)), wh21(i + vec2(1.0, 1.0)), f.x), f.y); }
-float waveH(vec2 p, float t) { return sin(dot(p, vec2(0.8, 0.6)) * 1.3 + t * 1.6) * 0.035 + sin(dot(p, vec2(-0.5, 0.86)) * 2.3 + t * 2.1) * 0.022 + (wnoise(p * 0.8 + vec2(t * 0.3, t * 0.17)) - 0.5) * 0.09 + (wnoise(p * 3.1 - vec2(t * 0.5, -t * 0.4)) - 0.5) * 0.025; }
+float wnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * f * (f * (f * 6.0 - 15.0) + 10.0); return mix(mix(wh21(i), wh21(i + vec2(1.0, 0.0)), f.x), mix(wh21(i + vec2(0.0, 1.0)), wh21(i + vec2(1.0, 1.0)), f.x), f.y); }
+// gelombang: dua sinus + dua oktaf noise (interpolasi kuintik, domain diputar 37°/71° dan dilengkungkan oleh sinus/oktaf
+// sebelumnya) supaya kilau matahari tidak membentuk kisi kotak
+float waveH(vec2 p, float t) {
+  float s1 = sin(dot(p, vec2(0.8, 0.6)) * 1.3 + t * 1.6), s2 = sin(dot(p, vec2(-0.5, 0.86)) * 2.3 + t * 2.1);
+  float n1 = wnoise(mat2(0.7986, 0.6018, -0.6018, 0.7986) * p * 0.8 + vec2(t * 0.3, t * 0.17) + vec2(s2, s1) * 0.6);
+  float n2 = wnoise(mat2(0.3256, 0.9455, -0.9455, 0.3256) * p * 3.1 - vec2(t * 0.5, -t * 0.4) + vec2(s1 + n1, s2 - n1) * 0.7);
+  return s1 * 0.035 + s2 * 0.022 + (n1 - 0.5) * 0.09 + (n2 - 0.5) * 0.025;
+}
 ` + sh.fragmentShader
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-  float e = 0.08, h0 = waveH(vWP.xz, uTime);
+  float e = 0.12, h0 = waveH(vWP.xz, uTime);
   vec3 nW = normalize(vec3(-(waveH(vWP.xz + vec2(e, 0.0), uTime) - h0) / e, 1.0, -(waveH(vWP.xz + vec2(0.0, e), uTime) - h0) / e));
   normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);`)
         .replace('#include <color_fragment>', `#include <color_fragment>
-  float foam = smoothstep(0.8, 1.0, abs(vSide)) * (0.5 + 0.5 * wnoise(vWP.xz * 1.7 + vec2(uTime * 0.45, 0.0)));
-  diffuseColor.rgb = mix(diffuseColor.rgb * (0.9 + 0.2 * wnoise(vWP.xz * 0.15)), vec3(0.84, 0.86, 0.8), foam * 0.65);
+  // buih: pita tipis (0,28–0,42 m, bernapas pelan) dekat tebing sungai; danau tanpa atribut hw (0) → tanpa buih
+  float dB = (1.0 - abs(vSide)) * vHw, fW = 0.35 + 0.07 * sin(uTime * 0.9 + wnoise(vWP.xz * 0.11) * 6.2832);
+  vec2 fq = vWP.xz * 2.3 + vec2(uTime * 0.12, -uTime * 0.07);
+  float foam = (1.0 - smoothstep(0.05, fW, dB)) * mix(0.4, 1.0, smoothstep(0.35, 0.75, wnoise(fq) * 0.65 + wnoise(mat2(0.7986, 0.6018, -0.6018, 0.7986) * fq * 2.1) * 0.35)) * step(0.001, vHw); // garis menerus, gumpalan lebih terang
+  diffuseColor.rgb = mix(diffuseColor.rgb * (0.9 + 0.2 * wnoise(vWP.xz * 0.15)), vec3(0.8, 0.83, 0.78), foam * 0.38);
 #ifdef WDEPTH
   float wdep = texture2D(uDep, (vec2(vWP.x, -vWP.z) - uDBox.xy) / (uDBox.zw - uDBox.xy)).r * 8.0;
 #ifdef WREAL
@@ -701,23 +711,56 @@ float waveH(vec2 p, float t) { return sin(dot(p, vec2(0.8, 0.6)) * 1.3 + t * 1.6
     m.onBeforeRender = () => { waterT.value = performance.now() / 1000; };
     return m;
   };
-  function riverGeo(lines) { // pita sungai dengan atribut side (−1 tepi kanan … +1 tepi kiri) untuk buih
-    const pos = [], nor = [], col = [], side = [];
+  function riverGeo(lines) {
+    // Pita sungai menerus tanpa tumpang: di tiap verteks offset kiri/kanan mengikuti garis bagi sudut (miter); sisi dalam
+    // tikungan dibatasi panjang segmen tetangga, sisi luar tikungan tajam (> 60°) diberi sambungan bundar (kipas, ≤ 20°/langkah).
+    // Atribut side (−1 tepi kanan … +1 tepi kiri) & hw (setengah lebar, m) dipakai shader untuk pita buih di tepi.
+    const pos = [], nor = [], col = [], side = [], hws = [];
+    const MAXT = Math.PI / 3, STEP = Math.PI / 9;
     for (const L of lines) {
-      const P = L.pts, n = P.length, hw = L.w / 2, c = L.color;
-      for (let i = 0; i + 1 < n; i++) {
-        const a = P[i], b = P[i + 1];
-        let dx = b.x - a.x, dy = b.y - a.y;
-        const len = Math.hypot(dx, dy);
-        if (len < 0.01) continue;
-        dx /= len; dy /= len;
-        const ex = Math.min(hw, len), ax = a.x - dx * ex, ay = a.y - dy * ex, bx = b.x + dx * ex, by = b.y + dy * ex, nx = -dy * hw, ny = dx * hw;
-        const q = [ax + nx, ay + ny, bx + nx, by + ny, bx - nx, by - ny, ax - nx, ay - ny], sd = [1, 1, -1, -1];
-        for (const k of [0, 2, 1, 0, 3, 2]) { pos.push(q[k * 2], L.y, -q[k * 2 + 1]); nor.push(0, 1, 0); col.push(c.r, c.g, c.b); side.push(sd[k]); }
+      const hw = L.w / 2, c = L.color, P = [];
+      if (!(hw > 0)) continue;
+      for (const p of L.pts) if (!P.length || Math.hypot(p.x - P[P.length - 1].x, p.y - P[P.length - 1].y) >= 0.05) P.push({ x: p.x, y: p.y });
+      let n = P.length;
+      const closed = n > 3 && Math.hypot(P[0].x - P[n - 1].x, P[0].y - P[n - 1].y) < 0.05;
+      if (closed) P.pop(), n--;
+      if (n < 2) continue;
+      const tri = (a, b, d) => { // a, b, d = [x, y, side]; segitiga menghadap ke atas (berlawanan jarum jam di bidang data)
+        if ((b[0] - a[0]) * (d[1] - a[1]) - (b[1] - a[1]) * (d[0] - a[0]) < 0) [b, d] = [d, b];
+        for (const v of [a, b, d]) { pos.push(v[0], L.y, -v[1]); nor.push(0, 1, 0); col.push(c.r, c.g, c.b); side.push(v[2]); hws.push(hw); }
+      };
+      const ns = closed ? n : n - 1, dx = [], dy = [], len = [];
+      for (let i = 0; i < ns; i++) { const a = P[i], b = P[(i + 1) % n], l = Math.hypot(b.x - a.x, b.y - a.y); dx.push((b.x - a.x) / l); dy.push((b.y - a.y) / l); len.push(l); }
+      const S = [], E = []; // S[i]: pasangan [kiri, kanan] awal segmen i; E[i]: akhir segmen i
+      for (let i = 0; i < n; i++) {
+        const p = P[i], i0 = i - 1 < 0 ? (closed ? ns - 1 : -1) : i - 1, i1 = i < ns ? i : -1;
+        if (i0 < 0 || i1 < 0) { // ujung polyline: rata, diperpanjang hw
+          const s = i1 >= 0 ? i1 : i0, k = i1 >= 0 ? -1 : 1, ex = p.x + dx[s] * hw * k, ey = p.y + dy[s] * hw * k, nx = -dy[s] * hw, ny = dx[s] * hw;
+          const pr = [[ex + nx, ey + ny, 1], [ex - nx, ey - ny, -1]];
+          if (i1 >= 0) S[i1] = pr; else E[i0] = pr;
+          continue;
+        }
+        const cr = dx[i0] * dy[i1] - dy[i0] * dx[i1], th = Math.atan2(cr, dx[i0] * dx[i1] + dy[i0] * dy[i1]), half = Math.abs(th) / 2;
+        let bx = -dy[i0] - dy[i1], by = dx[i0] + dx[i1]; // garis bagi ke kiri
+        const bl = Math.hypot(bx, by);
+        if (Math.abs(th) < 1e-4 || bl < 1e-6) { const nx = -dy[i1] * hw, ny = dx[i1] * hw, pr = [[p.x + nx, p.y + ny, 1], [p.x - nx, p.y - ny, -1]]; E[i0] = S[i1] = pr; continue; }
+        bx /= bl; by /= bl;
+        const m = hw / Math.max(Math.cos(half), 0.5), sg = th > 0 ? 1 : -1; // sg: sisi dalam (+1 kiri, −1 kanan)
+        const mi = Math.min(m, Math.min(len[i0], len[i1]) / Math.max(Math.sin(half), 1e-6));
+        const I = [p.x + bx * mi * sg, p.y + by * mi * sg, sg];
+        if (Math.abs(th) <= MAXT) { const O = [p.x - bx * m * sg, p.y - by * m * sg, -sg]; E[i0] = S[i1] = sg > 0 ? [I, O] : [O, I]; continue; }
+        // sambungan bundar di sisi luar: kipas dari titik dalam I ke busur berjari-jari hw di sekitar p
+        const a0 = Math.atan2(-dx[i0] * sg, dy[i0] * sg), k = Math.ceil(Math.abs(th) / STEP), arc = []; // normal luar segmen masuk = −sg·kiri
+        for (let j = 0; j <= k; j++) { const a = a0 + th * j / k; arc.push([p.x + Math.cos(a) * hw, p.y + Math.sin(a) * hw, -sg]); }
+        for (let j = 0; j < k; j++) tri(I, arc[j], arc[j + 1]);
+        E[i0] = sg > 0 ? [I, arc[0]] : [arc[0], I];
+        S[i1] = sg > 0 ? [I, arc[k]] : [arc[k], I];
       }
+      for (let i = 0; i < ns; i++) { const [a, b] = S[i], [d, e] = E[i]; tri(a, b, e); tri(a, e, d); } // a kiri awal, b kanan awal, e kanan akhir, d kiri akhir
     }
     const g = geo(pos, nor, col);
     g.setAttribute('side', new THREE.Float32BufferAttribute(side, 1));
+    g.setAttribute('hw', new THREE.Float32BufferAttribute(hws, 1));
     return g;
   }
   if (!game) waterize(overlay(flatGeo(D.water.map((r) => ({ ring: V2(r), color: lakeC })), 0.08), { phong: true }));
