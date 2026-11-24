@@ -107,7 +107,7 @@ const SIL_W = 384, SIL_H = 176; // ukuran gambar terbesar (px); dirender 2× lal
 let HD = null; // akar weapons.glb (model detail) yang dimuat warmIcons; null → pakai gunGeometry (lod1 / prosedural)
 function silParts(kind) { // objek model detail satu senjata: simpul <kind> + bagian lepasnya (<kind>_mag, _pump, _cyl, …) tanpa lod1
   if (!HD) return null;
-  const out = HD.children.filter((o) => (o.name === kind || o.name.startsWith(kind + '_')) && !/_lod\d$/.test(o.name));
+  const out = HD.children.filter((o) => (o.name === kind || o.name.startsWith(kind + '_')) && !/_lod\d$/.test(o.name) && !o.name.endsWith('_buis_dn')); // pisir lipat: hanya yang tegak
   let meshes = 0;
   for (const o of out) o.traverse((m) => { if (m.isMesh) meshes++; });
   return meshes ? out : null;

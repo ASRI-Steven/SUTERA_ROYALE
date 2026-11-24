@@ -61,6 +61,7 @@ export function createPostFX(renderer, opt = {}) {
     uFog: { value: new THREE.Vector3(1 / 2400, 1, 1 / 900) }, uFogCol: { value: new THREE.Color('#dfe6ee') }, uFogOn: { value: 1 },
     uSunCol: { value: new THREE.Color('#ffe9c4') }, uSunUV: { value: new THREE.Vector2(0.5, 1.5) }, uSunVis: { value: 0 }, uAspect: { value: 1 },
     uExposure: { value: 1 }, uTime: { value: 0 }, uUnder: { value: 0 },
+    uScope: { value: new THREE.Vector4(0.5, 0.5, 1, 0) }, // topeng teropong: pusat (uv), jari-jari (× tinggi layar), kekuatan
   };
   const P = { // parameter tampilan (bisa diatur dari luar)
     aoRadius: { value: 0.7 }, aoInt: { value: 0.34 }, aoLum: { value: 0.3 },
@@ -169,7 +170,7 @@ void main() {
 
   // ---------- Komposit: AO + kabut atmosfer + bloom + sinar + tonemap (satu pass layar penuh) ----------
   const compU = { tColor: { value: rtScene.texture }, tAO: { value: rtAO.texture }, tDepth: U.tDepth, uNF: U.uNF, uP: U.uP, uAOTexel: U.uAOTexel, uCamWorld: U.uCamWorld, uCamPos: U.uCamPos, uFog: U.uFog, uFogCol: U.uFogCol, uFogOn: U.uFogOn, uAOLum: P.aoLum, tSky: U.tSky, uSkyP: U.uSkyP,
-    tBloom: { value: bloomRT[0].texture }, tRays: { value: rtRays.texture }, uBloom: P.bloom, uRays: P.rays, uSunCol: U.uSunCol, uSunVis: U.uSunVis, uExposure: U.uExposure, uSat: P.sat, uCon: P.con, uVig: P.vig, uTone: P.tone, uGrain: P.grain, uTime: U.uTime, uUnder: U.uUnder };
+    tBloom: { value: bloomRT[0].texture }, tRays: { value: rtRays.texture }, uBloom: P.bloom, uRays: P.rays, uSunCol: U.uSunCol, uSunVis: U.uSunVis, uExposure: U.uExposure, uSat: P.sat, uCon: P.con, uVig: P.vig, uTone: P.tone, uGrain: P.grain, uTime: U.uTime, uUnder: U.uUnder, uScope: U.uScope, uTexel: U.uTexel, uAspect: U.uAspect };
   const compMats = new Map();
   const compMat = (ao, sky, bloom, rays) => {
     const k = (ao ? 1 : 0) + (sky ? 2 : 0) + (bloom ? 4 : 0) + (rays ? 8 : 0);
@@ -178,7 +179,8 @@ ${sky ? '#define SKYMAP' : ''}
 ${bloom ? '#define BLOOM' : ''}
 ${rays ? '#define RAYS' : ''}
 varying vec2 vUv; uniform sampler2D tColor, tAO, tBloom, tRays; uniform vec2 uAOTexel; uniform mat4 uCamWorld; uniform vec3 uCamPos, uFog, uFogCol, uSunCol;
-uniform float uFogOn, uAOLum, uBloom, uRays, uSunVis, uExposure, uSat, uCon, uVig, uTone, uGrain, uTime, uUnder;
+uniform float uFogOn, uAOLum, uBloom, uRays, uSunVis, uExposure, uSat, uCon, uVig, uTone, uGrain, uTime, uUnder, uAspect;
+uniform vec4 uScope; uniform vec2 uTexel;
 ${DEPTH}
 #ifdef SKYMAP
 ${SKY_GLSL}
@@ -192,8 +194,17 @@ vec3 aces(vec3 c) {
 void main() {
   vec2 uv = vUv + vec2(sin(vUv.y * 34.0 + uTime * 2.1), cos(vUv.x * 27.0 + uTime * 1.7)) * 0.0022 * uUnder; // di bawah air: bergoyang
   vec4 src = texture2D(tColor, uv);
-  vec3 col = src.rgb;
   float d = texture2D(tDepth, uv).x;
+  float sOut = 0.0; // di luar lensa optik berperbesaran: blur cakram 8 tap + digelapkan (dunia ×0,3, senjata ×0,75)
+  if (uScope.w > 0.0) {
+    sOut = smoothstep(1.0, 1.06, length((uv - uScope.xy) * vec2(uAspect, 1.0)) / uScope.z) * uScope.w;
+    if (sOut > 0.0) {
+      vec3 bs = src.rgb; float br = 6.0 * sOut;
+      for (int i = 0; i < 8; i++) { float a = float(i) * 0.785398 + 0.3; bs += texture2D(tColor, uv + vec2(cos(a), sin(a)) * br * uTexel).rgb; }
+      src.rgb = bs / 9.0;
+    }
+  }
+  vec3 col = src.rgb;
   if (d < 0.999999 && d > VMD) { // bukan langit, bukan senjata orang pertama
     vec3 vp = vpos(uv, d);
     float dist = length(vp);
@@ -222,6 +233,7 @@ void main() {
 #endif
     col = mix(col, fc, fg);
   }
+  if (sOut > 0.0) col *= mix(1.0, d <= VMD ? 0.75 : 0.3, sOut);
   vec3 c = col * uExposure;
 #ifdef BLOOM
   c += texture2D(tBloom, uv).rgb * uBloom;
@@ -295,6 +307,7 @@ void main() {
       U.uExposure.value = st.exposure ?? 1;
       U.uTime.value = st.time ?? 0;
       U.uUnder.value = st.under ? 1 : 0;
+      if (st.scope) U.uScope.value.copy(st.scope); else U.uScope.value.w = 0;
       U.uFogOn.value = st.fogOn === false || st.under ? 0 : 1;
       U.uFog.value.x = (1 / 3000) / (1 + Math.max(0, U.uCamPos.value.y) / 450); // dari udara: kabut lebih tipis
       const useAO = tier.ao > 0 && !st.under;

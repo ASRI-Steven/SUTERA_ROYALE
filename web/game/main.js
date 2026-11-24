@@ -935,7 +935,7 @@ function start(D, realAssets, envAssets, furnAssets) {
       // HUD (game/hud.js): kompas, panah minimap & bidikan tiap frame; sisanya ±20×/dtk — DOM hanya disentuh saat nilainya berubah
       const w = player.weapon(), moving = me.moveSpeed > 1, vArmed = me.state === 'drive' && player.st.vArmed;
       const spread = vArmed ? player.st.vSpread : w ? (player.st.ads ? w.def.ads : w.def.spread * (moving ? w.def.move : 1)) : 1.5;
-      hud.frame(player.st.yaw, spread, vArmed ? view.scoped : !view.fp || view.scoped || me.state !== 'ground' || me.down, player.st.ads ? (w && w.inst.kind === 'ar' && view.fp && !(w.inst.att && w.inst.att.scope) ? 'optic' : 'dot') : '', vArmed && player.st.vBlock, view.scoped);
+      hud.frame(player.st.yaw, spread, vArmed ? view.scoped : !view.fp || view.scoped || me.state !== 'ground' || me.down, player.st.ads ? (view.fp && player.vm.opticOn ? 'optic' : 'dot') : '', vArmed && player.st.vBlock, view.scoped && player.vm.scopeFallback); // optik berlensa: retikel di lensa (tanpa titik HUD); overlay teropong lama hanya cadangan tanpa model optik
       hud.mates(mateMarks());
       if (hud.due(t)) {
         const pst = player.st, mv = me.state === 'drive' ? me.vehicle : null;
@@ -1005,7 +1005,8 @@ function start(D, realAssets, envAssets, furnAssets) {
       exposure += (expT - exposure) * (1 - Math.exp(-dt * 1.6));
       if (view.fp) { camQ.copy(camera.quaternion).invert(); player.vm.setSun(sunCam.copy(sunDir).applyQuaternion(camQ), shade, dt); } // senjata disinari dari arah matahari sebenarnya
     }
-    if (postOn) post.render(scene, camera, view.fp ? player.vm : null, { sunDir, exposure, under, time: t / 1000 });
+    player.vm.setPost(postOn);
+    if (postOn) post.render(scene, camera, view.fp ? player.vm : null, { sunDir, exposure, under, time: t / 1000, scope: view.fp ? player.vm.scopeMask : null });
     else {
       renderer.render(scene, camera);
       if (view.fp) {

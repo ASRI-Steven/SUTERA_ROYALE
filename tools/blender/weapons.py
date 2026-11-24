@@ -63,6 +63,9 @@ import time
 import warnings
 from mathutils import Matrix, Vector
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import gunkit as gk  # noqa: E402  (toolkit bentuk v6: rel, kenop, baut, lensa, cincin, pelat bersiluet)
+
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
@@ -99,7 +102,7 @@ def srgb(h):
     return tuple(x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4 for x in c)
 
 
-MAT_NAMES = ['metal', 'dark', 'poly', 'grip', 'gold', 'glass', 'dot', 'glove', 'sleeve', 'cuff', 'wood', 'olive', 'yellow', 'red', 'canister', 'skin']
+MAT_NAMES = ['metal', 'dark', 'poly', 'grip', 'gold', 'glass', 'dot', 'glove', 'sleeve', 'cuff', 'wood', 'olive', 'yellow', 'red', 'canister', 'skin', 'steel', 'rubber', 'lens']
 MI = {n: i for i, n in enumerate(MAT_NAMES)}
 MAT = {
     'metal': dict(col='#5d636e', metal=0.55, rough=0.34),
@@ -118,6 +121,10 @@ MAT = {
     'red': dict(col='#b3302a', metal=0.0, rough=0.5),
     'canister': dict(col='#c9ced2', metal=0.3, rough=0.45),
     'skin': dict(col='#c48a64', metal=0.0, rough=0.55),
+    # v6: baja poles (baut, mahkota laras), karet (bantalan, eyecup), kaca optik berlapis (tidak ikut skin)
+    'steel': dict(col='#8d929b', metal=0.9, rough=0.28),
+    'rubber': dict(col='#1b1c1f', metal=0.0, rough=0.9),
+    'lens': dict(col='#18222c', metal=0.0, rough=0.03, alpha=0.25),
 }
 MATS = {}
 
@@ -141,7 +148,7 @@ def make_materials():
         if 'em' in d:
             b.inputs['Emission Color'].default_value = (*srgb(d['em']), 1)
             b.inputs['Emission Strength'].default_value = d['ems']
-        m.use_backface_culling = n not in ('glass',)
+        m.use_backface_culling = n not in ('glass', 'lens')
         m.diffuse_color = (*srgb(d['col']), 1)
         MATS[n] = m
 
@@ -505,18 +512,9 @@ def build_smg():
     side_panel(B, -0.07, -0.015, 0.074, 0.110, 0.0225, 'poly')
     put(B, p_box(0.0012, 0.105, 0.0012), 'gold', T(0.0242, 0.14, 0.069), mirror=True)
     engrave(B, 'KILAT', -0.0242, 0.14, 0.091, 0.008)
-    # rel atas + alur
-    put(B, p_box(0.02, 0.27, 0.007, 0.001), 'dark', T(0, 0.065, 0.1235))
-    for i in range(12):
-        put(B, p_box(0.021, 0.003, 0.003), 'metal', T(0, -0.06 + i * 0.022, 0.1255))
-    # pisir lubang belakang & pejera depan bertelinga
-    put(B, p_box(0.014, 0.008, 0.016, 0.002), 'dark', T(0, -0.055, 0.132))
-    put(B, p_torus(0.0058, 0.0019, 14, 6, 'Y'), 'dark', T(0, -0.055, 0.142))
-    put(B, p_box(0.018, 0.008, 0.012, 0.002), 'dark', T(0, 0.190, 0.130))
-    for sx in (-1, 1):
-        put(B, p_box(0.003, 0.007, 0.016, 0.0008), 'dark', T(sx * 0.0072, 0.190, 0.140))
-    put(B, p_box(0.0026, 0.004, 0.012, 0.0006), 'dark', T(0, 0.190, 0.137))
-    put(B, p_sphere(0.0011, 6, 4), 'gold', T(0, 0.1875, 0.1415))
+    # v6: rel aksesori + pisir lipat (BUIS)
+    R6 = {}
+    add_rail_and_buis(R6, B, 0.127, -0.07, 0.20, base=-0.008, mount=0.03)
     # rangka bawah polimer + liang magasin
     put(B, p_prof([(-0.07, 0.045), (0.14, 0.045), (0.14, 0.066), (-0.07, 0.066)], 0.04, 0.003, 1), 'poly')
     put(B, p_prof([(0.085, 0.02), (0.138, 0.024), (0.138, 0.066), (0.085, 0.066)], 0.038, 0.003, 1), 'poly')
@@ -553,7 +551,7 @@ def build_smg():
     for v in M.verts:
         v.co -= top
     guard = (0, 0.258, zb - 0.021 - 0.017)
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.3632, zb), sight=(0, -0.055, 0.142), guard=guard)
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.3632, zb), guard=guard), **R6}
 
 
 # ---------------------------------------------------------------- Garuda: senapan serbu, red dot bingkai terbuka
@@ -578,9 +576,8 @@ def build_ar():
     put(B, p_prof([(-0.106, 0.062), (0.176, 0.062), (0.176, 0.112), (0.165, 0.118), (-0.098, 0.118), (-0.106, 0.11)], 0.046, 0.004, 2), 'dark')
     put(B, p_box(0.0015, 0.058, 0.017, 0.0005), 'metal', T(0.0235, 0.045, 0.096))  # penutup lubang lontar
     put(B, p_cylx(0.0055, 0.012, 10), 'metal', T(0.028, -0.01, 0.103))  # forward assist
-    put(B, p_box(0.022, 0.565, 0.0085, 0.001), 'dark', T(0, 0.1775, 0.1222))  # rel atas menerus
-    for i in range(14):
-        put(B, p_box(0.0225, 0.003, 0.003), 'metal', T(0, -0.09 + i * 0.04, 0.124))
+    R6 = {}  # v6: rel atas menerus + BUIS rebah (selalu membawa optik: titik merah bawaan)
+    add_rail_and_buis(R6, B, 0.12645, -0.105, 0.46, merged=True, base=-0.0115, mount=0.0)
     # rangka bawah + liang magasin melebar
     put(B, p_prof([(-0.092, 0.040), (-0.06, 0.032), (0.135, 0.032), (0.135, 0.064), (-0.092, 0.064)], 0.042, 0.003, 2), 'dark')
     put(B, p_prof([(0.06, 0.004), (0.132, 0.010), (0.134, 0.064), (0.06, 0.064)], 0.038, 0.003, 2), 'dark')
@@ -619,7 +616,6 @@ def build_ar():
     put(B, p_box(0.03, 0.012, 0.007, 0.002), 'gold', T(0, -0.1, 0.1145))
     put(B, grip_bm(), 'grip')
     trigger_group(B, -0.025)
-    red_dot(B, 0.032, AR_DOT[2])
     engrave(B, 'GARUDA', -0.0216, 0.03, 0.047)
     # magasin melengkung (pisang)
     top = Vector((0, 0.097, 0.060))
@@ -636,7 +632,7 @@ def build_ar():
         put(M, p_box(0.0254, 0.0025, 0.004), 'dark', T(0, 0.097 + 0.05 * ((k + 1) / 5) ** 1.6 - 0.031, 0.04 - k * 0.045))
     for v in M.verts:
         v.co -= top
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.6289, zb), sight=AR_DOT, guard=(0, 0.33, zb - 0.027 - 0.017))
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.6289, zb), guard=(0, 0.33, zb - 0.027 - 0.017)), **R6}
 
 
 # ---------------------------------------------------------------- Badai: shotgun pompa
@@ -703,9 +699,8 @@ def build_dmr():
     put(B, p_prof([(-0.126, 0.064), (0.212, 0.064), (0.212, 0.116), (0.2, 0.121), (-0.118, 0.121), (-0.126, 0.113)], 0.046, 0.004, 2), 'metal')
     put(B, p_box(0.0015, 0.06, 0.018, 0.0005), 'dark', T(0.0235, 0.05, 0.097))
     put(B, p_cylx(0.0055, 0.016, 10), 'gold', T(0.03, 0.12, 0.102))  # kenop kokang kanan
-    put(B, p_box(0.022, 0.675, 0.0085, 0.001), 'dark', T(0, 0.212, 0.1252))
-    for i in range(15):
-        put(B, p_box(0.0225, 0.003, 0.003), 'metal', T(0, -0.11 + i * 0.045, 0.127))
+    R6 = {}
+    add_rail_and_buis(R6, B, 0.1294, -0.1255, 0.5495, base=-0.0085, mount=0.03)
     engrave(B, 'ELANG', -0.0216, 0.03, 0.05)
     put(B, p_prof([(-0.11, 0.044), (-0.08, 0.034), (0.14, 0.034), (0.14, 0.066), (-0.11, 0.066)], 0.042, 0.003, 2), 'dark')
     put(B, p_prof([(0.062, 0.016), (0.135, 0.018), (0.137, 0.066), (0.062, 0.066)], 0.038, 0.003, 2), 'dark')
@@ -735,24 +730,6 @@ def build_dmr():
     put(B, p_cylx(0.0055, 0.008, 12), 'gold', T(0.024, -0.32, zb + 0.004))  # kenop pengatur
     put(B, p_box(0.044, 0.016, 0.13, 0.006, 2), 'grip', T(0, -0.438, zb - 0.052))
     put(B, p_box(0.045, 0.003, 0.126), 'gold', T(0, -0.4295, zb - 0.052))
-    # teropong: tabung, lonceng objektif, okuler, kenop (tutup emas), cincin dudukan, lensa
-    zs = DMR_ZS
-    put(B, p_lathe_y([(0.0, -0.104), (0.0185, -0.104), (0.021, -0.098), (0.021, -0.072), (0.0155, -0.052), (0.0155, 0.150), (0.0255, 0.205), (0.0262, 0.236), (0.0, 0.236)], 18, zs), 'dark')
-    put(B, p_cyly(0.0182, 0.002, 16), 'glass', T(0, -0.1047, zs))
-    put(B, p_cyly(0.0235, 0.002, 18), 'glass', T(0, 0.2367, zs))
-    put(B, p_cyly(0.0228, 0.006, 18), 'gold', T(0, 0.226, zs))
-    for (px, pz, rot) in ((0, zs + 0.021, None), (0.021, zs, 'x')):
-        if rot:
-            put(B, p_cylx(0.0115, 0.014, 14), 'dark', T(px + 0.002, 0.07, pz))
-            put(B, p_cylx(0.0118, 0.004, 14), 'gold', T(px + 0.010, 0.07, pz))
-        else:
-            put(B, p_cyl(0.0115, 0.0115, 0.014, 14), 'dark', T(0, 0.07, pz))
-            put(B, p_cyl(0.0118, 0.0118, 0.004, 14), 'gold', T(0, 0.07, pz + 0.008))
-    put(B, p_cylx(0.0085, 0.01, 12), 'dark', T(-0.019, 0.07, zs))
-    for yy in (0.0, 0.13):
-        put(B, p_torus(0.0175, 0.0035, 16, 5, 'Y'), 'dark', T(0, yy, zs))
-        put(B, p_box(0.014, 0.014, zs - 0.13, 0.002), 'dark', T(0, yy, (zs + 0.13) / 2 - 0.004))
-        put(B, p_box(0.03, 0.016, 0.008, 0.002), 'dark', T(0, yy, 0.1335))
     # bipod terlipat ke depan di bawah pelindung tangan
     put(B, p_box(0.028, 0.024, 0.014, 0.003), 'dark', T(0, 0.50, zb - 0.033))
     for sx in (-1, 1):
@@ -768,7 +745,7 @@ def build_dmr():
     put(M, p_box(0.0305, 0.004, 0.0084), 'gold', T(0, 0.135, -0.022))
     for v in M.verts:
         v.co -= top
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.8458, zb), sight=(0, -0.104, zs), guard=(0, 0.39, zb - 0.029 - 0.017))
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.8458, zb), guard=(0, 0.39, zb - 0.029 - 0.017)), **R6}
 
 
 
@@ -793,9 +770,8 @@ def build_sniper():
     put(B, p_prof([(-0.118, 0.046), (0.215, 0.046), (0.215, 0.082), (-0.118, 0.082)], 0.042, 0.004, 2), 'dark')  # sasis
     put(B, p_box(0.0012, 0.30, 0.0012), 'gold', T(0.0212, 0.05, 0.05), mirror=True)
     engrave(B, 'RAJAWALI', -0.0216, 0.06, 0.064, 0.0075)
-    put(B, p_box(0.022, 0.32, 0.008, 0.001), 'dark', T(0, 0.04, zb + 0.022))  # rel atas
-    for i in range(11):
-        put(B, p_box(0.0225, 0.003, 0.003), 'metal', T(0, -0.11 + i * 0.03, zb + 0.0255))
+    R6 = {}  # rel atas 20 MOA (datar di sini) + BUIS
+    add_rail_and_buis(R6, B, zb + 0.026, -0.12, 0.20, base=-0.0085, mount=0.04)
     # forend 8 sisi zaitun + celah + cincin emas
     put(B, p_cyly(0.027, 0.30, 8, flat=True), 'olive', T(0, 0.365, zb - 0.004))
     for i in range(4):
@@ -823,22 +799,6 @@ def build_sniper():
     put(B, p_box(0.047, 0.018, 0.14, 0.006, 2), 'grip', T(0, -0.442, zb - 0.058))
     put(B, p_box(0.048, 0.003, 0.136), 'gold', T(0, -0.4325, zb - 0.058))
     put(B, p_chain([(0, -0.31, zb - 0.105), (0, -0.33, zb - 0.135)], [0.006, 0.006], 8, True), 'metal')  # monopod belakang
-    # teropong 8× (tabung panjang, lonceng objektif besar, okuler, turet + tutup emas, cincin)
-    zs = SN_ZS
-    put(B, p_lathe_y([(0.0, -0.15), (0.019, -0.15), (0.022, -0.142), (0.022, -0.105), (0.0158, -0.08), (0.0158, 0.17), (0.031, 0.235),
-                      (0.032, 0.27), (0.0, 0.27)], 20, zs), 'dark')
-    put(B, p_cyly(0.0188, 0.002, 18), 'glass', T(0, -0.1505, zs))
-    put(B, p_cyly(0.029, 0.002, 20), 'glass', T(0, 0.2705, zs))
-    put(B, p_cyly(0.0325, 0.007, 20), 'gold', T(0, 0.258, zs))
-    put(B, p_cyl(0.012, 0.012, 0.016, 14), 'dark', T(0, 0.04, zs + 0.022))
-    put(B, p_cyl(0.0123, 0.0123, 0.004, 14), 'gold', T(0, 0.04, zs + 0.031))
-    put(B, p_cylx(0.012, 0.016, 14), 'dark', T(0.023, 0.04, zs))
-    put(B, p_cylx(0.0123, 0.004, 14), 'gold', T(0.032, 0.04, zs))
-    put(B, p_cylx(0.009, 0.012, 12), 'dark', T(-0.021, 0.04, zs))
-    for yy in (-0.035, 0.12):
-        put(B, p_torus(0.018, 0.0036, 16, 5, 'Y'), 'dark', T(0, yy, zs))
-        put(B, p_box(0.014, 0.014, zs - zb - 0.024, 0.002), 'dark', T(0, yy, (zs + zb + 0.026) / 2))
-        put(B, p_box(0.03, 0.016, 0.008, 0.002), 'dark', T(0, yy, zb + 0.03))
     # bipod terlipat
     put(B, p_box(0.03, 0.026, 0.014, 0.003), 'dark', T(0, 0.48, zb - 0.036))
     for sx in (-1, 1):
@@ -861,8 +821,8 @@ def build_sniper():
     put(M, p_box(0.031, 0.072, 0.008, 0.003), 'olive', T(0, 0.075, -0.003))
     put(M, p_box(0.0315, 0.004, 0.0084), 'gold', T(0, 0.106, -0.003))
     shift(M, top)
-    return dict(body=B, mag=(M, top), parts=[('sniper_bolt', BO, bo)], muzzle=(0, 0.9455, zb), sight=(0, -0.15, zs),
-                guard=(0, 0.37, zb - 0.004 - 0.027 - 0.017))
+    return {**dict(body=B, mag=(M, top), parts=[('sniper_bolt', BO, bo)], muzzle=(0, 0.9455, zb),
+                   guard=(0, 0.37, zb - 0.004 - 0.027 - 0.017)), **R6}
 
 
 def build_lmg():
@@ -876,8 +836,8 @@ def build_lmg():
     # tutup pengisi (atas) + engsel + pisir lubang belakang
     put(B, p_box(0.05, 0.2, 0.012, 0.003), 'metal', T(0, 0.02, 0.137))
     put(B, p_cylx(0.006, 0.054, 12), 'dark', T(0, -0.08, 0.137))
-    put(B, p_box(0.016, 0.01, 0.022, 0.002), 'dark', T(0, -0.06, 0.153))
-    put(B, p_torus(0.0062, 0.002, 14, 6, 'Y'), 'dark', T(0, -0.06, 0.163))
+    R6 = {}  # v6: rel di tutup pengisi + pisir lipat belakang (pejera depan tetap di laras)
+    add_rail_and_buis(R6, B, 0.152, -0.075, 0.115, front=False, base=-0.009, mount=0.02)
     # pegangan angkut di atas laras
     put(B, p_chain([(0, 0.25, 0.115), (0, 0.27, 0.165), (0, 0.39, 0.165), (0, 0.41, 0.115)], [0.006, 0.0065, 0.0065, 0.006], 8, True), 'grip')
     # selubung laras berlubang + laras + peredam kilat + pejera depan
@@ -917,7 +877,7 @@ def build_lmg():
     for i in range(5):
         put(M, p_cylx(0.0045, 0.016, 8), 'gold', T(-0.04, 0.068 + i * 0.011, 0.045))
     shift(M, top)
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.80, zb), sight=(0, -0.06, 0.163), guard=(0, 0.265, 0.05 - 0.017))
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.80, zb), guard=(0, 0.265, 0.05 - 0.017)), **R6}
 
 
 def build_revolver():
@@ -971,9 +931,8 @@ def build_burst():
     side_panel(B, 0.0, 0.15, 0.07, 0.112, 0.0255, 'dark')
     put(B, p_box(0.0012, 0.2, 0.0012), 'gold', T(0.0262, 0.06, 0.066), mirror=True)
     engrave(B, 'PETIR', -0.0266, 0.07, 0.092, 0.0085)
-    put(B, p_box(0.022, 0.26, 0.008, 0.001), 'dark', T(0, 0.04, 0.128))
-    for i in range(8):
-        put(B, p_box(0.0225, 0.003, 0.003), 'metal', T(0, -0.07 + i * 0.03, 0.130))
+    R6 = {}  # v6: rel + BUIS rebah (selalu membawa optik: holografik bawaan)
+    add_rail_and_buis(R6, B, 0.132, -0.09, 0.17, merged=True, base=-0.009, mount=0.03)
     # pelindung tangan heksagonal + aksen emas zig-zag (petir)
     put(B, p_cyly(0.029, 0.27, 6, flat=True), 'poly', T(0, 0.315, zb))
     for i in range(3):
@@ -986,14 +945,6 @@ def build_burst():
     put(B, p_prof([(-0.1, 0.06), (-0.1, 0.12), (-0.33, 0.118), (-0.35, 0.03), (-0.31, 0.02), (-0.2, 0.055)], 0.042, 0.006, 2), 'poly')
     put(B, p_box(0.044, 0.016, 0.1, 0.005, 2), 'grip', T(0, -0.352, 0.072))
     put(B, p_box(0.045, 0.003, 0.096), 'gold', T(0, -0.344, 0.072))
-    # pisir holografik: alas, kotak bingkai terbuka, kaca, titik
-    zs = 0.165
-    put(B, p_box(0.03, 0.06, 0.012, 0.002), 'dark', T(0, 0.02, 0.137))
-    for sx in (-1, 1):
-        put(B, p_box(0.006, 0.05, 0.034, 0.002), 'dark', T(sx * 0.0195, 0.02, zs - 0.004))
-    put(B, p_box(0.045, 0.05, 0.006, 0.002), 'dark', T(0, 0.02, zs + 0.016))
-    put(B, p_box(0.028, 0.002, 0.026), 'glass', T(0, 0.042, zs))
-    put(B, p_sphere(0.0011, 8, 4), 'dot', T(0, 0.042, zs))
     put(B, grip_bm(), 'grip')
     trigger_group(B, -0.025)
     top = Vector((0, 0.097, 0.060))
@@ -1002,7 +953,7 @@ def build_burst():
     put(M, p_box(0.03, 0.068, 0.009, 0.003), 'poly', T(0, 0.117, -0.112))
     put(M, p_box(0.0305, 0.004, 0.0094), 'gold', T(0, 0.146, -0.112))
     shift(M, top)
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.6085, zb), sight=(0, 0.042, zs), guard=(0, 0.31, zb - 0.029 - 0.017))
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.6085, zb), guard=(0, 0.31, zb - 0.029 - 0.017)), **R6}
 
 
 def build_pdw():
@@ -1012,7 +963,8 @@ def build_pdw():
     put(B, p_prof([(-0.07, 0.056), (0.15, 0.056), (0.165, 0.09), (0.15, 0.12), (-0.06, 0.12), (-0.07, 0.11)], 0.046, 0.007, 2), 'dark')
     for i in range(3):
         put(B, p_box(0.0475, 0.018, 0.064, 0.002), 'yellow', T(0, -0.02 + i * 0.05, 0.089))
-    put(B, p_box(0.02, 0.2, 0.007, 0.001), 'dark', T(0, 0.04, 0.124))
+    R6 = {}
+    add_rail_and_buis(R6, B, 0.1275, -0.06, 0.14, base=-0.0085, mount=0.03)
     put(B, p_cyly(0.019, 0.08, 8, flat=True), 'poly', T(0, 0.2, zb))
     put(B, p_cyly(0.0195, 0.005, 8, flat=True), 'yellow', T(0, 0.162, zb))
     put(B, p_cyly(0.014, 0.1, 14), 'dark', T(0, 0.29, zb))  # peredam pendek
@@ -1021,12 +973,6 @@ def build_pdw():
     put(B, p_cyly(0.007, 0.0008, 10), 'dark', T(0, 0.3405, zb))
     put(B, p_prof([(-0.06, 0.04), (0.13, 0.04), (0.13, 0.058), (-0.06, 0.058)], 0.04, 0.003, 1), 'poly')
     put(B, p_prof([(0.07, 0.018), (0.128, 0.022), (0.128, 0.058), (0.07, 0.058)], 0.036, 0.003, 1), 'poly')
-    # pisir refleks mungil
-    zs = 0.145
-    put(B, p_box(0.024, 0.04, 0.01, 0.002), 'dark', T(0, 0.01, 0.13))
-    put(B, p_torus(0.0145, 0.0026, 22, 6, 'Y'), 'dark', T(0, 0.012, zs))
-    put(B, p_cyly(0.0145, 0.002, 22), 'glass', T(0, 0.012, zs))
-    put(B, p_sphere(0.001, 8, 4), 'dot', T(0, 0.012, zs))
     # popor kawat lipat
     for zz0, zz1 in ((0.07, 0.045), (0.11, 0.085)):  # popor kawat menurun ke bahu (tidak menghalangi bidikan)
         put(B, p_chain([(0, -0.07, zz0), (0, -0.25, zz1)], [0.004, 0.004], 8, False), 'metal')
@@ -1038,7 +984,7 @@ def build_pdw():
     merge(M, p_loft([superellipse(0, 0.1 + (0.056 - z) * math.tan(4 * D2R), z, 0.0115, 0.016, 0.016, 12, 3.2) for z in (-0.12, 0.056)]), 'dark')
     put(M, p_box(0.027, 0.04, 0.008, 0.0025), 'yellow', T(0, 0.1 + 0.176 * math.tan(4 * D2R), -0.123))
     shift(M, top)
-    return dict(body=B, mag=(M, top), muzzle=(0, 0.3405, zb), sight=(0, 0.012, zs), guard=(0, 0.2, zb - 0.019 - 0.017))
+    return {**dict(body=B, mag=(M, top), muzzle=(0, 0.3405, zb), guard=(0, 0.2, zb - 0.019 - 0.017)), **R6}
 
 
 def build_dbs():
@@ -1106,6 +1052,322 @@ def build_smoke():
 
 
 NADES = {'frag': build_frag, 'smoke': build_smoke}
+
+
+# ================================================================ v6: optik terpasang + pisir lipat (BUIS)
+# Optik = node sendiri (opt_<id>), asal = titik pasang di puncak rel (tengah), sumbu optik setinggi OPT_H di atasnya.
+# Empty opt_<id>_eye = pusat lensa okuler (bidang tempat runtime memasang lensa ber-shader), opt_<id>_obj = pusat lensa
+# objektif. Lensa okuler TIDAK dimodelkan (dipasang runtime: shader retikel / kaca biasa di pratinjau).
+# Senjata ber-rel: <kind>_optic (empty titik pasang), <kind>_buis_up / _buis_dn (daun pisir lipat tegak / rebah, kecuali ar &
+# burst yang selalu membawa optik: daunnya rebah menyatu dengan badan). <kind>_sight = lubang pisir belakang BUIS.
+def putk(B, parts, M=None):
+    for bm, mat in parts:
+        put(B, bm, mat, M)
+
+
+def ylathe(prof, segs, h, y=0.0):
+    """Profil [(r, y)] diputar di sumbu Y lalu diangkat ke sumbu optik z = h."""
+    return gk.xf(gk.lathe(prof, segs), T(0, y, h))
+
+
+def zturret(bm, pos, axis):
+    """Benda bersumbu Z (kenop/baut) dipindah ke pos dengan sumbu Z menghadap `axis` ('+z', '+x', '-x')."""
+    R = {'+z': Matrix.Identity(4), '+x': Ry(90), '-x': Ry(-90), '-y': Rx(90), '+y': Rx(-90)}[axis]
+    return gk.xf(bm, T(*pos) @ R)
+
+
+def yknurl(r, y0, y1, h, n=64, depth=0.0005):
+    """Cincin bergerigi sejajar sumbu optik (cincin diopter / zoom) dari y0 ke y1."""
+    return gk.xf(gk.knurl(r, y1 - y0, n, depth, 0.0, 0.0004), T(0, y0, h) @ Rx(-90))
+
+
+def cross_bolt(B, y, w, knob=False):
+    """Baut silang penjepit rel di y: kepala hex / kenop jempol bergerigi di kiri, mur di kanan."""
+    if knob:
+        put(B, zturret(gk.knurl(0.0062, 0.0055, 36, 0.0005), (-w / 2, y, -0.0012), '-x'), 'dark')
+    else:
+        put(B, zturret(gk.screw('hex', 0.0062, 0.0022), (-w / 2 - 0.0002, y, -0.0012), '-x'), 'steel')
+    put(B, zturret(gk.cyl(0.0042, 0.003, 6), (w / 2, y, -0.0012), '+x'), 'steel')
+
+
+OPT_H = {'rds': 0.030, 'holo': 0.032, 's2': 0.034, 's4': 0.038, 's8': 0.040}
+
+
+def build_opt_rds(lo=False):
+    """Pisir titik merah 1×: tabung 30 mm × 70 mm, tudung lensa, dudukan rendah satu cincin + kenop baut silang,
+    turret baterai bergerigi (kiri), 2 tutup setelan (atas, kanan)."""
+    h = OPT_H['rds']
+    B = bmesh.new()
+    if lo:
+        put(B, p_cyly(0.0155, 0.07, 8), 'dark', T(0, 0, h))
+        put(B, p_box(0.024, 0.036, 0.016), 'dark', T(0, 0, 0.008))
+        put(B, p_cylx(0.0085, 0.044, 6), 'dark', T(0, 0.003, h))
+        return dict(body=B)
+    seg = 32
+    put(B, ylathe([(0.0122, -0.034), (0.0140, -0.034), (0.0148, -0.0332), (0.0150, -0.0312), (0.0150, 0.0195), (0.0157, 0.0222),
+                   (0.0166, 0.0252), (0.0166, 0.0342), (0.0160, 0.0356), (0.0146, 0.0356), (0.0141, 0.0312), (0.0130, 0.0287),
+                   (0.0122, 0.0287), (0.0122, -0.034)], seg, h), 'dark')
+    put(B, ylathe([(0.01664, 0.0300), (0.01680, 0.0300), (0.01680, 0.0316), (0.01664, 0.0316), (0.01664, 0.0300)], seg, h), 'gold')  # garis identitas
+    lz = gk.lens(0.0127, 0.0010, seg)
+    put(B, lz, 'lens', T(0, 0.0284, h) @ Matrix.Diagonal((1, -1, 1, 1)))  # objektif berlapis jingga (cembung ke depan)
+    # sadel turret melingkari tabung + tutup setelan & turret baterai
+    put(B, gk.loft_se([(-0.0105, h, 0.0153, 0.0153, 0.0153, 2.0), (-0.0085, h, 0.0178, 0.0160, 0.0176, 3.4), (0.0135, h, 0.0178, 0.0160, 0.0176, 3.4),
+                       (0.0155, h, 0.0153, 0.0153, 0.0153, 2.0)], 32), 'dark')
+    put(B, zturret(gk.cap_turret(0.0062, 0.0058, 28, knurled=False), (0, 0.0025, h + 0.0172), '+z'), 'dark')
+    put(B, zturret(gk.cap_turret(0.0062, 0.0058, 28, knurled=False), (0.0170, 0.0025, h), '+x'), 'dark')
+    put(B, zturret(gk.cyl(0.0094, 0.0025, 32), (-0.0168, 0.0025, h), '-x'), 'dark')
+    put(B, zturret(gk.knurl(0.0090, 0.0072, 56, 0.0005), (-0.0190, 0.0025, h), '-x'), 'dark')
+    put(B, zturret(gk.screw('slot', 0.007, 0.0008), (-0.0263, 0.0025, h), '-x'), 'steel')
+    # dudukan rendah: cincin lebar + tiang + rahang rel + kenop baut silang
+    put(B, ylathe([(0.0150, -0.011), (0.0172, -0.011), (0.0176, -0.0102), (0.0176, -0.0002), (0.0172, 0.0006), (0.0150, 0.0006), (0.0150, -0.011)], seg, h, -0.004), 'dark')
+    put(B, gk.plate([(-0.022, 0.003), (0.020, 0.003), (0.012, 0.0185), (-0.016, 0.0185)], 0.019, [0.002, 0.002, 0.004, 0.004], 0.0009), 'dark')
+    for b in gk.rail_clamp(-0.022, 0.020, 0.026, 0.0035):
+        put(B, b, 'dark')
+    cross_bolt(B, -0.002, 0.026, knob=True)
+    return dict(body=B, eye=(0, -0.0318, h), obj=(0, 0.0284, h), lensR=0.0118, objR=0.0127, fill=None, relief=0.16)
+
+
+def build_opt_holo(lo=False):
+    """Pisir holografik 1×: rumah kotak bertudung, jendela 30 × 23 mm, tuas QD (kanan), 2 tombol di belakang."""
+    h = OPT_H['holo']
+    B = bmesh.new()
+    if lo:
+        put(B, p_box(0.036, 0.086, 0.016), 'dark', T(0, -0.004, 0.010))
+        fr = gk.frame_y(gk.rrect(0.0205, 0.0165, 0.006, 2, 0, h + 0.0015), gk.rrect(0.015, 0.0115, 0.002, 2, 0, h), -0.006, 0.030)
+        put(B, fr, 'dark')
+        return dict(body=B)
+    outer, inner = gk.rrect(0.0208, 0.0168, 0.0072, 6, 0, h + 0.0018), gk.rrect(0.0150, 0.0115, 0.0030, 6, 0, h)
+    put(B, gk.frame_y(outer, inner, -0.0060, 0.0300), 'dark')
+    # bibir tudung depan sedikit lebih tebal
+    put(B, gk.frame_y(gk.rrect(0.0213, 0.0173, 0.0075, 6, 0, h + 0.0018), gk.rrect(0.0200, 0.0160, 0.0068, 6, 0, h + 0.0018), 0.0270, 0.0310), 'dark')
+    # jendela depan: kaca berlapis (sedikit miring ke atas seperti kaca holografik)
+    put(B, p_box(0.0300, 0.0012, 0.0230), 'lens', T(0, 0.0255, h) @ Rx(-4))
+    # badan elektronik + tutup baterai melintang di depan
+    put(B, gk.plate([(-0.046, 0.0030), (0.036, 0.0030), (0.040, 0.0085), (0.040, 0.0170), (0.032, 0.0185), (-0.040, 0.0185), (-0.046, 0.0140)],
+                    0.0350, [0.0015, 0.002, 0.003, 0.003, 0.002, 0.004, 0.004], 0.0011), 'dark')
+    put(B, gk.xf(gk.cyl(0.0078, 0.0380, 36, -0.019), T(0, 0.0335, 0.0108) @ Ry(90)), 'dark')
+    put(B, zturret(gk.knurl(0.0080, 0.0045, 48, 0.0005), (0.0185, 0.0335, 0.0108), '+x'), 'dark')
+    put(B, zturret(gk.screw('slot', 0.0085, 0.0008), (0.0232, 0.0335, 0.0108), '+x'), 'steel')
+    for sx in (-1, 1):  # tombol kecerahan di muka belakang
+        put(B, zturret(gk.cyl(0.0034, 0.0022, 20, 0.0, 0.0028), (sx * 0.0075, -0.0462, 0.0105), '-y'), 'rubber')
+    # tuas QD kanan (poros + tuas) dan rahang rel
+    put(B, zturret(gk.cyl(0.0048, 0.0030, 24), (0.0175, -0.010, 0.0040), '+x'), 'steel')
+    put(B, gk.plate([(-0.030, 0.0015), (-0.006, 0.0025), (-0.006, 0.0065), (-0.030, 0.0060)], 0.0026, 0.0012, 0.0005, x0=0.0215), 'dark')
+    for b in gk.rail_clamp(-0.030, 0.020, 0.030, 0.0035):
+        put(B, b, 'dark')
+    return dict(body=B, eye=(0, -0.0062, h), obj=(0, 0.0255, h), lensR=0.0135, objR=0.0135, win=(0.030, 0.023), fill=None, relief=0.16)
+
+
+def build_opt_s2(lo=False):
+    """Prisma ringkas 2×: 110 mm, badan 38 mm, dasar menyatu dengan 2 baut silang, eyecup karet pendek, turret rendah."""
+    h = OPT_H['s2']
+    B = bmesh.new()
+    if lo:
+        put(B, p_box(0.036, 0.06, 0.04), 'dark', T(0, 0, h))
+        put(B, p_cyly(0.016, 0.115, 8), 'dark', T(0, 0, h))
+        put(B, p_box(0.024, 0.06, 0.016), 'dark', T(0, 0, 0.009))
+        return dict(body=B)
+    n = 40
+    put(B, gk.loft_se([(-0.0525, h, 0.0146, 0.0146, 0.0146, 2.0), (-0.0400, h, 0.0152, 0.0152, 0.0152, 2.0), (-0.0310, h + 0.0010, 0.0172, 0.0182, 0.0172, 2.6),
+                       (-0.0255, h + 0.0020, 0.0196, 0.0230, 0.0190, 4.2), (0.0220, h + 0.0020, 0.0196, 0.0230, 0.0190, 4.2),
+                       (0.0290, h + 0.0005, 0.0172, 0.0182, 0.0172, 2.6), (0.0400, h, 0.0160, 0.0160, 0.0160, 2.0), (0.0540, h, 0.0166, 0.0166, 0.0166, 2.0)], n), 'dark')
+    put(B, ylathe([(0.0146, 0.0535), (0.0170, 0.0535), (0.0172, 0.0605), (0.0166, 0.0615), (0.0152, 0.0615), (0.0148, 0.0570), (0.0146, 0.0535)], n, h), 'dark')
+    put(B, ylathe([(0.01705, 0.0560), (0.01725, 0.0560), (0.01725, 0.0574), (0.01705, 0.0574), (0.01705, 0.0560)], n, h), 'gold')
+    put(B, gk.lens(0.0150, 0.0012, n), 'lens', T(0, 0.0560, h) @ Matrix.Diagonal((1, -1, 1, 1)))
+    put(B, ylathe([(0.0130, -0.0525), (0.0150, -0.0525), (0.0160, -0.0580), (0.0168, -0.0640), (0.0161, -0.0655), (0.0137, -0.0655), (0.0130, -0.0600),
+                   (0.0130, -0.0525)], n, h), 'rubber')
+    # garis panel di sisi prisma (alur 0,4 mm)
+    for sx in (-1, 1):
+        put(B, p_box(0.0008, 0.040, 0.0008), 'dark', T(sx * 0.0192, -0.002, h - 0.0135))
+    put(B, zturret(gk.cap_turret(0.0068, 0.0042, 28), (0, -0.002, h + 0.0214), '+z'), 'dark')
+    put(B, zturret(gk.cap_turret(0.0068, 0.0042, 28), (0.0188, -0.002, h + 0.002), '+x'), 'dark')
+    put(B, gk.plate([(-0.0330, 0.0030), (0.0300, 0.0030), (0.0270, 0.0160), (-0.0290, 0.0160)], 0.0250, [0.002, 0.002, 0.004, 0.004], 0.0010), 'dark')
+    for b in gk.rail_clamp(-0.0330, 0.0300, 0.0280, 0.0035):
+        put(B, b, 'dark')
+    for y in (-0.019, 0.016):
+        cross_bolt(B, y, 0.028)
+    return dict(body=B, eye=(0, -0.0528, h), obj=(0, 0.0560, h), lensR=0.0125, objR=0.0150, fill=0.40)
+
+
+def build_opt_s4(lo=False):
+    """Teropong 4×32 (150 mm): tabung 30 mm melebar ke objektif 32 mm, blok turret persegi, cincin diopter, armor karet
+    okuler, dudukan menyatu."""
+    h = OPT_H['s4']
+    B = bmesh.new()
+    if lo:
+        put(B, p_cyly(0.0165, 0.155, 8), 'dark', T(0, -0.002, h))
+        put(B, p_cyly(0.0195, 0.03, 8), 'dark', T(0, 0.062, h))
+        put(B, p_box(0.034, 0.03, 0.034), 'dark', T(0, 0, h))
+        put(B, p_box(0.022, 0.08, 0.018), 'dark', T(0, 0, 0.009))
+        return dict(body=B)
+    n = 36
+    put(B, ylathe([(0.0140, -0.0505), (0.0170, -0.0505), (0.0170, -0.0398), (0.0160, -0.0382), (0.0150, -0.0362), (0.0150, 0.0200), (0.0157, 0.0262),
+                   (0.0184, 0.0458), (0.0195, 0.0502), (0.0195, 0.0728), (0.0188, 0.0758), (0.0173, 0.0758), (0.0168, 0.0712), (0.0158, 0.0692),
+                   (0.0140, 0.0692), (0.0140, -0.0505)], n, h), 'dark')
+    put(B, yknurl(0.0176, -0.0495, -0.0405, h, 56), 'dark')  # cincin diopter
+    put(B, ylathe([(0.0146, -0.0505), (0.0180, -0.0505), (0.0186, -0.0545), (0.0186, -0.0730), (0.0180, -0.0775), (0.0156, -0.0780), (0.0146, -0.0740),
+                   (0.0146, -0.0505)], n, h), 'rubber')
+    for k in range(5):  # rusuk armor karet
+        y = -0.0565 - k * 0.0038
+        put(B, ylathe([(0.0186, y), (0.0190, y - 0.0008), (0.0190, y - 0.0016), (0.0186, y - 0.0024), (0.0186, y)], n, h), 'rubber')
+    put(B, ylathe([(0.01952, 0.0700), (0.01970, 0.0700), (0.01970, 0.0712), (0.01952, 0.0712), (0.01952, 0.0700)], n, h), 'gold')
+    put(B, gk.lens(0.0160, 0.0012, n), 'lens', T(0, 0.0694, h) @ Matrix.Diagonal((1, -1, 1, 1)))
+    # blok turret persegi + kenop elevasi (atas) & windage (kanan)
+    put(B, gk.loft_se([(-0.0180, h, 0.0158, 0.0156, 0.0158, 2.0), (-0.0160, h, 0.0182, 0.0168, 0.0180, 5.0), (0.0140, h, 0.0182, 0.0168, 0.0180, 5.0),
+                       (0.0160, h, 0.0158, 0.0156, 0.0158, 2.0)], 40), 'dark')
+    put(B, zturret(gk.cap_turret(0.0082, 0.0088, 32), (0, -0.001, h + 0.0180), '+z'), 'dark')
+    put(B, zturret(gk.cap_turret(0.0082, 0.0088, 32), (0.0178, -0.001, h), '+x'), 'dark')
+    put(B, zturret(gk.cyl(0.0058, 0.0026, 24), (-0.0178, -0.001, h), '-x'), 'dark')
+    # dudukan menyatu: tulang punggung + dua cincin
+    put(B, gk.plate([(-0.0400, 0.0030), (0.0400, 0.0030), (0.0400, 0.0080), (0.0350, 0.0150), (0.0200, 0.0150), (0.0170, 0.0110), (-0.0170, 0.0110),
+                     (-0.0200, 0.0150), (-0.0350, 0.0150), (-0.0400, 0.0080)], 0.0230, [0.0015, 0.0015, 0.002, 0.003, 0.002, 0.002, 0.002, 0.002, 0.003, 0.002], 0.0010), 'dark')
+    for y in (-0.028, 0.028):
+        put(B, ylathe([(0.0150, y - 0.0055), (0.0176, y - 0.0055), (0.0180, y - 0.0048), (0.0180, y + 0.0048), (0.0176, y + 0.0055), (0.0150, y + 0.0055),
+                       (0.0150, y - 0.0055)], n, h), 'dark')
+        put(B, gk.plate([(y - 0.0065, 0.0140), (y + 0.0065, 0.0140), (y + 0.0050, h - 0.0140), (y - 0.0050, h - 0.0140)], 0.0160, 0.0, 0.0008), 'dark')
+        cross_bolt(B, y, 0.026)
+        for sx in (-1, 1):
+            put(B, zturret(gk.screw('torx', 0.0030, 0.0012), (sx * 0.0128, y, h + 0.0128), '+z'), 'steel')
+    for b in gk.rail_clamp(-0.0400, 0.0400, 0.0260, 0.0035):
+        put(B, b, 'dark')
+    return dict(body=B, eye=(0, -0.0508, h), obj=(0, 0.0694, h), lensR=0.0138, objR=0.0160, fill=0.72)
+
+
+S8_RING = (0, -0.0915)
+
+
+def build_opt_s8(lo=False):
+    """Teropong 4–8× (±330 mm): tabung 34 mm, lonceng objektif 50 mm, 3 turret (elevasi tinggi bergerigi + garis indeks,
+    windage bertutup, paralaks samping kiri), cincin zoom bersirip (node opt_s8_ring), tudung matahari pendek, tutup lensa
+    flip terbuka, 2 cincin dengan 4 baut."""
+    h = OPT_H['s8']
+    B = bmesh.new()
+    if lo:
+        put(B, p_cyly(0.019, 0.33, 10), 'dark', T(0, -0.005, h))
+        put(B, p_cyly(0.029, 0.06, 10), 'dark', T(0, 0.14, h))
+        put(B, p_cyly(0.021, 0.06, 10), 'dark', T(0, -0.14, h))
+        put(B, p_box(0.040, 0.044, 0.04), 'dark', T(0, 0, h))
+        for y in (-0.052, 0.040):
+            put(B, p_box(0.024, 0.014, 0.022), 'dark', T(0, y, 0.011))
+        return dict(body=B)
+    n = 36
+    put(B, ylathe([(0.0168, -0.1580), (0.0198, -0.1580), (0.0206, -0.1545), (0.0206, -0.1300), (0.0201, -0.1290), (0.0201, -0.1250), (0.0206, -0.1240),
+                   (0.0206, -0.1130), (0.0194, -0.1070), (0.0181, -0.1030), (0.0181, -0.0795), (0.0172, -0.0775), (0.0170, -0.0740), (0.0170, 0.0460),
+                   (0.0178, 0.0520), (0.0240, 0.0900), (0.0278, 0.1080), (0.0290, 0.1140), (0.0290, 0.1360), (0.0283, 0.1380), (0.0283, 0.1410),
+                   (0.0293, 0.1415), (0.0293, 0.1680), (0.0286, 0.1712), (0.0272, 0.1712), (0.0267, 0.1500), (0.0263, 0.1352), (0.0168, 0.1352),
+                   (0.0168, -0.1580)], n, h), 'dark')
+    put(B, ylathe([(0.02903, 0.1300), (0.02920, 0.1300), (0.02920, 0.1316), (0.02903, 0.1316), (0.02903, 0.1300)], n, h), 'gold')
+    put(B, gk.lens(0.0262, 0.0016, n), 'lens', T(0, 0.1350, h) @ Matrix.Diagonal((1, -1, 1, 1)))
+    put(B, ylathe([(0.0172, -0.1580), (0.0204, -0.1580), (0.0212, -0.1625), (0.0214, -0.1715), (0.0206, -0.1760), (0.0182, -0.1762), (0.0175, -0.1705),
+                   (0.0172, -0.1580)], n, h), 'rubber')
+    # sadel turret
+    put(B, gk.loft_se([(-0.0285, h, 0.0176, 0.0174, 0.0176, 2.0), (-0.0250, h, 0.0212, 0.0190, 0.0206, 3.6), (0.0190, h, 0.0212, 0.0190, 0.0206, 3.6),
+                       (0.0225, h, 0.0176, 0.0174, 0.0176, 2.0)], 44), 'dark')
+    # elevasi: kerah + badan bergerigi tinggi + tutup dengan garis indeks
+    put(B, zturret(gk.cyl(0.0122, 0.0032, 40), (0, -0.003, h + 0.0208), '+z'), 'dark')
+    put(B, zturret(gk.knurl(0.0114, 0.0150, 60, 0.0006), (0, -0.003, h + 0.0240), '+z'), 'dark')
+    put(B, zturret(gk.cyl(0.0110, 0.0022, 40, 0.0, 0.0102), (0, -0.003, h + 0.0390), '+z'), 'dark')
+    for k in range(20):
+        a = 2 * pi * k / 20
+        put(B, p_box(0.0004, 0.0016 if k % 5 else 0.0028, 0.0004), 'steel', T(0.0116 * math.sin(a), -0.003 + 0.0116 * math.cos(a), h + 0.0238) @ Rz(-a / D2R))
+    put(B, p_box(0.0006, 0.0030, 0.0006), 'gold', T(0, -0.003 - 0.0124, h + 0.0224))  # garis nol
+    # windage bertutup (kanan) + paralaks (kiri)
+    put(B, zturret(gk.cyl(0.0112, 0.0030, 40), (0.0206, -0.003, h), '+x'), 'dark')
+    put(B, zturret(gk.cap_turret(0.0100, 0.0120, 36, knurled=False), (0.0236, -0.003, h), '+x'), 'dark')
+    put(B, zturret(gk.cyl(0.0120, 0.0030, 40), (-0.0206, -0.003, h), '-x'), 'dark')
+    put(B, zturret(gk.cap_turret(0.0128, 0.0105, 40), (-0.0236, -0.003, h), '-x'), 'dark')
+    # tutup lensa flip (terbuka, berdiri di atas tudung)
+    put(B, gk.plate([(0.1640, h + 0.0280), (0.1720, h + 0.0280), (0.1720, h + 0.0340), (0.1640, h + 0.0340)], 0.012, 0.0015, 0.0006), 'poly')
+    lid = gk.xf(gk.cyl(0.0305, 0.0035, 44), Rx(-90))
+    put(B, lid, 'poly', T(0, 0.1700, h + 0.0310) @ Rx(-14) @ T(0, 0, 0.0310))
+    put(B, p_box(0.010, 0.004, 0.006, 0.001), 'poly', T(0, 0.1700, h + 0.0310) @ Rx(-14) @ T(0, 0.0035, 0.0640))
+    # dua cincin
+    for y in (-0.052, 0.040):
+        putk(B, gk.ring_mount(0.0170, h, 0.0140, 0.0260), T(0, y, 0))
+    ring = bmesh.new()  # cincin zoom bersirip + tuas (berputar mengikuti perbesaran), asal di sumbunya
+    put(ring, ylathe([(0.0181, -0.0100), (0.0196, -0.0100), (0.0200, -0.0094), (0.0200, 0.0094), (0.0196, 0.0100), (0.0181, 0.0100), (0.0181, -0.0100)], n, 0.0), 'dark')
+    for k in range(12):
+        a = 2 * pi * k / 12
+        put(ring, p_box(0.0024, 0.0150, 0.0016, 0.0005), 'dark', Ry(-a / D2R) @ T(0, 0, 0.0204))
+    put(ring, gk.plate([(-0.0060, 0.0190), (0.0060, 0.0190), (0.0040, 0.0290), (-0.0040, 0.0290)], 0.0050, [0.0, 0.0, 0.0018, 0.0018], 0.0006), 'dark', Ry(-35))
+    return dict(body=B, eye=(0, -0.1585, h), obj=(0, 0.1350, h), lensR=0.0165, objR=0.0262, fill=0.78, ring=(ring, (S8_RING[0], S8_RING[1], h)))
+
+
+OPTICS = {'rds': build_opt_rds, 'holo': build_opt_holo, 's2': build_opt_s2, 's4': build_opt_s4, 's8': build_opt_s8}
+OPTIC_FILL = {'s2': 0.40, 's4': 0.72, 's8': 0.78}
+OPTIC_DEFAULT = {'ar': 'rds', 'burst': 'holo'}  # optik bawaan (selalu terpasang bila tidak ada scope)
+
+
+def buis_leaf(kind, y, top, hs, up=True):
+    """Daun pisir lipat (BUIS) di rel (puncak z = top), lubang/pejera setinggi hs di atas puncak rel. kind 'rear' = daun
+    berlubang (lubang 2,2 mm) dengan telinga pelindung, 'front' = pejera tiang di dalam cincin pelindung.
+    up = tegak; False = rebah ke depan (engsel di belakang dasar)."""
+    B = bmesh.new()
+    zc = top + hs
+    N = 32
+    if kind == 'rear':
+        hole = [(0.0022 * math.cos(2 * pi * k / N), zc + 0.0022 * math.sin(2 * pi * k / N)) for k in range(N)]
+        out = []
+        for k in range(N):  # kontur luar daun (persegi membulat, sampel searah sudut dari pusat lubang)
+            a = 2 * pi * k / N
+            c, s = math.cos(a), math.sin(a)
+            hw, ht, hb = 0.0075, 0.0055, hs - 0.0035
+            tx = hw / abs(c) if abs(c) > 1e-6 else 1e9
+            tz = (ht if s > 0 else hb) / abs(s) if abs(s) > 1e-6 else 1e9
+            t = min(tx, tz)
+            px, pz = c * t, s * t
+            if pz > 0 and abs(px) > hw - 0.002 and pz > ht - 0.002:  # sudut atas membulat
+                px *= 0.93
+                pz *= 0.93
+            out.append((px, zc + pz))
+        put(B, gk.frame_y(out, hole, y - 0.0012, y + 0.0012), 'dark')
+    else:
+        ring_o = [(0.0072 * math.cos(2 * pi * k / N), zc + 0.0002 + 0.0072 * math.sin(2 * pi * k / N)) for k in range(N)]
+        ring_i = [(0.0058 * math.cos(2 * pi * k / N), zc + 0.0002 + 0.0058 * math.sin(2 * pi * k / N)) for k in range(N)]
+        put(B, gk.frame_y(ring_o, ring_i, y - 0.0016, y + 0.0016), 'dark')
+        put(B, p_box(0.0016, 0.0020, 0.0056), 'dark', T(0, y, zc - 0.0028))  # tiang pejera, puncak tepat di garis bidik
+        put(B, gk.plate([(y - 0.0016, top + 0.0040), (y + 0.0016, top + 0.0040), (y + 0.0016, zc - 0.0062), (y - 0.0016, zc - 0.0062)], 0.0060, 0.0, 0.0004), 'dark')
+    put(B, gk.plate([(y - 0.0016, top + 0.0040), (y + 0.0016, top + 0.0040), (y + 0.0016, top + 0.0080), (y - 0.0016, top + 0.0080)], 0.0150, 0.0, 0.0004), 'dark')
+    if not up:  # rebah ke depan di engsel (belakang dasar daun)
+        hz = top + 0.0050
+        bmesh.ops.transform(B, matrix=T(0, y - 0.0016, hz) @ Rx(-90) @ T(0, -(y - 0.0016), -hz), verts=B.verts)
+    return B
+
+
+def buis_base(B, y, top):
+    """Dasar BUIS di rel: blok penjepit + telinga engsel + baut silang."""
+    put(B, gk.plate([(y - 0.0110, top + 0.0005), (y + 0.0110, top + 0.0005), (y + 0.0090, top + 0.0060), (y - 0.0090, top + 0.0060)], 0.0190,
+                    [0.001, 0.001, 0.002, 0.002], 0.0007), 'dark')
+    for b in gk.rail_clamp(y - 0.0110, y + 0.0110, 0.0240, 0.0010):
+        put(B, b, 'dark', T(0, 0, top))
+    for sx in (-1, 1):
+        put(B, gk.plate([(y - 0.0050, top + 0.0040), (y + 0.0050, top + 0.0040), (y + 0.0030, top + 0.0095), (y - 0.0030, top + 0.0095)], 0.0022, 0.001, 0.0004, x0=sx * 0.0088), 'dark')
+    put(B, zturret(gk.screw('hex', 0.0050, 0.0018), (-0.0122, y, top - 0.0012), '-x'), 'steel')
+
+
+BUIS_HS = 0.0160  # tinggi garis bidik pisir lipat di atas puncak rel
+
+
+def add_rail_and_buis(d, B, top, y0, y1, rear=None, front=None, merged=False, base=-0.007, mount=None):
+    """Rel aksesori + BUIS (dasar di badan, daun di node <kind>_buis_up/_dn kecuali merged: daun rebah ikut badan)."""
+    put(B, gk.picatinny(y1 - y0, y0, top, base), 'dark')
+    rear = y0 + 0.012 if rear is None else rear
+    front = y1 - 0.012 if front is None else front  # False = tanpa pejera depan di rel
+    sights = [('rear', rear)] + ([('front', front)] if front is not False else [])
+    for _, y in sights:
+        buis_base(B, y, top)
+    up, dn = bmesh.new(), bmesh.new()
+    for kind_, y in sights:
+        merge(up, buis_leaf(kind_, y, top, BUIS_HS, True))
+        merge(dn, buis_leaf(kind_, y, top, BUIS_HS, False))
+    if merged:
+        merge(B, dn)
+        up.free()
+    else:
+        d['buis'] = (up, dn)
+    d['sight'] = (0, rear, top + BUIS_HS)
+    d['optic'] = (0, (y0 + y1) / 2 if mount is None else mount, top)
+    d['rail'] = (y0, y1, top)
 
 # ---------------------------------------------------------------- tangan orang pertama
 HAND_R = Vector((0.026, -0.010, 0.004))  # pusat telapak kanan relatif origin senjata (titik genggam)
@@ -1868,6 +2130,12 @@ def build_all():
             w['tris'] += t2
             w.setdefault('parts', []).append(dict(node=pn, pos=gl(po_), tris=t2))
         bake_vwx(objs[n0:])  # AO + aus untuk seluruh rakitan senjata ini (badan, magasin, pompa, bolt, …)
+        if 'buis' in d:  # v6: daun pisir lipat tegak / rebah (dipanggang dengan badan sebagai penghalang)
+            for nm, bb in zip(('_buis_up', '_buis_dn'), d['buis']):
+                bo_, bt_ = make_obj(kind + nm, bb)
+                bake_vwx([bo_], occ=[objs[n0]])
+                objs.append(bo_)
+                w.setdefault('buis', {})[nm[1:]] = dict(node=kind + nm, tris=bt_)
         # tangan kiri yang dipaskan ke senjata ini (v5); <kind>_guard pindah ke pusat telapaknya
         hold = [o for o in objs[n0:] if (o.name == kind and kind not in FIT_ONLY) or o.name in FIT_HOLD.get(kind, ())]
         hl_name = 'fp_hand_l_' + HAND_L_OF.get(kind, kind)
@@ -1889,6 +2157,11 @@ def build_all():
             objs.append(make_empty(kind + '_' + k, d[k]))
             w[k] = gl(d[k])
         w['handR'] = gl(HAND_R)
+        w['sightIron'] = gl(d['sight'])
+        w['grip'] = dict(r=gl(HAND_R), l=w['guard'], lNode=hl_name)
+        if 'optic' in d:  # v6: titik pasang optik di puncak rel (tengah)
+            objs.append(make_empty(kind + '_optic', d['optic']))
+            w['optic'] = dict(pos=gl(d['optic']), default=OPTIC_DEFAULT.get(kind), rail=[round(d['rail'][0], 4), round(d['rail'][1], 4)])
         meta['weapons'].append(w)
         log(kind, 'tris', w['tris'], 'lod1', lt, '%.1fs' % (time.time() - t0))
     for kind, fn in NADES.items():  # granat: model genggam + LOD1 (origin = pusat badan)
@@ -1900,6 +2173,32 @@ def build_all():
         objs.append(lo)
         meta.setdefault('nades', []).append(dict(kind=kind, name=NAMES[kind], node=kind, tris=tris, lod1=kind + '_lod1', lod1Tris=lt))
         log(kind, 'tris', tris, 'lod1', lt)
+    if not (only and 'optics' not in only):  # v6: optik terpasang (asal = titik pasang di rel)
+        meta['optics'] = {}
+        for oid, fn in OPTICS.items():
+            d = fn()
+            ob, tris = make_obj('opt_' + oid, d['body'])
+            group = [ob]
+            o = dict(node='opt_' + oid, eye=gl(d['eye']), obj=gl(d['obj']), lensR=d['lensR'], objR=d['objR'], axisH=OPT_H[oid],
+                     fill=d.get('fill'), relief=d.get('relief'), tris=tris)
+            if d.get('win'):
+                o['win'] = list(d['win'])
+            if d.get('ring'):
+                rb, rp = d['ring']
+                ro, rt = make_obj('opt_' + oid + '_ring', rb)
+                ro.location = Vector(rp)
+                group.append(ro)
+                o['ring'] = dict(node='opt_' + oid + '_ring', pos=gl(rp), tris=rt)
+                o['tris'] += rt
+            bake_vwx(group)
+            objs += group
+            for k in ('eye', 'obj'):
+                objs.append(make_empty('opt_%s_%s' % (oid, k), d[k]))
+            lo, lt = make_vc_obj('opt_' + oid + '_lod1', fn(lo=True)['body'])
+            objs.append(lo)
+            o['lod1'], o['lod1Tris'] = 'opt_' + oid + '_lod1', lt
+            meta['optics'][oid] = o
+            log('optik', oid, 'tris', o['tris'], 'lod1', lt)
     hr, tr = make_obj('fp_hand_r', build_hand_r(), ang=50)
     hr.location = HAND_R
     hl, tl = make_obj('fp_hand_l', build_hand_l(), ang=50)
@@ -1916,6 +2215,7 @@ def build_all():
                           'fp_forearm': dict(tris=tf, note='lengan bawah 1 m sepanjang +Y glTF (pergelangan di +0,5), diskala ke panjang lengan'),
                           'fp_hand_open': dict(tris=to_, note='tangan terbuka: jari ke −Z glTF, ibu jari +X; origin = pusat telapak')})
     log('tangan', 'kanan', tr, 'kiri', tl, 'kiri per senjata', sum(meta['hands'][o.name]['tris'] for o in fit_hands))
+    meta['version'] = 6
     meta['axes'] = 'glTF: +Y atas, laras −Z, kanan +X; origin senjata = titik genggam gagang pistol (condong 18°)'
     return objs, meta
 
@@ -2199,12 +2499,93 @@ def fp_ar():
     log('fp_ar %.1fs' % (time.time() - t0))
 
 
+# ---------------------------------------------------------------- v6: lembar kontak (EEVEE, cepat)
+SHEET = os.path.abspath(opt('--sheet-dir', os.path.join(ROOT, 'preview', 'weapons', 'sheet')))
+
+
+def sheet_setup(w=900, h=560):
+    eevee(w, h)
+    world((0.42, 0.44, 0.48), 0.55)
+    area('key', (0.9, -1.2, 1.1), (0, 0, 0), 1.2, 60, (1, 0.97, 0.92))
+    area('fill', (-1.2, -0.3, 0.5), (0, 0, 0), 1.2, 22, (0.85, 0.9, 1.0))
+    area('rim', (-0.4, 1.4, 0.9), (0, 0, 0), 1.0, 40)
+    os.makedirs(SHEET, exist_ok=True)
+
+
+def sheet_shot(show, path, az, el, k=1.0, lens=60):
+    """Render hanya objek `show` (sudah di tempatnya); kamera membidik pusat kotak batasnya dari azimut/elevasi (derajat;
+    az 0 = dari belakang −Y, 90 = dari kanan +X)."""
+    names = {o.name for o in show}
+    for o in bpy.data.objects:
+        if o.type == 'MESH':
+            o.hide_render = o.name not in names
+    bpy.context.view_layer.update()
+    pts = [o.matrix_world @ Vector(c) for o in show for c in o.bound_box]
+    lo_ = Vector((min(p.x for p in pts), min(p.y for p in pts), min(p.z for p in pts)))
+    hi_ = Vector((max(p.x for p in pts), max(p.y for p in pts), max(p.z for p in pts)))
+    c = (lo_ + hi_) / 2
+    r = (hi_ - lo_).length / 2
+    a, e = az * D2R, el * D2R
+    dist = r / math.tan(math.atan(18 / lens) * 0.9) * k
+    for o in [o for o in bpy.data.objects if o.type == 'CAMERA']:
+        bpy.data.objects.remove(o)
+    cam_look(c + Vector((math.sin(a) * math.cos(e), -math.cos(a) * math.cos(e), math.sin(e))) * dist, c, lens)
+    bpy.context.scene.render.filepath = path
+    bpy.ops.render.render(write_still=True)
+
+
+def sheet_optics():
+    sheet_setup()
+    for oid in OPTICS:
+        show = [o for o in bpy.data.objects if o.name == 'opt_' + oid or o.name == 'opt_' + oid + '_ring']
+        for nm, az, el in (('34', 145, 18), ('rear', -35, 14), ('side', 90, 4)):
+            sheet_shot(show, os.path.join(SHEET, 'opt_%s_%s.png' % (oid, nm)), az, el)
+        lod = [o for o in bpy.data.objects if o.name == 'opt_' + oid + '_lod1']
+        sheet_shot(lod, os.path.join(SHEET, 'opt_%s_lod1.png' % oid), 145, 18)
+    log('lembar optik', SHEET)
+
+
+def sheet_guns(kinds, optic_of=None):
+    """Senjata (+ optik terpasang di titik <kind>_optic & BUIS yang sesuai): kiri, kanan, 3/4 depan, atas."""
+    sheet_setup(1000, 520)
+    optic_of = optic_of or {}
+    for kind in kinds:
+        if kind not in bpy.data.objects:
+            continue
+        for oid in [optic_of.get(kind)] + ([None] if optic_of.get(kind) else []):
+            show = collect(kind) + [o for o in bpy.data.objects if o.name == kind + ('_buis_dn' if oid else '_buis_up')]
+            if oid and kind + '_optic' in bpy.data.objects:
+                mp = bpy.data.objects[kind + '_optic'].location
+                for o in bpy.data.objects:
+                    if o.name in ('opt_' + oid, 'opt_' + oid + '_ring'):
+                        if o.name not in REST:
+                            REST[o.name] = o.location.copy()
+                        o.location = REST[o.name] + mp
+                        show.append(o)
+            tag = kind + ('_' + oid if oid else '')
+            for nm, az, el in (('L', -90, 2), ('R', 90, 2), ('34', 40, 20), ('top', 90, 80)):
+                sheet_shot(show, os.path.join(SHEET, 'gun_%s_%s.png' % (tag, nm)), az, el, 0.82, 50)
+            for o in bpy.data.objects:  # optik kembali ke asal
+                if o.name.startswith('opt_') and o.name in REST:
+                    o.location = REST[o.name]
+    log('lembar senjata', SHEET)
+
+
 def main():
     objs, meta = build_all()
     if not opt('--no-export'):
         export(objs, meta)
     if opt('--quick'):
         quick()
+    if opt('--sheet'):  # v6: lembar kontak EEVEE → --sheet-dir (bawaan preview/weapons/sheet)
+        what = opt('--sheet')
+        what = what if isinstance(what, str) else 'optics,guns'
+        if 'optics' in what:
+            sheet_optics()
+        if 'guns' in what:
+            ks = opt('--kinds')
+            ks = ks.split(',') if isinstance(ks, str) else list(BUILD)
+            sheet_guns([k for k in ks if k in BUILD], {'ar': 'rds', 'burst': 'holo', 'dmr': 's8', 'sniper': 's8', 'smg': 's2', 'lmg': 's4', 'pdw': 's2'})
     if opt('--shots4'):  # pratinjau v4: preview/weapons/v4-lineup.png + v4-fp-ar.png
         objs, meta = build_all()
         lineup_v3()
