@@ -36,13 +36,31 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.101,
+    0.04
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.0315,
+     -0.012,
+     0.0079
+    ],
+    "lNode": "fp_hand_l_pistol"
+   }
   },
   {
    "kind": "smg",
    "name": "Kilat",
    "node": "smg",
-   "tris": 6436,
+   "tris": 11938,
    "mag": {
     "node": "smg_mag",
     "pos": [
@@ -51,6 +69,16 @@
      -0.111
     ],
     "tris": 340
+   },
+   "buis": {
+    "buis_up": {
+     "node": "smg_buis_up",
+     "tris": 1100
+    },
+    "buis_dn": {
+     "node": "smg_buis_dn",
+     "tris": 1100
+    }
    },
    "handL": "fp_hand_l_smg",
    "lod1": "smg_lod1",
@@ -62,8 +90,8 @@
    ],
    "sight": [
     0,
-    0.142,
-    0.055
+    0.143,
+    0.058
    ],
    "guard": [
     -0.03668,
@@ -74,13 +102,43 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.143,
+    0.058
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.03668,
+     0.08651,
+     -0.258
+    ],
+    "lNode": "fp_hand_l_smg"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.127,
+     -0.03
+    ],
+    "default": null,
+    "rail": [
+     -0.07,
+     0.2
+    ]
+   }
   },
   {
    "kind": "ar",
    "name": "Garuda",
    "node": "ar",
-   "tris": 9784,
+   "tris": 21068,
    "mag": {
     "node": "ar_mag",
     "pos": [
@@ -100,8 +158,8 @@
    ],
    "sight": [
     0,
-    0.163,
-    -0.036
+    0.14245,
+    0.093
    ],
    "guard": [
     -0.03094,
@@ -112,7 +170,37 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.14245,
+    0.093
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.03094,
+     0.06355,
+     -0.33
+    ],
+    "lNode": "fp_hand_l_ar"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.12645,
+     -0.0
+    ],
+    "default": "rds",
+    "rail": [
+     -0.105,
+     0.46
+    ]
+   }
   },
   {
    "kind": "shotgun",
@@ -151,13 +239,31 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.1222,
+    0.045
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.02942,
+     0.04397,
+     -0.335
+    ],
+    "lNode": "fp_hand_l_shotgun"
+   }
   },
   {
    "kind": "dmr",
    "name": "Elang",
    "node": "dmr",
-   "tris": 9604,
+   "tris": 21114,
    "mag": {
     "node": "dmr_mag",
     "pos": [
@@ -166,6 +272,16 @@
      -0.1
     ],
     "tris": 348
+   },
+   "buis": {
+    "buis_up": {
+     "node": "dmr_buis_up",
+     "tris": 1100
+    },
+    "buis_dn": {
+     "node": "dmr_buis_dn",
+     "tris": 1100
+    }
    },
    "handL": "fp_hand_l_dmr",
    "lod1": "dmr_lod1",
@@ -177,8 +293,8 @@
    ],
    "sight": [
     0,
-    0.164,
-    0.104
+    0.1454,
+    0.1135
    ],
    "guard": [
     -0.02944,
@@ -189,13 +305,43 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.1454,
+    0.1135
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.02944,
+     0.06253,
+     -0.39
+    ],
+    "lNode": "fp_hand_l_dmr"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.1294,
+     -0.03
+    ],
+    "default": null,
+    "rail": [
+     -0.1255,
+     0.5495
+    ]
+   }
   },
   {
    "kind": "sniper",
    "name": "Rajawali",
    "node": "sniper",
-   "tris": 9776,
+   "tris": 14588,
    "mag": {
     "node": "sniper_mag",
     "pos": [
@@ -216,6 +362,16 @@
      "tris": 448
     }
    ],
+   "buis": {
+    "buis_up": {
+     "node": "sniper_buis_up",
+     "tris": 1100
+    },
+    "buis_dn": {
+     "node": "sniper_buis_dn",
+     "tris": 1100
+    }
+   },
    "handL": "fp_hand_l_sniper",
    "lod1": "sniper_lod1",
    "lod1Tris": 244,
@@ -226,8 +382,8 @@
    ],
    "sight": [
     0,
-    0.172,
-    0.15
+    0.132,
+    0.108
    ],
    "guard": [
     -0.02794,
@@ -238,13 +394,43 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.132,
+    0.108
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.02794,
+     0.05803,
+     -0.37
+    ],
+    "lNode": "fp_hand_l_sniper"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.116,
+     -0.04
+    ],
+    "default": null,
+    "rail": [
+     -0.12,
+     0.2
+    ]
+   }
   },
   {
    "kind": "lmg",
    "name": "Gempa",
    "node": "lmg",
-   "tris": 8020,
+   "tris": 12112,
    "mag": {
     "node": "lmg_mag",
     "pos": [
@@ -253,6 +439,16 @@
      -0.09
     ],
     "tris": 880
+   },
+   "buis": {
+    "buis_up": {
+     "node": "lmg_buis_up",
+     "tris": 488
+    },
+    "buis_dn": {
+     "node": "lmg_buis_dn",
+     "tris": 488
+    }
    },
    "handL": "fp_hand_l_lmg",
    "lod1": "lmg_lod1",
@@ -264,8 +460,8 @@
    ],
    "sight": [
     0,
-    0.163,
-    0.06
+    0.168,
+    0.063
    ],
    "guard": [
     -0.02504,
@@ -276,7 +472,37 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.168,
+    0.063
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.02504,
+     0.03731,
+     -0.265
+    ],
+    "lNode": "fp_hand_l_lmg"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.152,
+     -0.02
+    ],
+    "default": null,
+    "rail": [
+     -0.075,
+     0.115
+    ]
+   }
   },
   {
    "kind": "revolver",
@@ -316,13 +542,31 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.111,
+    0.03
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.0315,
+     -0.012,
+     0.0079
+    ],
+    "lNode": "fp_hand_l_pistol"
+   }
   },
   {
    "kind": "burst",
    "name": "Petir",
    "node": "burst",
-   "tris": 5176,
+   "tris": 11888,
    "mag": {
     "node": "burst_mag",
     "pos": [
@@ -342,8 +586,8 @@
    ],
    "sight": [
     0,
-    0.165,
-    -0.042
+    0.148,
+    0.078
    ],
    "guard": [
     -0.0394,
@@ -354,13 +598,43 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.148,
+    0.078
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.0394,
+     0.07311,
+     -0.31
+    ],
+    "lNode": "fp_hand_l_burst"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.132,
+     -0.03
+    ],
+    "default": "holo",
+    "rail": [
+     -0.09,
+     0.17
+    ]
+   }
   },
   {
    "kind": "pdw",
    "name": "Lebah",
    "node": "pdw",
-   "tris": 4856,
+   "tris": 9576,
    "mag": {
     "node": "pdw_mag",
     "pos": [
@@ -369,6 +643,16 @@
      -0.1
     ],
     "tris": 296
+   },
+   "buis": {
+    "buis_up": {
+     "node": "pdw_buis_up",
+     "tris": 1100
+    },
+    "buis_dn": {
+     "node": "pdw_buis_dn",
+     "tris": 1100
+    }
    },
    "handL": "fp_hand_l_pdw",
    "lod1": "pdw_lod1",
@@ -380,19 +664,49 @@
    ],
    "sight": [
     0,
-    0.145,
-    -0.012
+    0.1435,
+    0.048
    ],
    "guard": [
-    -0.03829,
-    0.08779,
+    -0.03821,
+    0.09012,
     -0.2
    ],
    "handR": [
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.1435,
+    0.048
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.03821,
+     0.09012,
+     -0.2
+    ],
+    "lNode": "fp_hand_l_pdw"
+   },
+   "optic": {
+    "pos": [
+     0,
+     0.1275,
+     -0.03
+    ],
+    "default": null,
+    "rail": [
+     -0.06,
+     0.14
+    ]
+   }
   },
   {
    "kind": "dbs",
@@ -432,7 +746,25 @@
     0.026,
     0.004,
     0.01
-   ]
+   ],
+   "sightIron": [
+    0,
+    0.124,
+    0.02
+   ],
+   "grip": {
+    "r": [
+     0.026,
+     0.004,
+     0.01
+    ],
+    "l": [
+     -0.02525,
+     0.03863,
+     -0.23
+    ],
+    "lNode": "fp_hand_l_dbs"
+   }
   }
  ],
  "hands": {
@@ -520,5 +852,126 @@
    "lod1Tris": 76
   }
  ],
+ "optics": {
+  "rds": {
+   "node": "opt_rds",
+   "eye": [
+    0,
+    0.03,
+    0.0318
+   ],
+   "obj": [
+    0,
+    0.03,
+    -0.0284
+   ],
+   "lensR": 0.0118,
+   "objR": 0.0127,
+   "axisH": 0.03,
+   "fill": null,
+   "relief": 0.16,
+   "tris": 6736,
+   "lod1": "opt_rds_lod1",
+   "lod1Tris": 60
+  },
+  "holo": {
+   "node": "opt_holo",
+   "eye": [
+    0,
+    0.032,
+    0.0062
+   ],
+   "obj": [
+    0,
+    0.032,
+    -0.0255
+   ],
+   "lensR": 0.0135,
+   "objR": 0.0135,
+   "axisH": 0.032,
+   "fill": null,
+   "relief": 0.16,
+   "tris": 2948,
+   "win": [
+    0.03,
+    0.023
+   ],
+   "lod1": "opt_holo_lod1",
+   "lod1Tris": 108
+  },
+  "s2": {
+   "node": "opt_s2",
+   "eye": [
+    0,
+    0.034,
+    0.0528
+   ],
+   "obj": [
+    0,
+    0.034,
+    -0.056
+   ],
+   "lensR": 0.0125,
+   "objR": 0.015,
+   "axisH": 0.034,
+   "fill": 0.33,
+   "relief": null,
+   "tris": 6808,
+   "lod1": "opt_s2_lod1",
+   "lod1Tris": 52
+  },
+  "s4": {
+   "node": "opt_s4",
+   "eye": [
+    0,
+    0.038,
+    0.0508
+   ],
+   "obj": [
+    0,
+    0.038,
+    -0.0694
+   ],
+   "lensR": 0.0138,
+   "objR": 0.016,
+   "axisH": 0.038,
+   "fill": 0.76,
+   "relief": null,
+   "tris": 11394,
+   "lod1": "opt_s4_lod1",
+   "lod1Tris": 80
+  },
+  "s8": {
+   "node": "opt_s8",
+   "eye": [
+    0,
+    0.04,
+    0.1585
+   ],
+   "obj": [
+    0,
+    0.04,
+    -0.135
+   ],
+   "lensR": 0.0165,
+   "objR": 0.0262,
+   "axisH": 0.04,
+   "fill": 0.88,
+   "relief": null,
+   "tris": 17856,
+   "ring": {
+    "node": "opt_s8_ring",
+    "pos": [
+     0,
+     0.04,
+     0.0915
+    ],
+    "tris": 2524
+   },
+   "lod1": "opt_s8_lod1",
+   "lod1Tris": 144
+  }
+ },
+ "version": 6,
  "axes": "glTF: +Y atas, laras \u2212Z, kanan +X; origin senjata = titik genggam gagang pistol (condong 18\u00b0)"
 }

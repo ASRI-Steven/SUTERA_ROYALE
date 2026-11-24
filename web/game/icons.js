@@ -6,9 +6,8 @@
 // Semua lewat SATU konteks WebGL kecil milik modul ini (bukan konteks game). warmIcons() menyiapkan semuanya di sela-sela
 // frame (di menu, sebelum pertandingan) lalu MELEPAS konteks itu; permintaan baru sesudahnya membuat konteks lagi seperlunya.
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { itemGeometry, ITEMS } from './loot.js';
-import { WEAPONS, NADES, gunGeometry } from './weapons.js';
+import { WEAPONS, NADES, gunGeometry, weaponRoot } from './weapons.js';
 
 const cache = new Map(), sils = new Map();
 let rdr = null, scene = null, cam = null, mat = null, silMat = null, cv2 = null;
@@ -107,7 +106,7 @@ const SIL_W = 384, SIL_H = 176; // ukuran gambar terbesar (px); dirender 2× lal
 let HD = null; // akar weapons.glb (model detail) yang dimuat warmIcons; null → pakai gunGeometry (lod1 / prosedural)
 function silParts(kind) { // objek model detail satu senjata: simpul <kind> + bagian lepasnya (<kind>_mag, _pump, _cyl, …) tanpa lod1
   if (!HD) return null;
-  const out = HD.children.filter((o) => (o.name === kind || o.name.startsWith(kind + '_')) && !/_lod\d$/.test(o.name));
+  const out = HD.children.filter((o) => (o.name === kind || o.name.startsWith(kind + '_')) && !/_lod\d$/.test(o.name) && !o.name.endsWith('_buis_dn')); // pisir lipat: hanya yang tegak
   let meshes = 0;
   for (const o of out) o.traverse((m) => { if (m.isMesh) meshes++; });
   return meshes ? out : null;
@@ -162,7 +161,7 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 export function warmIcons(onSil, base = 'game/assets/weapons/') {
   if (warmP) return warmP;
   warmP = (async () => {
-    try { const g = await new GLTFLoader().loadAsync(base + 'weapons.glb'); g.scene.updateMatrixWorld(true); HD = g.scene; } catch (e) { HD = null; }
+    { const r = weaponRoot(); HD = r ? r.clone(true) : null; if (HD) HD.updateMatrixWorld(true); } // weapons.glb sudah dimuat game (tidak dimuat dua kali); salinan supaya simpul asli tidak dipinjam
     for (const k of [...Object.keys(WEAPONS), ...Object.keys(NADES)]) { await pause(24); if (makeSil(k) && onSil) onSil(k); }
     if (HD) for (const t of Object.keys(ITEMS)) if (ITEMS[t].kind === 'weapon') cache.delete(t); // ikon senjata diganti versi model detail
     for (const t of Object.keys(ITEMS)) { if (cache.has(t)) continue; await pause(24); itemIcon(t); }

@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { WEAPONS, NADES, AMMO_CAP, gunGeometry, ATTACH, magCap } from './weapons.js';
+import { WEAPONS, NADES, AMMO_CAP, gunGeometry, opticGeometry, ATTACH, magCap } from './weapons.js';
 
 // ---------- Model barang & parasut dari Blender (tools/blender, props.glb), opsional ----------
 // Satu mesh berwarna verteks per barang, asal di dasar tengah (parasut: asal di titik gantung, kanopi di atas).
@@ -94,7 +94,8 @@ function itemGeo(type) {
   if (it.kind === 'nade') return gunGeometry(it.nade).scale(1.6, 1.6, 1.6).rotateX(Math.PI / 2).translate(0, 0.055, 0); // granat Blender, rebah
   if (type === 'h_band') return colored([[new THREE.CylinderGeometry(0.06, 0.06, 0.1, 14).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#efe6d6'], [new THREE.CylinderGeometry(0.03, 0.03, 0.102, 10).rotateZ(Math.PI / 2).translate(0, 0.06, 0), '#c8bda8']]);
   if (type === 'x_mag') return colored([[box(0.07, 0.3, 0.12), '#33363d'], [box(0.075, 0.03, 0.125, 0.3), '#c9a24a'], [box(0.072, 0.02, 0.122, 0.1), '#1d1d1f']]);
-  if (type === 'x_s2' || type === 'x_s4' || type === 'x_s8') { const L = type === 'x_s8' ? 0.46 : type === 'x_s4' ? 0.34 : 0.2, c = type === 'x_s2' ? '#3a3d45' : '#26282d';
+  if (type === 'x_s2' || type === 'x_s4' || type === 'x_s8') { const og = opticGeometry(type.slice(2)); if (og) return og.scale(2.2, 2.2, 2.2).rotateY(Math.PI / 2).translate(0, 0.012, 0); // model optik Blender (LOD1)
+    const L = type === 'x_s8' ? 0.46 : type === 'x_s4' ? 0.34 : 0.2, c = type === 'x_s2' ? '#3a3d45' : '#26282d';
     return colored([[new THREE.CylinderGeometry(0.035, 0.035, L, 14).rotateZ(Math.PI / 2).translate(0, 0.09, 0), c], [new THREE.CylinderGeometry(0.048, 0.04, 0.07, 14).rotateZ(Math.PI / 2).translate(L / 2, 0.09, 0), c], [new THREE.CylinderGeometry(0.044, 0.044, 0.012, 14).rotateZ(Math.PI / 2).translate(L / 2 + 0.036, 0.09, 0), '#58b6e8'], [box(0.1, 0.05, 0.04, 0.0), '#1d1d1f']]); }
   if (type === 'jerry') return colored([[box(0.3, 0.36, 0.14), '#b5332a'], [box(0.31, 0.03, 0.145, 0.19), '#7d211b'], [box(0.12, 0.05, 0.04, 0.385, -0.04), '#2a2a2e'], [new THREE.CylinderGeometry(0.03, 0.03, 0.06, 10).translate(0.1, 0.39, 0), '#e0c040']]);
   if (type === 'h_drink') return colored([[new THREE.CylinderGeometry(0.045, 0.045, 0.17, 14).translate(0, 0.085, 0), '#2f7fd6'], [new THREE.CylinderGeometry(0.046, 0.046, 0.05, 14).translate(0, 0.085, 0), '#f2c14e'], [new THREE.CylinderGeometry(0.04, 0.045, 0.012, 14).translate(0, 0.176, 0), '#d9dde3']]);
