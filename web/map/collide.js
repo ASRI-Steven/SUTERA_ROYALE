@@ -92,6 +92,84 @@ export function createCollider(D, inArea, homes) {
     if (f.kind === 'counter') { const o = -f.d / 2 + 0.17; put(addPoly(rectFlat(f.x - o * sn, f.y + o * c, c, sn, f.w, 0.34), z0 + 2.2, b, 1, z0 + 1.5)); } // lemari gantung dapur
     else if (f.kind === 'kiosk') put(addPoly(pts, z0 + 2.42, b, 1, z0 + 2.3)); // atap kios
   }
+  // Pintu rumah (daun kayu, buka-tutup): poligon setebal dinding di celah pintu setinggi 2,2 m. Keadaan disimpan di sini
+  // (satu sumber kebenaran): terbuka = h −∞ → semua uji (blocksAgent, ray, blocked, solidAt) mengabaikannya tanpa cabang
+  // baru; jumlah poligon tetap seumur dunia (cache nav.js tidak terbuang; nav menganggap pintu selalu bisa dilalui).
+  // D: { b, k, x, y (tengah celah, sisi luar), ux, uy (sepanjang), nx, ny (ke dalam), s0/s1 ujung, w, z, pi, open, t,
+  // dir (+1 ke dalam / −1 ke luar saat terbuka), swing (bit 1 boleh ke dalam, bit 2 boleh ke luar), leaves, maxA, at }
+  const doors = [], doorCells = new Map();
+  let doorStamp = 0;
+  function addDoor(H, d, T) {
+    const e = d.e, sm = (d.s0 + d.s1) / 2, H2 = 2.2;
+    const pi = addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, d.s0, d.s1, 0, T), H2, H.i, 1, 0, null);
+    const D = { id: doors.length, b: H.i, k: H.doors.indexOf(d), x: e.a[0] + e.ux * sm, y: e.a[1] + e.uy * sm, ax: e.a[0] + e.ux * d.s0, ay: e.a[1] + e.uy * d.s0, ux: e.ux, uy: e.uy, nx: e.nx, ny: e.ny, w: d.s1 - d.s0, T, z: 0, pi, open: 0, t: 0, dir: 1,
+      swing: d.swing || 1, leaves: d.leaves || (d.s1 - d.s0 >= 1.3 ? 2 : 1), maxA: d.maxA || Math.PI / 2, at: -99, H2 };
+    polys[pi].door = D;
+    doors.push(D);
+    const k = key(Math.floor(D.x / CELL), Math.floor(D.y / CELL));
+    (doorCells.get(k) || doorCells.set(k, []).get(k)).push(D);
+  }
+  function eachDoor(x, y, r, fn) {
+    for (let cx = Math.floor((x - r) / CELL); cx <= Math.floor((x + r) / CELL); cx++) for (let cy = Math.floor((y - r) / CELL); cy <= Math.floor((y + r) / CELL); cy++) {
+      const L = doorCells.get(key(cx, cy));
+      if (L) for (const D of L) if (fn(D)) return;
+    }
+  }
+  // pintu terdekat (tengah celah ≤ r) setinggi kaki z
+  function doorNear(x, y, z = 0, r = 1.9) {
+    let best = null, bd = r;
+    eachDoor(x, y, r, (D) => { if (Math.abs(z - D.z) > 1.2) return; const d = Math.hypot(D.x + D.nx * D.T / 2 - x, D.y + D.ny * D.T / 2 - y); if (d < bd) { bd = d; best = D; } });
+    return best;
+  }
+  // pintu TERTUTUP yang dipotong ruas gerak (x,y) → (x + dx·reach, y + dy·reach) (dx, dy satuan) — bot membuka sebelum menabraknya
+  function doorAhead(x, y, z, dx, dy, reach = 1.3) {
+    let best = null, bt = Infinity;
+    eachDoor(x, y, reach + 2, (D) => {
+      if (D.open || Math.abs(z - D.z) > 1.2) return;
+      const mx = D.x + D.nx * D.T / 2, my = D.y + D.ny * D.T / 2, rx = x - mx, ry = y - my;
+      const v0 = rx * D.nx + ry * D.ny, v1 = v0 + (dx * D.nx + dy * D.ny) * reach; // jarak ke bidang pintu (normal) di awal & ujung ruas
+      if (Math.abs(v0) > reach + 0.5 || (v0 > 0.55 && v1 > 0.55) || (v0 < -0.55 && v1 < -0.55)) return; // tidak mendekati bidang pintu
+      const den = dx * D.nx + dy * D.ny;
+      if (v0 * den > -0.2 * Math.abs(v0) || Math.abs(den) < 0.2) return; // harus bergerak menuju bidang pintu (bukan sejajar dinding)
+      const t = Math.max(0, -v0 / den);
+      const u = (rx + dx * t) * D.ux + (ry + dy * t) * D.uy; // posisi sepanjang pintu di titik potong
+      if (Math.abs(u) > D.w / 2 + 0.2 || t > reach || t >= bt) return;
+      bt = t; best = D;
+    });
+    return best;
+  }
+  // agen menghalangi pintu ditutup: lingkaran badan (r 0,45) memotong persegi celah atau cakram ayun di sisi terbuka
+  function doorClear(D, agents) {
+    if (!agents) return true;
+    const hw = D.w / 2, lw = D.w / D.leaves;
+    for (const a of agents) {
+      if (!a.alive || a.state === 'plane' || a.state === 'dead' || Math.abs(a.pos.y - D.z) > 1.5) continue;
+      const x = a.pos.x - D.x, y = -a.pos.z - D.y, u = x * D.ux + y * D.uy, v = x * D.nx + y * D.ny;
+      if (Math.abs(u) < hw + 0.45 && v > -0.45 && v < D.T + 0.45) return false;
+      if (D.open) for (let l = 0; l < D.leaves; l++) { // cakram ayun di sisi daun terbuka
+        const hu = l === 0 ? -hw : hw, sv = D.dir > 0 ? v - D.T : -v;
+        if (sv > -0.45 && Math.hypot(u - hu, sv > 0 ? sv : 0) < lw + 0.15 + 0.45) return false;
+      }
+    }
+    return true;
+  }
+  // buka/tutup. Menutup ditolak (false) bila ada agen di ambang / di busur ayun. Membuka: daun berayun menjauhi pembuka
+  // (opener = agen, opsional) bila arah itu diizinkan (D.swing).
+  function setDoor(D, open, agents = null, now = 0, opener = null) {
+    open = open ? 1 : 0;
+    if (D.open === open) return true;
+    if (!open && !doorClear(D, agents)) return false;
+    if (open) {
+      let want = D.swing & 1 ? 1 : -1;
+      if (opener && D.swing === 3) { const v = (opener.pos.x - D.x) * D.nx + (-opener.pos.z - D.y) * D.ny; want = v > D.T / 2 ? -1 : 1; } // dari dalam → ke luar
+      D.dir = want;
+    }
+    D.open = open; D.at = now;
+    polys[D.pi].h = open ? -Infinity : D.H2;
+    doorStamp++;
+    return true;
+  }
+  function resetDoors() { for (const D of doors) { D.open = 0; D.t = 0; D.at = -99; polys[D.pi].h = D.H2; } doorStamp++; }
   function addHome(H) {
     const T = 0.2, b = H.i;
     for (const e of H.edges) { // dinding luar (tebal T ke dalam), celah pintu, ambang di atas pintu
@@ -106,6 +184,7 @@ export function createCollider(D, inArea, homes) {
       for (const d of [...doors, { s0: end, s1: end }]) {
         if (d.s0 - s > 0.02) addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, s, d.s0, 0, T), H.h, b, 1, 0, ex);
         if (d.s1 > d.s0 && d.s0 < e.len) addPoly(strip(e.a[0], e.a[1], e.ux, e.uy, e.nx, e.ny, d.s0, d.s1, 0, T), H.h, b, 1, d.h || 2.2, ex);
+        if (!H.kind && d.s1 > d.s0 && d.s0 < e.len) addDoor(H, d, T);
         s = d.s1;
       }
     }
@@ -658,5 +737,5 @@ export function createCollider(D, inArea, homes) {
     }
     return -1;
   }
-  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, liftSpot, addLayer, addFurnLayer, removeLayer, lastTouch, inArea, addObstacles, fitProne, crossed, guard };
+  return { polys, trees, segs, lifts, near, resolve, step, blocked, findFree, viewSpot, roadSpot, arrival, solidAt, roadAt, ray, los, inBuilding, waterAt, waterDepth, floorAt, roofAt, liftAt, liftSpot, addLayer, addFurnLayer, removeLayer, lastTouch, inArea, addObstacles, fitProne, crossed, guard, doors, doorNear, doorAhead, setDoor, resetDoors, get doorStamp() { return doorStamp; } };
 }

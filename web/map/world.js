@@ -1058,7 +1058,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
         float hfx = fract(vWuv.x / 3.6), hfy = fract(vWuv.y / 3.3);
         bool win = hWinOk && vWuv.y > 0.8 && hfy >= 0.36 && hfy <= 0.78 && hfx >= 0.3 && hfx <= 0.7;
         if (isOpen && (door || win)) discard;
-        if (door) { doorK = 1.0; dU0 = inA ? o0.g : o1.r; dU1 = inA ? o0.b : o1.g; }
+        if (door) { doorK = 1.0; dU0 = inA ? o0.g : o1.r; dU1 = inA ? o0.b : o1.g; vec4 o3 = texelFetch(uOpen, tc + ivec2(3, 0), 0); if ((inA ? o3.x : o3.y) > 0.5) doorK = 2.0; } // 2 = pintu terbuka (rongga)
       }
     }
   }
@@ -1205,6 +1205,7 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     vec3 dfr = fs2 < 3.0 ? vec3(0.95, 0.94, 0.91) : fs2 < 5.0 ? vec3(0.2, 0.2, 0.22) : vec3(0.42, 0.29, 0.19);
     dc = mix(dc, dfr, max(max(step(lx, 0.07), step(lw - 0.07, lx)), step(2.12, ly))); // kusen
     dc = mix(dc, vec3(0.78, 0.74, 0.62), 1.0 - step(0.03, length(vec2(hx - 0.07, ly - 1.02)))); // gagang
+    if (doorK > 1.5) dc = mix(vec3(0.06), dfr, max(max(step(lx, 0.07), step(lw - 0.07, lx)), step(2.12, ly))); // terbuka: rongga gelap + kusen
     diffuseColor.rgb = dc;
 #ifdef REAL
     rRough = 0.5;
@@ -1570,6 +1571,13 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     D.bands[i * 2] = z0; D.bands[i * 2 + 1] = z1;
     openTex.needsUpdate = true;
   };
+  // keadaan pintu rumah (map/collide.js col.doors, disalin interiors.js): texel 4 = (pintu A terbuka, pintu B terbuka). Rumah
+  // belum dibuka (interior belum dibangun): pintu terbuka digambar rongga gelap, tertutup = daun kayu
+  const setDoorState = (i, k, open) => {
+    if (k < 0 || k > 1) return;
+    openData[texOf(i) + 12 + k] = open ? 1 : 0;
+    openTex.needsUpdate = true;
+  };
   const buildings = new THREE.Mesh(bGeo, bMat);
   buildings.castShadow = buildings.receiveShadow = true;
   if (game && real) {
@@ -1768,5 +1776,5 @@ vec3 interiorRoom(vec2 p, vec2 cell, float D, vec3 rd, float seed, float style, 
     sunDisc.material.opacity = 0;
   }
 
-  return { real, V2, C, boundary, boundaryHoles, enclaves, game, bb, center, inArea, LAT, LON, B, renderer, small, scene, camera, hemi, sun, TEX, slab, slabTop, floorShadow, overlay, flatGeo, ribbonGeo, stripGeo, markGeo, dashGeo, clusterFill, clusterLines, goldEdge, nightU, skyU, bMat, geo, addBuilding, buildings, edges, lineMat, trees, treesReady, setHouseOpen, setFloorBand, lamps, skyUni, sky, dome, stars, sunDisc, cloudMat, clouds };
+  return { real, V2, C, boundary, boundaryHoles, enclaves, game, bb, center, inArea, LAT, LON, B, renderer, small, scene, camera, hemi, sun, TEX, slab, slabTop, floorShadow, overlay, flatGeo, ribbonGeo, stripGeo, markGeo, dashGeo, clusterFill, clusterLines, goldEdge, nightU, skyU, bMat, geo, addBuilding, buildings, edges, lineMat, trees, treesReady, setHouseOpen, setFloorBand, setDoorState, lamps, skyUni, sky, dome, stars, sunDisc, cloudMat, clouds };
 }

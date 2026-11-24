@@ -418,6 +418,21 @@ export function boom(dist = 0, p = 0) {
   tone({ f0: 90, f1: 28, dur: 1.1, gain: vol, p: p * 0.7 });
   burst({ t: 0.08, dur: 1.8, freq: 260, gain: vol * 0.6, p: p * 0.5 });
 }
+// pintu rumah: buka = derit engsel + klik gerendel, tutup = dentum kayu + desis udara. vol 0..1 (pemanggil menghitung dari
+// jarak, 0 di atas 35 m), p = pan, muffled = di balik dinding (frekuensi tinggi hilang)
+export function houseDoor(open, vol = 1, p = 0, muffled = false) {
+  if (!ok() || vol <= 0.01) return;
+  const m = muffled ? 0.55 : 1;
+  if (open) {
+    burst({ dur: 0.03, freq: muffled ? 1400 : 3200, type: 'bandpass', q: 4, gain: 0.22 * vol * m, p }); // gerendel
+    tone({ t: 0.03, f0: 420, f1: 260, dur: 0.18, gain: 0.05 * vol * m, type: 'sawtooth', p }); // derit
+    tone({ t: 0.05, f0: 610, f1: 380, dur: 0.14, gain: 0.025 * vol * m, type: 'triangle', p });
+  } else {
+    tone({ f0: 140, f1: 70, dur: 0.16, gain: 0.32 * vol, p }); // dentum
+    burst({ dur: 0.09, freq: muffled ? 300 : 650, type: 'lowpass', gain: 0.3 * vol, p });
+    burst({ t: 0.02, dur: 0.03, freq: muffled ? 1200 : 2600, type: 'bandpass', q: 3, gain: 0.12 * vol * m, p }); // gerendel masuk
+  }
+}
 export function door() { if (ok()) { burst({ dur: 0.06, freq: 900, gain: 0.25 }); tone({ f0: 160, f1: 90, dur: 0.08, gain: 0.25 }); } }
 
 // ---------- Klip suara (mis. klakson MP3 kendaraan) ----------

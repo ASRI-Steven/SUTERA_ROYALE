@@ -153,6 +153,7 @@ export function createNav(col, homes = null) {
       if (marks[pi] === mark) continue;
       marks[pi] = mark;
       const P = polys[pi];
+      if (P.door) continue; // pintu rumah (buka-tutup): selalu bisa dilalui, bot membukanya saat lewat (bots.js steer)
       if (P.x1 < qbx0 || P.x0 > qbx1 || P.y1 < qby0 || P.y0 > qby1) continue;
       if (P.b === -1) { if (qlv >= 0.5) continue; } else if (P.z0 > qlv + 1.9 || P.h < qlv + 0.35) continue;
       if (P.stair) { if (qlv < 0.5 && polyHit(stairPts(pi, P))) return true; continue; }

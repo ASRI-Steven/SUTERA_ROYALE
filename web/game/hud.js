@@ -50,6 +50,7 @@ const GLYPHS = {
   plus: '<path d="M9.500 3.500h5v6h6v5h-6v6h-5v-6h-6v-5h6z"/>',
   air: '<circle cx="8" cy="15.500" r="4"/><circle cx="16" cy="9" r="3"/><circle cx="17.500" cy="17.500" r="1.800"/>',
   vault: '<path d="M12 3l6 6.200-1.700 1.700-3.100-3.200V16h-2.400V7.700l-3.100 3.200L6 9.200zM3 19h18v2.200H3z"/>',
+  door: '<path fill-rule="evenodd" d="M5 2.500h11.500V21.500H5zm2.200 2.200v14.600h7.100V4.700zM12 11.200a1 1 0 1 1 0 2 1 1 0 0 1 0-2zM18 7h1.800v14.500H18z"/>',
   nav: '<path d="M12 2.500l7.500 17.500-7.500-3.800L4.500 20z"/>',
   squad: '<circle cx="12" cy="7" r="3.1"/><path d="M5.8 19.5c0-3.700 2.700-6 6.200-6s6.200 2.300 6.200 6z"/><g opacity=".7"><circle cx="4.9" cy="9.3" r="2.3"/><path d="M.8 18.3c0-2.800 1.800-4.700 4.300-4.700.6 0 1.200.1 1.700.3-1.400 1.200-2.300 3-2.400 5.100H.8z"/><circle cx="19.1" cy="9.3" r="2.3"/><path d="M23.2 18.3c0-2.800-1.800-4.700-4.300-4.700-.6 0-1.200.1-1.700.3 1.400 1.200 2.300 3 2.400 5.100h3.600z"/></g>',
   down: '<path d="M12 20.8l-1.300-1.200C5.900 15.300 3 12.600 3 9.300 3 6.600 5.100 4.500 7.800 4.500c1.600 0 3.100.7 4.200 1.900 1.100-1.200 2.600-1.900 4.200-1.900 2.700 0 4.800 2.100 4.800 4.800 0 3.300-2.900 6-7.700 10.300z"/>',
@@ -331,6 +332,7 @@ export function createHud() {
     if (t.startsWith('Buka peti')) return iconHtml('crate');
     if (t.startsWith('Naik ') || t.startsWith('Kendaraan')) return ic('veh');
     if (t.startsWith('Lompati')) return ic('vault');
+    if (t.endsWith(' pintu')) return ic('door');
     return '';
   }
 
