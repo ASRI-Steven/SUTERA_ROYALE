@@ -384,6 +384,7 @@ export function createBots(ctx, n = 50) {
   function airStep(b, dt) {
     const a = b.ai, tx = a.land[0], ty = a.land[1], x = b.pos.x, y = -b.pos.z, d = Math.hypot(tx - x, ty - y);
     const chute = b.state === 'chute', hs = chute ? 11 : 24, vs = chute ? 9 : 50;
+    b.airD = d; // jarak ke titik mendarat (pose udara: melayang maju bila masih jauh)
     if (d > 1) { const k = Math.min(hs, d / Math.max(0.5, b.pos.y / vs)) * dt; b.pos.x += (tx - x) / d * Math.min(d, Math.max(k, hs * dt * 0.3)); b.pos.z -= (ty - y) / d * Math.min(d, Math.max(k, hs * dt * 0.3)); }
     b.yaw = Math.atan2(tx - x, -(ty - y));
     b.pos.y -= vs * dt;
@@ -1833,6 +1834,7 @@ export function createBots(ctx, n = 50) {
           continue;
         }
         if (b.state === 'plane') {
+          b.airT = 0;
           if (b.ally && PLAYER && PLAYER.dropMode && PLAYER.dropMode !== 'lead') { // regu terjun menurut rencananya sendiri (pemain ikut, atau pemain turun sendiri)
             if (flight && flight.t >= b.ai.dropAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4 + (b.slot || 1) * 1.5; b.ai.land = b.ai.dropLand; b.ai.own = true; }
           }
@@ -1840,7 +1842,7 @@ export function createBots(ctx, n = 50) {
           else if (flight && flight.t >= b.ai.jumpAt) { b.state = 'fall'; flight.pos(flight.t, b.pos); b.pos.y -= 4; }
           continue;
         }
-        if (b.state === 'fall' || b.state === 'chute') { if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; }
+        if (b.state === 'fall' || b.state === 'chute') { b.airT = (b.airT || 0) + dt; if (!(b.ally && !b.ai.own && allyAir(b, dt))) airStep(b, dt); continue; } // airT: waktu simulasi sejak terjun (pose udara)
         if (b.down) { downStep(b, dt, now); continue; }
         b.ai.next -= dt;
         if (b.ai.next <= 0) { b.ai.next = 0.25 + Math.random() * 0.1; think(b, now); }
@@ -1893,6 +1895,18 @@ export function createBots(ctx, n = 50) {
           p.freefall = b.state === 'fall';
           p.chute = b.state === 'chute';
           p.air = false;
+          if (p.freefall || p.chute) { // masukan pose udara (map/rigair.js); rekan formasi meniru gaya pemain
+            const own = !(b.ally && !b.ai.own && PLAYER && (PLAYER.state === 'fall' || PLAYER.state === 'chute')), PP = PLAYER && PLAYER.pose;
+            const seed = ((b.i * 0.6180339) % 1 + 1) % 1, at = b.airT || 0;
+            p.airT = at; p.airSeed = seed; p.airSide = own ? 0 : PP.airSide || 0;
+            p.airFwd = own ? ((b.airD || 0) > 40 ? 0.35 : 0) : PP.airFwd || 0;
+            p.airDive = own ? (seed > 0.7 && b.pos.y > 350 ? 0.4 : 0) : PP.airDive || 0;
+            const dy = b.pyaw == null || at < 0.3 || pdt <= 0 ? 0 : -wrap(b.yaw - b.pyaw) / pdt;
+            p.airTurn = clamp(dy, -3, 3);
+            p.airSpd = p.chute ? 12 : 52;
+            p.lookYaw = own || !PLAYER ? 0 : wrap(Math.atan2(PLAYER.pos.x - b.pos.x, PLAYER.pos.z - b.pos.z) - b.yaw);
+            b.pyaw = b.yaw;
+          } else b.pyaw = null;
           p.prone = !driving && !!b.prone && b.alive;
           p.crouch = !driving && !p.prone && (b.crouch || !!b.healEnd || !!b.reviving);
           { const w0 = b.cur >= 0 && b.weapons[b.cur]; p.reload = b.reloadEnd && w0 ? 1 - (b.reloadEnd - now) / WEAPONS[w0.kind].reload : null; }
