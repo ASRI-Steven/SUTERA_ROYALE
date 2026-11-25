@@ -1264,15 +1264,15 @@ Rancangan lengkap tiap alur (audit, angka, kriteria lulus, milestone) ada di `do
 >
 > | # | Alur | Sudah di main | Bagian | Sisa |
 > |---|---|---|---|---|
-> | 1 | Skin v2 | M1 etalase Merak | §36 | **Gerbang visual Steven**, lalu M2 (konversi 11 skin lama), M3–M5 (skin & kostum baru) |
-> | 2 | Senjata | M2: tampilan bidik + Garuda, P9, Rajawali | §39 | **Gerbang visual Steven**, lalu M3 (8 senjata sisanya), M4 (LOD1/model dunia), M5 |
-> | 3 | Kostum | M2: fondasi + `char_malam`, `char_batik`, `char_garuda` | §41 | **Gerbang visual Steven**, lalu M3 (pegas/kain), M4–M6 |
-> | 4 | Tata letak | M2 (perapi jalan + gedung) dan M3 (tembok keliling) | §40, §42 | M4 (tanam ulang pohon), M5 (termasuk tembok apartemen) — tidak menunggu gerbang visual |
+> | 1 | Skin v2 | M1 etalase Merak, M2 (11 skin lama dikonversi) | §36, §45 | M3–M5 (16 skin senjata + 13 kostum baru) |
+> | 2 | Senjata | M2 (tampilan bidik + 3 perintis), M3 (8 senjata sisanya) | §39, §44 | M4 (LOD1/model dunia di tangan karakter), M5, `setGrip` |
+> | 3 | Kostum | M2 (fondasi + 3 perintis), M3 bagian pegas/kain | §41, §43 | Sisa M3 (7 kostum biasa/langka, tulang genggam), M4–M6 |
+> | 4 | Tata letak | M2, M3 (tembok keliling), M4 (pohon), M5 (apartemen, batas kawasan) | §40, §42, §46 | Selesai; sisa kecil di §46 (bus di gerbang k2, rumput, context) |
 > | 5 | Terjun | M5 | §37 | Selesai (kekurangan kecil di §37) |
 > | 6 | Bangunan | M5 | §38 | Selesai; pose `TUCK` perlu dilihat Steven |
 >
-> Skin, Senjata, dan Kostum masuk main **sebelum** gerbang visualnya disetujui (atas permintaan Jason), jadi tampilannya masih
-> bisa berubah menurut catatan Steven. Worktree `.wt/<alur>` dan branch `wip/<alur>` sesi ini SUDAH DIHAPUS (lokal dan
+> Skin, Senjata, dan Kostum masuk main **sebelum** gerbang visualnya disetujui, dan atas keputusan Jason milestone berikutnya
+> juga sudah dikerjakan tanpa menunggu Steven — tampilannya masih bisa berubah menurut catatan Steven. Worktree `.wt/<alur>` dan branch `wip/<alur>` sesi ini SUDAH DIHAPUS (lokal dan
 > `origin/wip/skinv2`) karena semuanya sudah termuat di main; yang tersisa hanya `main`. Mulai alur baru dari main.
 > Alat uji lama `.wt/_tools/` versi Steven tidak ada; penggantinya (server uji + pengendali CDP berframe manual, alat audit
 > tata letak) ada di luar repo di mesin Jason dan bisa hilang.
