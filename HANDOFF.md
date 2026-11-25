@@ -1484,3 +1484,27 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   garis tembok berkelok kecil mengikuti raster. Belum diuji: kendaraan melewati gerbang, pertandingan penuh, perangkat nyata;
   uji jalan hanya 16 bukaan (sisanya dibuktikan A10 di node).
 - **Berikutnya**: M4 tanam ulang pohon, M5 (termasuk tembok apartemen).
+
+## 43. Kostum M3 — pegas/kain (25 Nov) — SUDAH di main, `?v=202611250835`; bagian "kostum biasa/langka" BELUM
+
+- **Pegas/kain**: `costumes.py`/`costume_parts.py` (`skirt_rig`, `add_chain`) menulis `variants.<varian>.springs` di `costume.json`;
+  JOINTS 19+ = ruas pegas (jatuh ke baris kedua tekstur tulang karakter tunggal; shader dan jalur kerumunan tidak berubah).
+  Runtime `rig.js` `makeSprings`/`stepSprings`: tiap ruas mengikuti kaki yang paling menonjol ke arah luar rantainya (softmax
+  paha/betis kiri-kanan vs menggantung) + Verlet (simpangan ≤ 4,5 cm, lantai, panjang ruas tetap); `dt` dari pembungkus
+  `rig.pose` per karakter, dihitung saat `SkinStore.onUpdate` — tanpa `tick` di `player.js`/`lobby.js`.
+- **Menyimpang dari rancangan**: bukan tumbukan kapsul (gagal: kaki lewat di antara sendi rantai); jarik dipendekkan dari semata
+  kaki ke sebetis; tulang tambahan jarik 16, Garuda 18 (rancangan membatasi 12; kapasitas teknis 19).
+- **Hasil**: jarik `char_batik` tidak lagi meregang seperti tenda saat lari; dodot `char_garuda` tidak meregang, lutut tidak
+  menembus saat jongkok; sayap Garuda bergoyang ringan (buka/tutup tetap M5). Biaya 0,0034 ms/frame (1 karakter), 0,013 ms (4).
+- **Perbaikan M2**: bobot nyasar pasca-decimate (`fix_stray_weights` di `build_lods` — sumber garis gelap tangan → pinggul;
+  segitiga campur 27 → 0), penahan tumit selop, garis rambut di bawah blangkon (hasil tipis), Operator Malam kini loreng
+  biru-arang + rompi zaitun + aksen khaki.
+- **Diuji**: build 3 kostum × 4 varian; panggung m1/f1 × 10 pose (diam, senapan, lari, jongkok, tiarap, terjun, payung, tumbang,
+  mobil, motor); lobi dan pertandingan orang ketiga ketiga kostum, 0 pesan konsol (Batik & Garuda diulang oleh integrator).
+  Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: GERAK sebenarnya (semua penilaian dari gambar diam: getar/kedip/pegas tertinggal belum pernah dilihat);
+  tiarap/terjun/kendaraan di pertandingan sungguhan; m2/f2 dan toko di peramban; kembali dari orang pertama ke orang ketiga.
+- **Kekurangan**: `char_batik` di lobi memakai rompi hijau bawaan di atas kemeja (`hideVest` false); jarik terbuka lebar saat
+  terjun; sayap tipis dari samping; mutu keseluruhan belum premium.
+- **Belum dikerjakan dari M3**: kostum biasa/langka (kabut, gurun, rimba, merahputih, samudra, tenun, ondel), tulang genggam
+  `gripL/R`. M4–M6 belum dimulai.

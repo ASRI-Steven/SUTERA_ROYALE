@@ -64,7 +64,8 @@
    "albedo": "m1_albedo.webp",
    "normal": "m1_normal.webp",
    "orm": "m1_orm.webp",
-   "texBytes": 214080
+   "texBytes": 229656,
+   "springs": []
   },
   "f1": {
    "glb": "f1.glb",
@@ -108,7 +109,8 @@
    "albedo": "f1_albedo.webp",
    "normal": "f1_normal.webp",
    "orm": "f1_orm.webp",
-   "texBytes": 214188
+   "texBytes": 228724,
+   "springs": []
   },
   "m2": {
    "glb": "m2.glb",
@@ -152,7 +154,8 @@
    "albedo": "m2_albedo.webp",
    "normal": "m2_normal.webp",
    "orm": "m2_orm.webp",
-   "texBytes": 214298
+   "texBytes": 229450,
+   "springs": []
   },
   "f2": {
    "glb": "f2.glb",
@@ -196,7 +199,8 @@
    "albedo": "f2_albedo.webp",
    "normal": "f2_normal.webp",
    "orm": "f2_orm.webp",
-   "texBytes": 212576
+   "texBytes": 227904,
+   "springs": []
   }
  },
  "hideHair": true,
@@ -213,7 +217,7 @@
   "inner": "#1f2126"
  },
  "thumb": "thumb.webp",
- "springs": [],
+ "spring": false,
  "mech": [],
  "emis": null,
  "fp": null,
@@ -249,5 +253,5 @@
    "use": "geometri pakaian (warna & motif dibuat ulang)"
   }
  ],
- "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"; JOINTS 19+ = ruas pegas variants.<varian>.springs, lihat rig.js SPR_BASE). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
 }

@@ -29,16 +29,16 @@
     "m1_lod1"
    ],
    "tris": [
-    16448,
-    5732
+    16579,
+    5799
    ],
    "verts": [
-    9800,
-    3838
+    9910,
+    3902
    ],
    "detail": {
     "head": 3499,
-    "hand": 4438,
+    "hand": 4497,
     "male_casualsuit01": 3000,
     "eye": 172,
     "blangkon": 768,
@@ -53,14 +53,376 @@
     "keris_hulu": 80,
     "selop_sol_L": 88,
     "selop_atas_L": 96,
+    "selop_tumit_L": 36,
     "selop_sol_R": 88,
-    "selop_atas_R": 96
+    "selop_atas_R": 96,
+    "selop_tumit_R": 36
    },
-   "glbBytes": 574844,
+   "glbBytes": 581604,
    "albedo": "m1_albedo.webp",
    "normal": "m1_normal.webp",
    "orm": "m1_orm.webp",
-   "texBytes": 493456
+   "texBytes": 501824,
+   "springs": [
+    {
+     "name": "jarik0",
+     "parent": "hips",
+     "joint": 19,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1374
+      ],
+      [
+       0.0,
+       0.53,
+       0.1271
+      ],
+      [
+       0.0,
+       0.28,
+       0.1149
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik1",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.1198,
+       0.95,
+       0.1249
+      ],
+      [
+       0.1188,
+       0.53,
+       0.1147
+      ],
+      [
+       0.1178,
+       0.28,
+       0.1026
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik2",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.1743,
+       0.95,
+       0.0051
+      ],
+      [
+       0.1729,
+       0.53,
+       -0.0041
+      ],
+      [
+       0.1729,
+       0.28,
+       -0.0153
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik3",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.1139,
+       0.95,
+       -0.1088
+      ],
+      [
+       0.113,
+       0.53,
+       -0.1171
+      ],
+      [
+       0.1121,
+       0.28,
+       -0.1274
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik4",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.131
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1391
+      ],
+      [
+       0.0,
+       0.28,
+       -0.1492
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik5",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       -0.1141,
+       0.95,
+       -0.1089
+      ],
+      [
+       -0.1131,
+       0.53,
+       -0.1172
+      ],
+      [
+       -0.1122,
+       0.28,
+       -0.1275
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik6",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.1743,
+       0.95,
+       0.0051
+      ],
+      [
+       -0.1729,
+       0.53,
+       -0.0041
+      ],
+      [
+       -0.1732,
+       0.28,
+       -0.0153
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik7",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.1197,
+       0.95,
+       0.1249
+      ],
+      [
+       -0.1188,
+       0.53,
+       0.1147
+      ],
+      [
+       -0.1178,
+       0.28,
+       0.1025
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    }
+   ],
+   "caps": [
+    [
+     "thighL",
+     "shinL",
+     0.098
+    ],
+    [
+     "shinL",
+     "footL",
+     0.078
+    ],
+    [
+     "thighR",
+     "shinR",
+     0.098
+    ],
+    [
+     "shinR",
+     "footR",
+     0.078
+    ]
+   ]
   },
   "f1": {
    "glb": "f1.glb",
@@ -69,16 +431,16 @@
     "f1_lod1"
    ],
    "tris": [
-    16278,
-    5676
+    16396,
+    5737
    ],
    "verts": [
-    9657,
-    3762
+    9760,
+    3816
    ],
    "detail": {
     "head": 3499,
-    "hand": 4268,
+    "hand": 4314,
     "male_casualsuit01": 2999,
     "eye": 172,
     "blangkon": 768,
@@ -93,14 +455,354 @@
     "keris_hulu": 80,
     "selop_sol_L": 88,
     "selop_atas_L": 96,
+    "selop_tumit_L": 36,
     "selop_sol_R": 88,
-    "selop_atas_R": 96
+    "selop_atas_R": 96,
+    "selop_tumit_R": 36
    },
-   "glbBytes": 566476,
+   "glbBytes": 572576,
    "albedo": "f1_albedo.webp",
    "normal": "f1_normal.webp",
    "orm": "f1_orm.webp",
-   "texBytes": 486034
+   "texBytes": 497370,
+   "springs": [
+    {
+     "name": "jarik0",
+     "parent": "hips",
+     "joint": 19,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1297
+      ],
+      [
+       0.0,
+       0.53,
+       0.1287
+      ],
+      [
+       0.0,
+       0.28,
+       0.1164
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik1",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.131,
+       0.95,
+       0.1259
+      ],
+      [
+       0.13,
+       0.53,
+       0.125
+      ],
+      [
+       0.1289,
+       0.28,
+       0.1127
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik2",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.2002,
+       0.95,
+       -0.0051
+      ],
+      [
+       0.1986,
+       0.53,
+       -0.005
+      ],
+      [
+       0.197,
+       0.28,
+       -0.0162
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik3",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.1213,
+       0.95,
+       -0.1264
+      ],
+      [
+       0.1203,
+       0.53,
+       -0.1253
+      ],
+      [
+       0.1194,
+       0.28,
+       -0.1356
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik4",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1388
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1377
+      ],
+      [
+       0.0,
+       0.28,
+       -0.1479
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik5",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       -0.1214,
+       0.95,
+       -0.1264
+      ],
+      [
+       -0.1204,
+       0.53,
+       -0.1254
+      ],
+      [
+       -0.1194,
+       0.28,
+       -0.1356
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik6",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.2002,
+       0.95,
+       -0.0051
+      ],
+      [
+       -0.1986,
+       0.53,
+       -0.005
+      ],
+      [
+       -0.197,
+       0.28,
+       -0.0162
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik7",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.131,
+       0.95,
+       0.1259
+      ],
+      [
+       -0.13,
+       0.53,
+       0.125
+      ],
+      [
+       -0.1289,
+       0.28,
+       0.1127
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    }
+   ]
   },
   "m2": {
    "glb": "m2.glb",
@@ -109,21 +811,21 @@
     "m2_lod1"
    ],
    "tris": [
-    16392,
-    5713
+    16536,
+    5783
    ],
    "verts": [
-    9766,
-    3833
+    9881,
+    3894
    ],
    "detail": {
     "head": 3500,
-    "hand": 4381,
+    "hand": 4452,
     "male_casualsuit01": 3000,
     "eye": 172,
     "blangkon": 768,
     "blangkon_wiron": 216,
-    "jarik": 2399,
+    "jarik": 2400,
     "jarik_wiron": 660,
     "stagen": 480,
     "epek": 192,
@@ -133,14 +835,354 @@
     "keris_hulu": 80,
     "selop_sol_L": 88,
     "selop_atas_L": 96,
+    "selop_tumit_L": 36,
     "selop_sol_R": 88,
-    "selop_atas_R": 96
+    "selop_atas_R": 96,
+    "selop_tumit_R": 36
    },
-   "glbBytes": 573144,
+   "glbBytes": 580060,
    "albedo": "m2_albedo.webp",
    "normal": "m2_normal.webp",
    "orm": "m2_orm.webp",
-   "texBytes": 496122
+   "texBytes": 503762,
+   "springs": [
+    {
+     "name": "jarik0",
+     "parent": "hips",
+     "joint": 19,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1371
+      ],
+      [
+       0.0,
+       0.53,
+       0.1267
+      ],
+      [
+       0.0,
+       0.28,
+       0.1138
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik1",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.1203,
+       0.95,
+       0.1258
+      ],
+      [
+       0.1194,
+       0.53,
+       0.1154
+      ],
+      [
+       0.1184,
+       0.28,
+       0.1026
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik2",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.1758,
+       0.95,
+       0.0055
+      ],
+      [
+       0.1744,
+       0.53,
+       -0.004
+      ],
+      [
+       0.1737,
+       0.28,
+       -0.0158
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik3",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.1137,
+       0.95,
+       -0.1082
+      ],
+      [
+       0.1127,
+       0.53,
+       -0.1167
+      ],
+      [
+       0.1118,
+       0.28,
+       -0.1277
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik4",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1303
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1386
+      ],
+      [
+       0.0,
+       0.28,
+       -0.1494
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik5",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       -0.1138,
+       0.95,
+       -0.1084
+      ],
+      [
+       -0.1129,
+       0.53,
+       -0.1169
+      ],
+      [
+       -0.112,
+       0.28,
+       -0.1278
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik6",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.1758,
+       0.95,
+       0.0055
+      ],
+      [
+       -0.1744,
+       0.53,
+       -0.004
+      ],
+      [
+       -0.1738,
+       0.28,
+       -0.0158
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik7",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.1203,
+       0.95,
+       0.1258
+      ],
+      [
+       -0.1194,
+       0.53,
+       0.1154
+      ],
+      [
+       -0.1184,
+       0.28,
+       0.1026
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    }
+   ]
   },
   "f2": {
    "glb": "f2.glb",
@@ -149,21 +1191,21 @@
     "f2_lod1"
    ],
    "tris": [
-    16438,
-    5724
+    16513,
+    5774
    ],
    "verts": [
-    9729,
-    3788
+    9812,
+    3842
    ],
    "detail": {
     "head": 3500,
-    "hand": 4427,
+    "hand": 4429,
     "male_casualsuit01": 3000,
     "eye": 172,
     "blangkon": 768,
     "blangkon_wiron": 216,
-    "jarik": 2399,
+    "jarik": 2400,
     "jarik_wiron": 660,
     "stagen": 480,
     "epek": 192,
@@ -173,14 +1215,354 @@
     "keris_hulu": 80,
     "selop_sol_L": 88,
     "selop_atas_L": 96,
+    "selop_tumit_L": 36,
     "selop_sol_R": 88,
-    "selop_atas_R": 96
+    "selop_atas_R": 96,
+    "selop_tumit_R": 36
    },
-   "glbBytes": 570860,
+   "glbBytes": 575996,
    "albedo": "f2_albedo.webp",
    "normal": "f2_normal.webp",
    "orm": "f2_orm.webp",
-   "texBytes": 485040
+   "texBytes": 496270,
+   "springs": [
+    {
+     "name": "jarik0",
+     "parent": "hips",
+     "joint": 19,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1356
+      ],
+      [
+       0.0,
+       0.53,
+       0.1333
+      ],
+      [
+       0.0,
+       0.28,
+       0.1201
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik1",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.1313,
+       0.95,
+       0.1285
+      ],
+      [
+       0.1303,
+       0.53,
+       0.1262
+      ],
+      [
+       0.1292,
+       0.28,
+       0.113
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik2",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.2061,
+       0.95,
+       -0.0028
+      ],
+      [
+       0.2044,
+       0.53,
+       -0.0041
+      ],
+      [
+       0.2028,
+       0.28,
+       -0.0162
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik3",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.1252,
+       0.95,
+       -0.128
+      ],
+      [
+       0.1242,
+       0.53,
+       -0.1283
+      ],
+      [
+       0.1232,
+       0.28,
+       -0.1394
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik4",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1429
+      ],
+      [
+       0.0,
+       0.53,
+       -0.143
+      ],
+      [
+       0.0,
+       0.28,
+       -0.154
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik5",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       -0.1253,
+       0.95,
+       -0.1281
+      ],
+      [
+       -0.1243,
+       0.53,
+       -0.1283
+      ],
+      [
+       -0.1233,
+       0.28,
+       -0.1395
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik6",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.2061,
+       0.95,
+       -0.0028
+      ],
+      [
+       -0.2044,
+       0.53,
+       -0.0041
+      ],
+      [
+       -0.2028,
+       0.28,
+       -0.0162
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    },
+    {
+     "name": "jarik7",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.1313,
+       0.95,
+       0.1285
+      ],
+      [
+       -0.1303,
+       0.53,
+       0.1262
+      ],
+      [
+       -0.1292,
+       0.28,
+       0.113
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "shinL",
+       "shinR"
+      ]
+     ]
+    }
+   ]
   }
  },
  "hideHair": true,
@@ -197,7 +1579,7 @@
   "inner": "#e6d3a3"
  },
  "thumb": "thumb.webp",
- "springs": [],
+ "spring": true,
  "mech": [],
  "emis": null,
  "fp": null,
@@ -217,5 +1599,5 @@
    "use": "geometri pakaian (warna & motif dibuat ulang)"
   }
  ],
- "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"; JOINTS 19+ = ruas pegas variants.<varian>.springs, lihat rig.js SPR_BASE). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
 }

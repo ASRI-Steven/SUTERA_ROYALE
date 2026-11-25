@@ -149,6 +149,7 @@ class Body:
                 V.append(p['rest']); F += [tuple(int(i) + off for i in f[:, 0]) for f in p['faces']]; off += len(p['rest'])
         self.tree = BVHTree.FromPolygons([tuple(v) for v in np.concatenate(V)], F)
         self.skin = next(p for p in var['parts'] if p['kind'] == 'skin')
+        self.springs = []; self.caps = []
 
     def hull(self, ys, nb=64, band=0.03, arms=False, xmax=0.3):
         """selubung cembung (fungsi penopang) tubuh tanpa lengan di tiap tinggi → (zc (k,), R (k, nb), th (nb,)); sudut 0 = depan"""
@@ -239,6 +240,66 @@ def leg_weights(P):
     return O.astype(np.float32)
 
 
+# ---------- Pegas (tulang tambahan; pemecahnya di web/map/rig.js stepSprings) ----------
+XB = 19          # indeks tulang tambahan pertama (17–18 = texel palet di tekstur tulang, lihat rig.js SPR_BASE)
+NBW = XB + 19    # lebar matriks bobot kostum
+
+
+def wide(O):
+    """bobot (n, 17) → (n, NBW)"""
+    O = np.asarray(O, dtype=np.float32)
+    return O if O.shape[1] == NBW else np.concatenate([O, np.zeros((len(O), NBW - O.shape[1]), dtype=np.float32)], axis=1)
+
+
+def add_chain(B, name, parent, pts, **kw):
+    """daftarkan satu rantai pegas → indeks tulang ruas pertamanya"""
+    j = XB + sum(len(c['pts']) - 1 for c in B.springs)
+    assert j + len(pts) - 1 <= NBW, 'tulang pegas melebihi jatah'
+    c = dict(name=name, parent=parent, joint=j, pts=[[round(float(v), 4) for v in p] for p in pts])
+    c.update(kw)
+    if c.get('out') is not None:
+        c['out'] = [round(float(v), 4) for v in c['out']]
+    B.springs.append(c)
+    return j
+
+
+def skirt_rig(B, name, ys, follow, n=8, off=0.014, stiff=34, damp=5, grav=0.5, limit=125, slack=0.045, blend=0.13, knee=0.07, base='hips'):
+    """rok/kain bawah: n rantai mengelilingi pinggul (sudut 0 = depan), ruas di tinggi ys (pangkal → … → tepi bawah), menumbuk
+    follow[k] = 'thigh' | 'shin' | None: tulang kaki yang diikuti ruas k (selubung kedua kaki, lihat rig.js). → fungsi bobot(P): pinggul di atas pangkal, lalu dua rantai terdekat (menurut
+    sudut) × ruas menurut tinggi"""
+    ys = np.asarray(ys, dtype=np.float64)
+    zc, R, th = B.hull(ys, nb=64)
+    Rd = drape_radii(R, off, taper=0.992)
+    fol = [[f + 'L', f + 'R'] if f else [] for f in follow]
+    z0 = float(zc[0]); thc = np.arange(n) * 2 * math.pi / n
+    first = []
+    for c, t in enumerate(thc):
+        tt = (t + math.pi) % (2 * math.pi) - math.pi
+        pts = [(np.interp(tt, th, Rd[k], period=2 * math.pi) * math.sin(t), ys[k], zc[k] + np.interp(tt, th, Rd[k], period=2 * math.pi) * math.cos(t)) for k in range(len(ys))]
+        first.append(add_chain(B, f'{name}{c}', base, pts, stiff=stiff, damp=damp, grav=grav, limit=limit, slack=slack, out=(math.sin(t), 0.0, math.cos(t)), follow=fol))
+    nseg = len(ys) - 1
+
+    def weights(P):
+        O = np.zeros((len(P), NBW), dtype=np.float32)
+        y = P[:, 1]
+        a = (np.arctan2(P[:, 0], P[:, 2] - z0) % (2 * math.pi)) / (2 * math.pi / n)
+        c0 = np.floor(a).astype(np.int64) % n; f = a - np.floor(a); f = f * f * (3 - 2 * f); c1 = (c0 + 1) % n
+        hip = sstep(ys[0] - blend, ys[0] + 0.01, y)
+        O[:, BI[base]] = hip
+        seg = np.zeros((len(P), nseg))
+        for k in range(nseg):  # ruas k menguasai tinggi ys[k] … ys[k+1], berbaur ±knee di sambungan
+            up = 1.0 if k == 0 else 1 - sstep(ys[k] - knee, ys[k] + knee, y)
+            lo = 1.0 if k == nseg - 1 else sstep(ys[k + 1] - knee, ys[k + 1] + knee, y)
+            seg[:, k] = up * lo
+        seg /= np.maximum(seg.sum(axis=1, keepdims=True), 1e-9)
+        fa = np.asarray(first)
+        for k in range(nseg):
+            np.add.at(O, (np.arange(len(P)), fa[c0] + k), (1 - hip) * (1 - f) * seg[:, k])
+            np.add.at(O, (np.arange(len(P)), fa[c1] + k), (1 - hip) * f * seg[:, k])
+        return O
+    return weights
+
+
 def tail_weights(P):
     O = leg_weights(P) * 0.5
     O[:, BI['hips']] += 0.5
@@ -289,17 +350,19 @@ def blangkon(B, mat_body, mat_band):
     return out
 
 
-def jarik(B, mat, mat_wiron, y_top=1.045, y_hem=0.135):
-    """jarik semata kaki: selubung kain jatuh dari pinggul, wiron (lipatan akordeon) di depan agak ke kiri"""
+def jarik(B, mat, mat_wiron, y_top=1.045, y_hem=0.27):
+    """jarik sebetis (dinaikkan dari semata kaki supaya kaki bebas melangkah): selubung kain jatuh dari pinggul, wiron (lipatan
+    akordeon) di depan agak ke kiri"""
     ys = np.linspace(y_top, y_hem, 34)
     zc, R, th = B.hull(ys, nb=64)
     Rd = drape_radii(R, 0.014, taper=0.990)
     rows = B.ring_pts(ys, zc, Rd, th)
     q = np.zeros(rows.shape[:2] + (2,)); q[:, :, 0] = (th + math.pi) / (2 * math.pi); q[:, :, 1] = np.linspace(0, 1, len(ys))[:, None]
-    m = Mesh('jarik', mat, ('fn', leg_weights), tris=2400, prio=1.0)
+    wf = skirt_rig(B, 'jarik', [0.95, 0.53, y_hem + 0.01], ('thigh', 'shin'), n=8)
+    m = Mesh('jarik', mat, ('fn', wf), tris=2400, prio=1.0)
     m.grid(rows, wrap=True, q=q)
     # wiron: jalur selebar 6 → 10 cm, 5 lipatan, menonjol 1 cm; berpusat di sudut +0,22 rad (kiri-depan)
-    w = Mesh('jarik_wiron', mat_wiron, ('fn', leg_weights), tris=700, prio=1.0)
+    w = Mesh('jarik_wiron', mat_wiron, ('fn', wf), tris=700, prio=1.0)
     npl, nc = 5, 11
     th0 = 0.2
     pts = np.zeros((len(ys), nc, 3)); qq = np.zeros((len(ys), nc, 2))
@@ -368,7 +431,7 @@ def keris_kecil(B, mat_wood, mat_gold, mat_hilt):
 
 
 def selop(B, mat_upper, mat_sole, sole=0.012):
-    """selop: sol tipis + penutup depan (jari sampai punggung kaki); tumit terbuka"""
+    """selop: sol tipis + penutup depan (jari sampai punggung kaki) + penahan tumit rendah"""
     out = []
     for S, sg in (('L', 1), ('R', -1)):
         F = B.foot(S)
@@ -405,6 +468,17 @@ def selop(B, mat_upper, mat_sole, sole=0.012):
                 pts[i, j] = (xc[k] + (hw[k] + 0.003) * math.cos(phi) * sg, sole + h * math.sin(phi) ** 0.7, z)
         up.grid(pts)
         out.append(up)
+        # penahan tumit rendah (tumit tidak lagi terbuka dari belakang): dinding melingkari sepertiga belakang sol
+        K = int(np.searchsorted(zs, z0 + 0.34 * L))
+        path = [ring[k, 0] for k in range(K, -1, -1)] + [ring[k, 1] for k in range(0, K + 1)]
+        path = np.array(path); n = len(path)
+        cen = np.array([xc[:K + 1].mean(), 0.0, zs[:K + 1].mean()])
+        hh = 0.008 + 0.036 * np.sin(np.linspace(0, math.pi, n)) ** 0.6
+        o = path - cen; o[:, 1] = 0; o /= np.maximum(np.linalg.norm(o, axis=1, keepdims=True), 1e-9)
+        wall = np.stack([path + [0, sole, 0] + o * 0.003, path + np.stack([0 * hh, sole + hh, 0 * hh], axis=1) + o * 0.006], axis=0)
+        hc = Mesh('selop_tumit_' + S, mat_upper, ('bone', 'foot' + S), prio=1.2)
+        hc.grid(wall); hc.grid(wall[::-1] - o[None] * 0.004)
+        out.append(hc)
     return out
 
 
@@ -688,6 +762,21 @@ def garuda_wings(B, mat_feather, mat_gold):
         for k in range(4):
             r0 = root + [-sg * 0.012 * k, 0.03 - 0.03 * k, -0.02]
             fe.leaf(r0, nrm([-sg * 0.25, -1.0, -0.05]), back, 0.2 - 0.02 * k, 0.06, nu=3, nv=4, bend=-0.02, cup=0.08)
+    # goyangan ringan (M3): satu ruas pegas per sayap, berpangkal di dudukan punggung; bobot naik dari pangkal ke ujung
+    roots = {}
+    for sg in (1, -1):
+        r = np.array([sg * 0.07, 1.40, zb - 0.015])
+        roots[sg] = (r, add_chain(B, 'sayap' + ('L' if sg > 0 else 'R'), 'chest', [r, r + [sg * 0.10, -0.42, -0.12]], stiff=26, damp=3.5, grav=0.25, slack=0.07, limit=16))
+
+    def wing_w(P):
+        O = np.zeros((len(P), NBW), dtype=np.float32)
+        for sg in (1, -1):
+            r, j = roots[sg]
+            m = (P[:, 0] * sg) >= 0
+            t = sstep(0.03, 0.30, np.linalg.norm(P - r, axis=1)) * m
+            O[:, j] += t; O[:, BI['chest']] += (1 - t) * m
+        return O
+    fe.wspec = ('fn', wing_w); bo.wspec = ('fn', wing_w)
     out += [fe, bo]
     return out
 
@@ -710,11 +799,12 @@ def dodot(B, mat, mat_tail, mat_gold, y_top=1.04, y_low=0.56):
             z = zc0[k0] * (1 - fr) + zc0[k0 + 1] * fr
             pts[k, j] = (r * math.sin(th[j]), y, z + r * math.cos(th[j]))
             q[k, j] = ((th[j] + math.pi) / (2 * math.pi), k / (nrow - 1))
-    m = Mesh('dodot', mat, ('fn', leg_weights), tris=1500)
+    wf = skirt_rig(B, 'dodot', [0.95, 0.75, 0.53], ('thigh', 'thigh'), n=8, off=0.024)
+    m = Mesh('dodot', mat, ('fn', wf), tris=1500)
     m.grid(pts, wrap=True, q=q)
     out.append(m)
     # ekor wiron depan
-    w = Mesh('dodot_ekor', mat_tail, ('fn', lambda P: tail_weights(P)), tris=400)
+    w = Mesh('dodot_ekor', mat_tail, ('fn', wf), tris=400)
     ysw = np.linspace(y_top - 0.02, 0.50, 12); nc = 9
     zc1, R1, _ = B.hull(ysw, nb=nb)
     Rd = drape_radii(R1, 0.03, taper=0.99)
