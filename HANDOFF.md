@@ -1258,9 +1258,9 @@ Rancangan lengkap tiap alur (audit, angka, kriteria lulus, milestone) ada di `do
 
 ### 35.2 BELUM SELESAI — lanjutkan dari sini (urut prioritas Steven)
 
-> **STATUS TERBARU (24 Nov malam, sesi Jason) — tabel di bawah ini sudah USANG, dipertahankan sebagai catatan asal.**
+> **STATUS TERBARU (25 Nov siang, sesi Jason) — tabel di bawah ini sudah USANG, dipertahankan sebagai catatan asal.**
 > Branch WIP lama di tabel (`4e1db01`, `5cc34ee`, `7e55e92`, `2b58e1d`, `cffc563`) tidak pernah ada di origin; semua alur
-> **dibangun ulang dari main** dan sudah digabung + di-push ke `origin/main` (`b3f2118` + commit pembaruan HANDOFF ini).
+> **dibangun ulang dari main** dan sudah digabung + di-push ke `origin/main` (rinciannya §36–§46, satu bagian per penggabungan).
 >
 > | # | Alur | Sudah di main | Bagian | Sisa |
 > |---|---|---|---|---|
@@ -1289,18 +1289,27 @@ Semua kerja setengah jalan sudah di-commit sebagai **WIP di branch-nya (belum di
 
 ### 35.3 Kekurangan yang diketahui di main
 
-> **STATUS TERBARU (24 Nov malam):** daftar di bawah ditulis sebelum §36–§42. Yang SUDAH BERES atau berubah:
+> **STATUS TERBARU (25 Nov siang):** daftar di bawah ditulis sebelum §36–§46. Yang SUDAH BERES atau berubah:
 > - Animasi kill = sapuan cahaya; pola Merak kotak-kotak → diganti kipas bulu + finisher dan riak toska-emas (§36). Selubung kill
 >   ke-3+ dan biaya GPU: masih belum diukur.
 > - Tampilan bidik 2×/4× kasar → dipoles (§39). Model senjata: Garuda, P9, Rajawali dibangun ulang; delapan lainnya dan model
 >   dunia LOD kotak masih seperti semula.
 > - Terjun: mendarat di dek rendah, mode Hemat, dan payung saat "Ikut rekan" sudah diuji; awal guling diperhalus (§37). Karakter
 >   perempuan dari dekat dan atap menara tinggi: belum.
-> - Tata letak: ±760 gedung menimpa aspal → 0; tembok keliling sudah ada untuk 12 kompleks (§40, §42). Halaman depan gundul
->   (tanam ulang pohon, M4): masih.
+> - Tata letak: ±760 gedung menimpa aspal → 0; tembok keliling 15 kompleks termasuk 3 apartemen; pohon ditanam ulang
+>   (§40, §42, §46). Bot diam tidak naik karena tembok (0,97 % sebelum dan sesudah, §46).
 > - Tangan orang pertama tanpa tulang jari, catatan bangunan per gedung (#5527, #1888, #2466), lama pertandingan, dan kematian
 >   bot karena zona: TIDAK disentuh sesi ini, masih berlaku.
-> Kekurangan baru dari pekerjaan sesi ini ada di butir "Kekurangan" tiap bagian §36–§42.
+> Kekurangan baru dari pekerjaan sesi ini ada di butir "Kekurangan" tiap bagian §36–§46. Yang paling penting:
+> - **Belum pernah diuji untuk semua perubahan sekaligus**: pertandingan penuh sampai akhir, ponsel/perangkat nyata, kinerja GPU
+>   gabungan (tris senjata naik ±66 %, tembok +±291 rb segitiga), kostum saat bergerak (baru dinilai dari gambar diam), suara nyata.
+>   Semua uji sesi ini berjalan di Chrome headless di Mac dengan frame manual.
+> - **Cacat yang diketahui**: bus tersangkut di gerbang k2 (−652,−615) (§46); efek isi ulang skin nyaris tak terlihat di orang
+>   pertama di semua tema (§45); Kobra di bawah mutu dan ADS besi Badai/Gada/Gempa berat (§44); model senjata di tangan karakter
+>   (LOD1) tidak cocok dengan model baru (§44, Senjata M4); `char_batik` memakai rompi bawaan di lobi (§43); pose `TUCK` bot (§38).
+> - **Saran urutan berikutnya**: (1) Steven melihat lembar kontak Skin/Senjata/Kostum sebelum M berikutnya — semua sisa milestone
+>   besar dibangun di atas gaya yang belum ia setujui; (2) satu uji pertandingan penuh + ukur kinerja gabungan; (3) perbaikan kecil
+>   di atas, terutama gerbang k2 dan Senjata M4.
 - Animasi kill di senjata = sapuan cahaya saja (ditolak Steven); pola Merak kotak-kotak; selubung kill ke-3+ nyaris tak terlihat; biaya GPU belum diukur.
 - Tampilan bidik 2×/4× kasar (lihat no. 2); bidik per scope baru diuji di branch, belum diuji ulang di main gabungan.
 - Model senjata belum berubah (hanya optik); model dunia di tangan karakter masih LOD kotak.
