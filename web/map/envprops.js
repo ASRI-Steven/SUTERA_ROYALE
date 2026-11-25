@@ -20,6 +20,7 @@ const M = 0.1;
 const UP = new THREE.Vector3(0, 1, 0);
 // jarak LOD per jenis (m, sebelum dikali zoom): [lod0, lod1, (lod2)]; di luar yang terakhir tidak digambar
 const STATIC_R = 450; // jarak gambar benda statis per petak (m, × zoom)
+const WALL_FAR = 200; // tembok keliling: di luar jarak ini (dari tepi petak) memakai mesh jauh
 const RANGE = {
   lamp: [70, 650], lamp2: [70, 650], pole: [60, 450], pole_t: [60, 450], sutet: [200, 750, 6500], bts: [160, 650, 6500],
   btsr: [160, 1500], guard: [70, 500], boom: [220], pillar: [240], namesign: [230], halte: [70, 500],
@@ -724,7 +725,8 @@ export function createEnvProps(W, A, col, homes) {
   // pandang tidak digambar; 'use(x, y)' memilih penampung petak untuk benda berikutnya
   let fr = null, nt = null;
   const SCH = 320, chunks = new Map();
-  const use = (x, y) => { const k = Math.floor(x / SCH) * 4096 + Math.floor(y / SCH); let c = chunks.get(k); if (!c) chunks.set(k, (c = { fr: newBuf(true), nt: newBuf(false) })); fr = c.fr; nt = c.nt; };
+  let wn = null, wf = null; // tembok keliling: mesh dekat (lengkap) & mesh jauh (badan + tutup saja) per petak
+  const use = (x, y) => { const k = Math.floor(x / SCH) * 4096 + Math.floor(y / SCH); let c = chunks.get(k); if (!c) chunks.set(k, (c = { fr: newBuf(true), nt: newBuf(false), wn: newBuf(true), wf: newBuf(true) })); fr = c.fr; nt = c.nt; wn = c.wn; wf = c.wf; };
   const quadTo = (B, a, b, c, d, n, colr, uvs, pb, f) => {
     for (const k of [0, 1, 2, 0, 2, 3]) {
       const p = [a, b, c, d][k];
@@ -918,10 +920,10 @@ export function createEnvProps(W, A, col, homes) {
       boxTo(fr, gx, gy, WALL.POST_H - 0.08, WALL.POST_H + 0.04, nx, ny, half + 0.06, 0.2, WHITE, PB_PL, S_PLASTER);
       gates++; continue;
     }
-    if (g.k === 2) { // gerbang servis: daun pintu geser besi, digambar terbuka (menempel sisi dalam tembok, tanpa tabrakan)
-      const lw = Math.min(2.6, half), ox = gx + nx * (half + 0.35 + lw) + ux * 0.32, oy = gy + ny * (half + 0.35 + lw) + uy * 0.32;
-      boxTo(fr, ox, oy, 0.12, 1.95, nx, ny, lw, 0.035, TRIM, PB_TRIM);
-      for (const z of [0.12, 1.0, 1.9]) boxTo(fr, ox, oy, z, z + 0.07, nx, ny, lw, 0.05, GOLD, PB_GOLD);
+    if (g.k === 2) { // gerbang servis: daun pintu geser besi, digambar terbuka (menempel sisi dalam tembok, tanpa tabrakan);
+      // lf = sisi pilar yang bertembok (+1/−1), 0 = bukaan gabungan tanpa tembok di sampingnya → tanpa daun
+      const sd = g.lf ?? 1, lw = Math.min(2.6, half), ox = gx + nx * sd * (half + 0.35 + lw) + ux * 0.32, oy = gy + ny * sd * (half + 0.35 + lw) + uy * 0.32;
+      if (sd) { boxTo(fr, ox, oy, 0.12, 1.95, nx, ny, lw, 0.035, TRIM, PB_TRIM); for (const z of [0.12, 1.0, 1.9]) boxTo(fr, ox, oy, z, z + 0.07, nx, ny, lw, 0.05, GOLD, PB_GOLD); }
       gates++; continue;
     }
     if (g.k === 1) { // gerbang samping: dua pilar 3,2 m tanpa balok (tabrakan: walls.js)
@@ -991,19 +993,28 @@ export function createEnvProps(W, A, col, homes) {
   for (const sg of WP.segs) {
     const L = Math.hypot(sg.bx - sg.ax, sg.by - sg.ay), cx = (sg.ax + sg.bx) / 2, cy = (sg.ay + sg.by) / 2;
     use(cx, cy);
-    boxTo(fr, cx, cy, 0, 0.5, sg.ux, sg.uy, L / 2 + 0.05, 0.17, STONE, PB_ST, S_STONE);
-    boxTo(fr, cx, cy, 0.5, WALL.H, sg.ux, sg.uy, L / 2 + 0.05, 0.12, WALLC, PB_PL, S_PLASTER);
-    boxTo(fr, cx, cy, WALL.H, WALL.CAP, sg.ux, sg.uy, L / 2 + 0.07, 0.18, WHITE, PB_PL, S_PLASTER);
+    boxTo(wn, cx, cy, 0, 0.5, sg.ux, sg.uy, L / 2 + 0.05, 0.17, STONE, PB_ST, S_STONE);
+    boxTo(wn, cx, cy, 0.5, WALL.H, sg.ux, sg.uy, L / 2 + 0.05, 0.12, WALLC, PB_PL, S_PLASTER);
+    boxTo(wn, cx, cy, WALL.H, WALL.CAP, sg.ux, sg.uy, L / 2 + 0.07, 0.18, WHITE, PB_PL, S_PLASTER);
+    // LOD jauh (> WALL_FAR m): badan + tutup saja, 20 segitiga per potong, tanpa bayangan
+    boxTo(wf, cx, cy, 0, WALL.H, sg.ux, sg.uy, L / 2 + 0.05, 0.15, WALLC, PB_PL, S_PLASTER);
+    boxTo(wf, cx, cy, WALL.H, WALL.CAP, sg.ux, sg.uy, L / 2 + 0.07, 0.18, WHITE, PB_PL, S_PLASTER);
   }
   for (const q of [...WP.posts, ...WP.deco]) {
     use(q.x, q.y);
-    boxTo(fr, q.x, q.y, 0, 2.45, q.ux, q.uy, 0.24, 0.24, STONE, PB_ST, S_STONE, stoneUV, 1.2);
-    boxTo(fr, q.x, q.y, 2.45, WALL.POST_H, q.ux, q.uy, 0.28, 0.28, WHITE, PB_PL, S_PLASTER);
+    boxTo(wn, q.x, q.y, 0, 2.45, q.ux, q.uy, 0.24, 0.24, STONE, PB_ST, S_STONE, stoneUV, 1.2);
+    boxTo(wn, q.x, q.y, 2.45, WALL.POST_H, q.ux, q.uy, 0.28, 0.28, WHITE, PB_PL, S_PLASTER);
   }
   for (const o of WP.obstacles) obstacles.push(o);
   wallM += WP.wallM;
   const statics = [];
-  for (const c of chunks.values()) for (const m of [mkStatic(c.fr, uni, true, 'fences'), mkStatic(c.nt, netMat, false, 'fencenets')]) if (m) statics.push({ m, c: m.boundingSphere.center, r: m.boundingSphere.radius });
+  let wallTri = 0, wallTriFar = 0;
+  for (const c of chunks.values()) {
+    for (const m of [mkStatic(c.fr, uni, true, 'fences'), mkStatic(c.nt, netMat, false, 'fencenets')]) if (m) statics.push({ m, c: m.boundingSphere.center, r: m.boundingSphere.radius, lo: 0, hi: STATIC_R });
+    const near = mkStatic(c.wn, uni, true, 'walls'), far = mkStatic(c.wf, uni, true, 'wallsfar');
+    if (near) { statics.push({ m: near, c: near.boundingSphere.center, r: near.boundingSphere.radius, lo: 0, hi: WALL_FAR }); wallTri += c.wn.pos.length / 9; }
+    if (far) { far.castShadow = false; statics.push({ m: far, c: far.boundingSphere.center, r: far.boundingSphere.radius, lo: WALL_FAR, hi: STATIC_R }); wallTriFar += c.wf.pos.length / 9; }
+  }
 
   // lampu jalan lama (tiang polos world.js) diganti lampu LED baru
   if (types.has('lamp') && W.lamps) W.lamps.visible = false;
@@ -1017,7 +1028,7 @@ export function createEnvProps(W, A, col, homes) {
   // cone: kamera diperbesar (FOV sempit: lobi, teropong) → hanya benda di dalam kerucut pandang (+ yang sangat dekat)
   function repartition(cx, cy, cz, k, wide, cone) {
     for (const C of combos) { C.nS = 0; C.nN = 0; }
-    for (const S of statics) { const d = Math.max(0, Math.hypot(S.c.x - cx, (S.c.y - cy) * 0.7, S.c.z - cz) - S.r); S.m.visible = d < STATIC_R * k || (wide && d < 380); }
+    for (const S of statics) { const d = Math.max(0, Math.hypot(S.c.x - cx, (S.c.y - cy) * 0.7, S.c.z - cz) - S.r); S.m.visible = S.lo === 0 ? d < S.hi * k || (wide && d < 380) : d >= S.lo * k && d < S.hi * k && !(wide && d < 380); } // mesh jauh tidak pernah tampil bersama mesh dekatnya (tutup tembok sama ukuran: z-fighting)
     for (const T of types.values()) {
       const R0 = T.range, nr = R0.length, n = T.list.length, has = T.has, ML = models[T.name];
       const lim = R0.map((r) => { const rr = r * k; return rr * rr; });
@@ -1045,7 +1056,7 @@ export function createEnvProps(W, A, col, homes) {
       }
     }
   }
-  const stats = { instances: inst.filter((o) => o.ok).length, dropped, dropBy, obstacles: obstacles.length, meshes: drawMeshes, cables: cables.spans, fenceM: Math.round(fenceM), hoardM: Math.round(hoardM), gates, wallM: Math.round(wallM), types: types.size, combos: combos.length };
+  const stats = { instances: inst.filter((o) => o.ok).length, dropped, dropBy, obstacles: obstacles.length, meshes: drawMeshes, cables: cables.spans, fenceM: Math.round(fenceM), hoardM: Math.round(hoardM), gates, wallM: Math.round(wallM), wallTri, wallTriFar, types: types.size, combos: combos.length };
   return {
     obstacles, group, stats, atlas: atlas.canvas, types,
     // tiap frame sebelum scene.updateMatrixWorld() (main.js): waktu efek, lebar kabel, pemilahan jarak

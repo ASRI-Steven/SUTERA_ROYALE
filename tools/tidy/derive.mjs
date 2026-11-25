@@ -88,15 +88,24 @@ function gatesAndWalls(D, Pr, ST, polys, BG) {
   const blockedAt = (x, y, r) => { for (const bi of BG.query(x - r, y - r, x + r, y + r)) { const p = polys[bi]; if (pip(x, y, p)) return true; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if (ptSeg(x, y, p[j][0], p[j][1], p[i][0], p[i][1]) < r) return true; } return false; };
   const roadsNear = (x, y, r, skip) => { for (let ri = 0; ri < D.roads.r.length; ri++) { if (ri === skip) continue; const R = D.roads.r[ri], hw = D.roads.w[ri] * M / 2; for (let j = 0; j + 3 < R.length; j += 2) if (ptSeg(x, y, R[j] * M, R[j + 1] * M, R[j + 2] * M, R[j + 3] * M) < hw + r) return true; } return false; };
   const ang = (dx, dy) => Math.round(((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360) * 10);
+  // pohon akhir (tahap trees): pos satpam/palang tidak boleh menumpuk batang (envprops membuangnya)
+  const TS = D.meta.treeStride || 4, TGr = new Grid(20); for (let i = 0; i + TS - 1 < (D.trees || []).length; i += TS) { const x = D.trees[i] * M, y = D.trees[i + 1] * M; TGr.add([x, y], x, y, x, y); }
+  const treeNear = (x, y, r) => { for (const t of TGr.query(x - r, y - r, x + r, y + r)) if (Math.hypot(t[0] - x, t[1] - y) < r) return true; return false; };
   let guards = 0, booms = 0;
   Pr.gates = W.gates.map((g) => {
     const n = g.k === 0 ? nameIdx(g.ci) : -1, out = { x: g.x, y: g.y, a: g.a, w: g.w, h: g.h, n, k: g.k, c: g.c, wl: [], wr: [] };
+    if (g.k === 2 && !g.p) { // daun pintu geser (digambar terbuka) menempel tembok di sisi pilar yang bertembok; bukaan gabungan
+      // (GATE_MERGE) tanpa tembok di kedua sisi → tanpa daun (envprops: lf 0)
+      const a = g.a / 10 * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, half = g.h * M, lw = Math.min(2.6, half);
+      out.lf = 0; for (const sd of [1, -1]) { const e0 = half + 0.35, e1 = half + 0.35 + 2 * lw, ok = [e0 + 0.3, (e0 + e1) / 2, e1 - 0.3].every((e) => wallNear(g.x * M + nx * sd * e, g.y * M + ny * sd * e, 0.9)); if (ok) { out.lf = sd; break; } }
+    }
     if (g.p) out.p = 1;
     if (g.k <= 1 && !g.deco) { // pos satpam (hanya gapura utama) & palang di sisi dalam
       const gx = g.x * M, gy = g.y * M, a = g.a / 10 * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux, w = g.w * M;
       let side = 0;
-      if (g.k === 0) for (const sd of [1, -1]) { for (const back of [5, 7, 9, 11.5]) { const x = gx + ux * back + nx * sd * (w / 2 + 2.1), y = gy + uy * back + ny * sd * (w / 2 + 2.1); if (!blockedAt(x, y, 2.0) && !roadsNear(x, y, 1.6, -1) && !wallNear(x, y, 1.9)) { Pr.t.guard.push(Math.round(x / M), Math.round(y / M), ang(-nx * sd, -ny * sd), 0, 0, 100); guards++; side = sd; break; } } if (side) break; }
-      for (const sd of side ? [side] : [1, -1]) { const x = gx + ux * 2.4 + nx * sd * (w / 2 + 0.45), y = gy + uy * 2.4 + ny * sd * (w / 2 + 0.45); if (!blockedAt(x, y, 0.4)) { Pr.t.boom.push(Math.round(x / M), Math.round(y / M), ang(-nx * sd, -ny * sd), 0, 0, 100); booms++; break; } }
+      if (g.k === 0) for (const sd of [1, -1]) { for (const back of [5, 7, 9, 11.5]) { const x = gx + ux * back + nx * sd * (w / 2 + 2.1), y = gy + uy * back + ny * sd * (w / 2 + 2.1); if (!blockedAt(x, y, 2.0) && !roadsNear(x, y, 1.6, -1) && !wallNear(x, y, 1.9) && !treeNear(x, y, 1.9)) { Pr.t.guard.push(Math.round(x / M), Math.round(y / M), ang(-nx * sd, -ny * sd), 0, 0, 100); guards++; side = sd; break; } } if (side) break; }
+      boom: for (const off of [0.45, 0.8, 1.2]) for (const sd of side ? [side, -side] : [1, -1]) { const x = gx + ux * 2.4 + nx * sd * (w / 2 + off), y = gy + uy * 2.4 + ny * sd * (w / 2 + off); if (!blockedAt(x, y, 0.4) && !roadsNear(x, y, -0.2, -1) && !treeNear(x, y, 0.7)) { // tiang palang tidak boleh di lajur (envprops membuangnya bila > 0,25 m masuk aspal)
+        Pr.t.boom.push(Math.round(x / M), Math.round(y / M), ang(-nx * sd, -ny * sd), 0, 0, 100); booms++; break boom; } }
     }
     return out;
   });

@@ -33,9 +33,10 @@ function edgeDist(x, y, r) { // jarak titik (m) ke tepi cincin r (dm), dalam m
   return best;
 }
 
-export function cleanTrees(D) {
-  if (D.meta.treesClean) return D.meta.treesClean;
-  const st = D.meta.treeStride || 3, T = D.trees, n = Math.floor(T.length / st);
+// Penjaga zona: road(x, y) = jarak ke aspal/sungai, blockedBy = gedung/air, viol(x, y, wallMin, semak) = Z1/Z2 (+ Z5
+// gerbang, Z6 tembok keliling bila D.walls ada). Dipakai cleanTrees di game DAN tahap tanam tools/tidy/trees.mjs, jadi
+// pohon hasil perapi tidak pernah digeser/dibuang lagi saat muat.
+export function treeGuard(D) {
   // ---- ruas jalan & sungai per sel 30 m
   const RC = 30, key = (cx, cy) => cx * 100003 + cy;
   const segs = [], RG = new Map();
@@ -124,17 +125,43 @@ export function cleanTrees(D) {
     }
     return best;
   };
-  const viol = (x, y, wallMin) => inFacade(x, y) ? 'z1' : wallDist(x, y) < wallMin ? 'z2' : null;
+  // ---- Z6 tembok keliling (batang ≥ 1,2 m dari as tembok; semak 0,6 m) & Z5 gerbang (≤ 5 m dari pilar dan di corong
+  // masuk gerbang jalan; ≤ 2,5 m dari pintu pejalan kaki; semak hanya dilarang di bukaannya)
+  const LG = new Map(), lsegs = [], GG = new Map(), gts = [];
+  if (D.walls) {
+    for (const L of D.walls.lines || []) for (let j = 0; j + 3 < L.p.length; j += 2) { const ax = L.p[j] * M, ay = L.p[j + 1] * M, bx = L.p[j + 2] * M, by = L.p[j + 3] * M, k = lsegs.push([ax, ay, bx, by]) - 1; zput(LG, k, Math.min(ax, bx) - 1.3, Math.min(ay, by) - 1.3, Math.max(ax, bx) + 1.3, Math.max(ay, by) + 1.3); }
+    for (const g of D.walls.gates || []) { const a = g.a / 10 * Math.PI / 180, x = g.x * M, y = g.y * M, h = g.h * M, k = gts.push([x, y, Math.cos(a), Math.sin(a), h, g.k]) - 1, pad = g.k === 3 ? 2.5 : h + 8; zput(GG, k, x - pad, y - pad, x + pad, y + pad); }
+  }
+  const nearWall = (x, y, r) => { for (const k of LG.get(key(Math.floor(x / ZC), Math.floor(y / ZC))) || []) { const [ax, ay, bx, by] = lsegs[k], ex = bx - ax, ey = by - ay, L = ex * ex + ey * ey, t = L > 0 ? Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / L)) : 0; if (Math.hypot(x - ax - ex * t, y - ay - ey * t) < r) return true; } return false; };
+  const atGate = (x, y, shrub) => {
+    for (const k of GG.get(key(Math.floor(x / ZC), Math.floor(y / ZC))) || []) {
+      const [gx, gy, ux, uy, h, kind] = gts[k], lon = (x - gx) * ux + (y - gy) * uy, lat = -(x - gx) * uy + (y - gy) * ux;
+      if (shrub) { if (Math.abs(lat) < h + 0.3 && Math.abs(lon) < (kind === 3 ? 1.6 : 3.2)) return true; continue; }
+      if (kind === 3) { if (Math.hypot(lon, lat) < 2.5) return true; continue; }
+      if (Math.min(Math.hypot(lat - h, lon), Math.hypot(lat + h, lon)) <= 5 || (Math.abs(lat) < h && Math.abs(lon) < 8)) return true;
+    }
+    return false;
+  };
+  const viol = (x, y, wallMin, shrub = false) => inFacade(x, y) ? 'z1' : wallDist(x, y) < wallMin ? 'z2' : nearWall(x, y, shrub ? 0.6 : 1.2) ? 'z6' : atGate(x, y, shrub) ? 'z5' : null;
   const treeWall = (sp) => (sp === 0 ? 3.0 : 2.2); // tajuk lebar (grup 0) / palem & kolom
+  return { road, blockedBy, viol, treeWall, BG, polys, BC, key };
+}
+
+export function cleanTrees(D) {
+  if (D.meta.treesClean) return D.meta.treesClean;
+  const st = D.meta.treeStride || 3, T = D.trees, n = Math.floor(T.length / st);
+  const { road, blockedBy, viol, treeWall, BG, polys, BC, key } = treeGuard(D);
+  const planted = !!(D.meta.layout && D.meta.layout.stages && D.meta.layout.stages.includes('trees')); // ditanam perapi: tidak ada pindah-ke-trotoar
   // ---- jarak antar pohon
   const TC = 4, TG = new Map();
   const near = (G, x, y, r) => { for (let cx = Math.floor((x - r) / TC); cx <= Math.floor((x + r) / TC); cx++) for (let cy = Math.floor((y - r) / TC); cy <= Math.floor((y + r) / TC); cy++) for (const p of G.get(key(cx, cy)) || []) if (Math.hypot(p[0] - x, p[1] - y) < r) return true; return false; };
   const put = (G, x, y) => { const kk = key(Math.floor(x / TC), Math.floor(y / TC)); (G.get(kk) || G.set(kk, []).get(kk)).push([x, y]); };
-  const stats = { before: n, after: 0, moved: 0, road: 0, building: 0, water: 0, close: 0, z1: 0, z2: 0, shifted: 0, zoneDrop: 0, shrinked: 0, shrubs: 0, shrubZone: 0 };
+  const stats = { before: n, after: 0, moved: 0, road: 0, building: 0, water: 0, close: 0, z1: 0, z2: 0, z5: 0, z6: 0, shifted: 0, zoneDrop: 0, shrinked: 0, shrubs: 0, shrubZone: 0 };
   const kept = [], later = [];
   for (let i = 0; i < n; i++) {
     let x = T[i * st] * M, y = T[i * st + 1] * M;
     const R = road(x, y);
+    if (planted && R.m < 1.15) { stats.road++; continue; }
     if (R.m < 1.2 && R.s) { // di jalan / terlalu mepet → ke trotoar sisi yang sama
       const S = R.s;
       let nx = x - S.fx, ny = y - S.fy, l = Math.hypot(nx, ny);
@@ -192,7 +219,7 @@ export function cleanTrees(D) {
   const inGreen = (x, y) => greens.some((r) => pipFlat(x / M, y / M, r));
   const SG = new Map(), shrubs = [];
   const okShrub = (x, y) => { const R = road(x, y); return R.m > 0.9 && R.wet > 0.6 && !blockedBy(x, y, 0.5) && !near(TG, x, y, 1.0) && !near(SG, x, y, 0.95); };
-  const addShrub = (x, y, s) => { if (!okShrub(x, y)) return; if (viol(x, y, 0.8)) { stats.shrubZone++; return; } put(SG, x, y); shrubs.push(+x.toFixed(2), +y.toFixed(2), +s.toFixed(2)); };
+  const addShrub = (x, y, s) => { if (!okShrub(x, y)) return; if (viol(x, y, 0.8, true)) { stats.shrubZone++; return; } put(SG, x, y); shrubs.push(+x.toFixed(2), +y.toFixed(2), +s.toFixed(2)); };
   for (const [x, y, , sp, m] of kept) {
     const h = hash(x * 1.3, y * 0.7);
     if (sp === 1 && m < 8) { // palem dekat jalan: semak di kiri-kanan searah jalan

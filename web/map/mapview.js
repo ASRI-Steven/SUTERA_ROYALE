@@ -40,6 +40,19 @@ export function makeMapImage(D, bb) {
   g.strokeStyle = '#aaa3cf';
   g.lineWidth = 0.6;
   for (const r of D.buildings.r) { path(r); g.fill(); g.stroke(); }
+  // tembok keliling kompleks (t 2 = tembok tampilan di garis batas, tidak menghalangi: tidak digambar) + bukaannya, supaya
+  // pemain melihat jalan keluar: gerbang jalan (k0–k2) titik putih bertepi gelap, pintu pejalan kaki (k3) titik kecil
+  if (D.walls) {
+    g.strokeStyle = '#6f6556';
+    g.lineWidth = Math.max(1, 0.45 * s * 2);
+    for (const L of D.walls.lines) if (L.t !== 2) { path(L.p, false); g.stroke(); }
+    for (const q of D.walls.gates) {
+      const x = (q.x * M - bb.minx) * s, y = (bb.maxy - q.y * M) * s, r = q.k === 3 ? 1.6 : 2.6;
+      g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+      g.fillStyle = q.k === 3 ? '#f4efe2' : '#ffffff'; g.fill();
+      g.lineWidth = 1; g.strokeStyle = q.k === 0 ? '#9c6b1f' : '#5d5446'; g.stroke();
+    }
+  }
   path(D.boundary);
   g.strokeStyle = '#D29F52';
   g.lineWidth = 3;
