@@ -278,8 +278,64 @@ export function finisher(name, n = 1, d = 0, p = 0) {
     for (const [dt, f, k] of [[0, 150, 1], [0.2, 165, 0.85], [0.33, 185, 1.1]]) tone({ t: t + dt, f0: f, f1: f * 0.55, dur: 0.16, gain: 0.34 * g * k, type: 'sine', p });
     tone({ t: t + 0.46, f0: 147, f1: 144, dur: 1.1, gain: 0.3 * g, type: 'sine', p }); tone({ t: t + 0.46, f0: 294, f1: 292, dur: 0.7, gain: 0.1 * g, type: 'triangle', p });
     for (let i = 0; i < 5 + Math.min(4, n); i++) burst({ t: t + 0.46 + i * 0.07, dur: 0.05, freq: 6200 + (i % 3) * 900, q: 6, gain: 0.07 * g, type: 'bandpass', p });
-  }
+  } else if (FINISH[name]) FINISH[name](t, g, p, Math.min(5, n));
 }
+// finisher tema M2 (t = tunda, g = penguat jarak, p = pan, n = beruntun 1..5)
+const FINISH = {
+  garuda(t, g, p, n) { // dua kepakan angin + pekik naik + gong agung
+    for (const dt of [0.05, 0.4]) burst({ t: t + dt, dur: 0.22, freq: 520, q: 0.8, gain: 0.3 * g, type: 'lowpass', p });
+    tone({ t: t + 0.2, f0: 2100, f1: 3000, dur: 0.28, gain: 0.07 * g, type: 'sawtooth', p });
+    tone({ t: t + 0.55, f0: 110, f1: 108, dur: 1.3, gain: 0.34 * g, type: 'sine', p }); tone({ t: t + 0.55, f0: 222, f1: 220, dur: 0.9, gain: 0.12 * g, type: 'triangle', p });
+    for (let i = 0; i < 2 + n; i++) tone({ t: t + 0.6 + i * 0.09, f0: 1568 * (1 + i * 0.12), f1: 1560 * (1 + i * 0.12), dur: 0.3, gain: 0.05 * g, type: 'sine', p });
+  },
+  magma(t, g, p, n) { // dentum letusan + gemuruh + gemeretak bara
+    tone({ t, f0: 90, f1: 28, dur: 0.7, gain: 0.5 * g, type: 'sine', p }); burst({ t, dur: 0.9, freq: 220, q: 0.7, gain: 0.45 * g, type: 'lowpass', p });
+    if (n >= 5) { tone({ t: t + 0.6, f0: 80, f1: 30, dur: 0.5, gain: 0.36 * g, type: 'sine', p }); burst({ t: t + 0.6, dur: 0.6, freq: 260, q: 0.7, gain: 0.3 * g, type: 'lowpass', p }); }
+    for (let i = 0; i < 10 + 2 * n; i++) burst({ t: t + 0.15 + (i * 0.618 % 1) * 1.2, dur: 0.012, freq: 3400, q: 0.7, gain: 0.12 * g, type: 'highpass', p });
+  },
+  plasma(t, g, p, n) { // pindai naik + mengerut + lepas muatan
+    tone({ t, f0: 180, f1: 1400, dur: 0.75, gain: 0.1 * g, type: 'sawtooth', p }); tone({ t, f0: 360, f1: 2800, dur: 0.75, gain: 0.05 * g, type: 'square', p });
+    tone({ t: t + 0.95, f0: 2400, f1: 300, dur: 0.3, gain: 0.1 * g, type: 'sawtooth', p });
+    tone({ t: t + 1.3, f0: 70, f1: 38, dur: 0.4, gain: 0.45 * g, type: 'sine', p }); burst({ t: t + 1.3, dur: 0.25, freq: 1400, q: 2, gain: 0.2 * g, type: 'bandpass', p });
+    for (let i = 0; i < n; i++) tone({ t: t + 1.32 + i * 0.05, f0: 1760 + i * 220, f1: 1760 + i * 220, dur: 0.12, gain: 0.04 * g, type: 'square', p });
+  },
+  es(t, g, p, n) { // derak membeku + denting + pecah kaca
+    for (let i = 0; i < 9; i++) burst({ t: t + i * 0.07, dur: 0.02, freq: 5200 + i * 300, q: 5, gain: 0.1 * g, type: 'bandpass', p });
+    for (const [dt, f] of [[0.1, 2093], [0.35, 2637], [0.6, 3136]]) tone({ t: t + dt, f0: f, f1: f * 0.995, dur: 0.5, gain: 0.07 * g, type: 'sine', p });
+    burst({ t: t + 1.1, dur: 0.35, freq: 7000, q: 0.7, gain: 0.3 * g, type: 'highpass', p });
+    for (let i = 0; i < 6 + n; i++) tone({ t: t + 1.1 + i * 0.035, f0: 2400 + (i * 733 % 2600), f1: 2300 + (i * 733 % 2600), dur: 0.22, gain: 0.05 * g, type: 'sine', p });
+  },
+  neon(t, g, p, n) { // arpeggio synth naik + dengung
+    const N = [440, 554, 659, 880, 1109, 1319];
+    for (let i = 0; i < 4 + Math.min(2, n >> 1); i++) { tone({ t: t + i * 0.09, f0: N[i], f1: N[i], dur: 0.16, gain: 0.08 * g, type: 'square', p }); tone({ t: t + i * 0.09, f0: N[i] * 2.01, f1: N[i] * 2.01, dur: 0.12, gain: 0.04 * g, type: 'sawtooth', p }); }
+    tone({ t: t + 0.5, f0: 110, f1: 55, dur: 0.7, gain: 0.3 * g, type: 'sawtooth', p }); tone({ t: t + 0.55, f0: 1760, f1: 3520, dur: 0.6, gain: 0.04 * g, type: 'square', p });
+  },
+  songket(t, g, p, n) { // bonang berantai naik + gong kecil
+    const N = [784, 880, 1046, 1175, 1568];
+    for (let i = 0; i < 3 + Math.min(2, n >> 1); i++) { tone({ t: t + i * 0.16, f0: N[i], f1: N[i] * 0.997, dur: 0.6, gain: 0.12 * g, type: 'sine', p }); tone({ t: t + i * 0.16, f0: N[i] * 2.76, f1: N[i] * 2.75, dur: 0.25, gain: 0.03 * g, type: 'sine', p }); }
+    tone({ t: t + 0.85, f0: 196, f1: 194, dur: 1.1, gain: 0.26 * g, type: 'sine', p }); burst({ t: t + 0.85, dur: 0.3, freq: 6000, q: 4, gain: 0.05 * g, type: 'bandpass', p });
+  },
+  keris(t, g, p, n) { // desir asap + gong berat + dengung tuah
+    burst({ t, dur: 1.0, freq: 900, q: 1.2, gain: 0.16 * g, type: 'bandpass', p });
+    tone({ t: t + 0.1, f0: 220, f1: 330, dur: 0.9, gain: 0.06 * g, type: 'triangle', p });
+    tone({ t: t + 1.0, f0: 98, f1: 97, dur: 1.4, gain: 0.36 * g, type: 'sine', p }); tone({ t: t + 1.0, f0: 196, f1: 194.5, dur: 1.0, gain: 0.14 * g, type: 'sine', p });
+    if (n >= 3) tone({ t: t + 1.02, f0: 1180, f1: 1170, dur: 0.5, gain: 0.05 * g, type: 'sine', p });
+  },
+  petir(t, g, p, n) { // retak sambaran + guntur bergulung
+    for (const dt of n >= 3 ? [0.4, 0.62, 0.78] : [0.4]) { burst({ t: t + dt, dur: 0.06, freq: 2600, q: 0.7, gain: 0.6 * g, type: 'highpass', p }); tone({ t: t + dt, f0: 2400, f1: 160, dur: 0.14, gain: 0.14 * g, type: 'sawtooth', p }); }
+    burst({ t: t + 0.45, dur: 1.4, freq: 170, q: 0.8, gain: 0.55 * g, type: 'lowpass', p }); tone({ t: t + 0.45, f0: 70, f1: 34, dur: 1.0, gain: 0.3 * g, type: 'sine', p });
+  },
+  holo(t, g, p, n) { // kedip patah-patah + turun "TV mati" + ping
+    [1240, 620, 1860, 930, 1480, 740].forEach((f, i) => tone({ t: t + i * 0.1, f0: f, f1: f * 0.94, dur: 0.035, gain: 0.09 * g, type: 'square', p }));
+    tone({ t: t + 0.7, f0: 3200, f1: 60, dur: 0.22, gain: 0.14 * g, type: 'sawtooth', p }); burst({ t: t + 0.7, dur: 0.1, freq: 3000, q: 3, gain: 0.2 * g, type: 'bandpass', p });
+    for (let i = 0; i < Math.min(3, n); i++) tone({ t: t + 0.95 + i * 0.07, f0: 2093 * (1 + i * 0.26), f1: 2093 * (1 + i * 0.26), dur: 0.3, gain: 0.05 * g, type: 'sine', p });
+  },
+  mutiara(t, g, p, n) { // gelembung "bloop" + desir ombak + lonceng air
+    for (let i = 0; i < 3 + Math.min(2, n >> 1); i++) tone({ t: t + i * 0.14, f0: 320 + i * 60, f1: 900 + i * 120, dur: 0.09, gain: 0.14 * g, type: 'sine', p });
+    burst({ t: t + 0.1, dur: 0.9, freq: 700, q: 0.8, gain: 0.2 * g, type: 'lowpass', p });
+    for (const [dt, f] of [[0.7, 1318], [0.85, 1976], [1.0, 2637]]) tone({ t: t + dt, f0: f, f1: f * 0.998, dur: 0.7, gain: 0.08 * g, type: 'sine', p });
+  },
+};
 
 // ---------- Kill: denting bertingkat (1 → 5+), bertema suara skin ----------
 // n = kill beruntun ke-n (nada naik tiap kill, kill ke-5+ jadi akor penuh); knock = melumpuhkan (versi pendek & redup)

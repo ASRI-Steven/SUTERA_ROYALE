@@ -46,9 +46,9 @@ M = lambda name, **kw: (name, kw)
 
 def _malam(B):
     return (BLP.nvg(B, M('flat', col='#2c2f35', rough=0.5, metal=0.3), M('flat', col='#0c2216', rough=0.1, metal=0.7), M('nylon', col='#1c1e22'))
-            + BLP.plate_carrier(B, M('nylon', col='#33373e'), M('nylon', col='#3a3e46', col_web='#23262b', web=0.05), M('nylon', col='#2b2e34'), M('flat', col='#d18a1f', rough=0.6))
-            + BLP.belt_pockets(B, M('nylon', col='#1d1f23'), M('ripstop', col='#2a2d33', cell=0.014), M('steel', col='#3a3c40'))
-            + BLP.knee_pads(B, M('flat', col='#26282d', rough=0.6), M('nylon', col='#1b1c20')))
+            + BLP.plate_carrier(B, M('nylon', col='#4b5148'), M('nylon', col='#4b5148', col_web='#7a7460', web=0.05), M('nylon', col='#3a4038'), M('flat', col='#e09a25', rough=0.55))
+            + BLP.belt_pockets(B, M('nylon', col='#6b644f'), M('nylon', col='#3a4038'), M('steel', col='#8a8d92'))
+            + BLP.knee_pads(B, M('flat', col='#16171a', rough=0.28), M('nylon', col='#6b644f')))
 
 
 def _batik(B):
@@ -78,7 +78,7 @@ COSTUMES = {
         name='Operator Malam',
         # celana kargo paket pants01 (cortu_cargo_pants) hanya 392 segitiga dan meninggalkan celah di pinggang → dipakai cadangan
         # rancangan: bawahan aset sistem (celana setelan) + kantong kargo, sabuk, dan sarung pistol buatan sendiri
-        layers=[dict(src='SYS:male_casualsuit01', mat=M('ripstop', col='#2b2e35'), tris=3600),
+        layers=[dict(src='SYS:male_casualsuit01', mat=M('ripstop', col='#2a2f38', camo=['#3d4654', '#15171b'], camo_scale=8.0), tris=3600),
                 dict(src='SYS:shoes03', kind='shoe', mat=M('leather', col='#17171a', rough=0.5), tris=1300),
                 dict(src='PK:culturalibre_hero-heroine_hood_1', mat=M('knit', col='#23252b'), tris=900, prio=1.5)],
         bl=_malam, glove='#0e0e11', hideHair=True, hideHelmet=True, hideVest=True, hidePack=False,
@@ -86,7 +86,7 @@ COSTUMES = {
     'char_batik': dict(
         name='Batik Parang',
         layers=[dict(src='SYS:male_casualsuit01', keep='top', delete='above_hip', mat=M('batik_parang', latar='#43240f', motif='#dcc693', period=0.05, prada=0.45), tris=3000, prio=1.15)],
-        bl=_batik, glove=None, sole=0.012, hideHair=True, hideHelmet=True, hideVest=False, hidePack=False,
+        bl=_batik, glove=None, sole=0.012, hairline=(0.034, 0.03), hideHair=True, hideHelmet=True, hideVest=False, hidePack=False,
         far=dict(shirt='#6b3e1e', sleeve='#6b3e1e', pants='#5a3115', glove=None, cuff='#D29F52', inner='#e6d3a3')),
     'char_garuda': dict(
         name='Garuda Emas',
@@ -251,6 +251,7 @@ def build_base(a, mh, cid, key):
 def add_bl(var):
     S = COSTUMES[var['cid']]
     if not S.get('bl'):
+        var['springs'] = []
         return
     B = BLP.Body(var)
     meshes = [m for m in S['bl'](B) if not m.empty()]
@@ -271,6 +272,10 @@ def add_bl(var):
             ow[:, BI['hips']] = 1 - s1; ow[:, BI['spine']] = s1 - s1 * s2; ow[:, BI['chest']] = s1 * s2
         p['ow'] = ow.astype(np.float32); p['slot'] = np.full(len(P), SI['fixed'], dtype=np.int64); p['srcmat'] = {}
         var['parts'].append(p)
+    var['springs'] = B.springs
+    if B.springs:
+        for p in var['parts']:  # tulang tambahan (pegas): semua bagian memakai matriks bobot selebar NBW
+            p['ow'] = BLP.wide(p['ow'])
     log('   bagian buatan:', ', '.join(f"{m.name} {len(np.concatenate(m.T))}" for m in meshes))
 
 
@@ -494,6 +499,41 @@ def finish_maps(var, prefix):
 LOD1 = 0.36
 
 
+def low_hairline(var, dside, dback):
+    """kostum bertutup kepala tanpa mesh rambut (blangkon): garis rambut diturunkan supaya rambut pendek (cambang & tengkuk)
+    tampak di bawah tepi tutup kepala, bukan kulit gundul. Telinga (menonjol dari tengkorak) tetap kulit."""
+    top, a, zc, b, yc = C3.head_metrics(var)
+    skin = next(p for p in var['parts'] if p['kind'] == 'skin')
+    P = skin['rest']
+    th = np.arctan2(P[:, 0], P[:, 2] - zc); c = np.cos(th)
+    front, side, back = yc + 0.058, yc + 0.004 - dside, yc - 0.078 - dback
+    line = np.where(c >= 0, side + (front - side) * np.clip(c, 0, 1) ** 1.3, side + (back - side) * np.clip(-c, 0, 1) ** 0.8)
+    t = np.clip((P[:, 1] - (line - 0.004)) / 0.016, 0, 1)
+    # elipsoid tengkorak: hanya yang menempel di tengkorak (telinga & wajah di luar)
+    rr = np.sqrt((P[:, 0] / a) ** 2 + ((P[:, 2] - zc) / b) ** 2)
+    ear = np.clip((1.04 - rr) / 0.04, 0, 1) * np.clip((0.35 - c) / 0.2, 0, 1)   # bukan wajah (c besar = depan)
+    new = (t * t * (3 - 2 * t)) * (skin['ow'][:, BI['head']] > 0.5) * ear
+    skin['scalp'] = np.maximum(skin['scalp'], new)
+
+
+def fix_stray_weights(ow, tri, sim_min=0.35):
+    """bobot nyasar setelah decimate: C3.transfer mengambil titik TERDEKAT di mesh penuh, jadi verteks lengan baju yang (pada pose
+    diam) menempel di pinggang bisa mendapat bobot badan (atau sebaliknya) → segitiga tertarik jadi garis gelap dari tangan ke
+    pinggul saat lengan diangkat. Verteks yang bobotnya nyaris tak beririsan dengan rata-rata tetangganya disamakan ke tetangga."""
+    ow = ow.copy()
+    for _ in range(2):
+        A = np.zeros_like(ow)
+        for a, b in ((0, 1), (1, 2), (2, 0)):
+            np.add.at(A, tri[:, a], ow[tri[:, b]]); np.add.at(A, tri[:, b], ow[tri[:, a]])
+        na = np.linalg.norm(A, axis=1); no = np.linalg.norm(ow, axis=1)
+        sim = (ow * A).sum(axis=1) / np.maximum(na * no, 1e-9)
+        bad = (sim < sim_min) & (na > 0)
+        if not bad.any():
+            break
+        ow[bad] = A[bad] / np.maximum(A[bad].sum(axis=1, keepdims=True), 1e-9)
+    return ow
+
+
 def build_lods(var):
     lods = [[], []]
     for p in var['parts']:
@@ -527,6 +567,7 @@ def build_lods(var):
                     continue
                 pp = dict(rest=P, ow=p['ow'], slot=p['slot'])
                 ow, nor_, slot = C3.transfer(pp, tree, T, hn, dp)
+                ow = fix_stray_weights(ow, dtri)
                 G = C3.to_gl(dp, dtri, duv, dict(ow=ow, nor=nor_, slot=slot))
                 G['kind'] = kind
                 lods[li].append(G)
@@ -683,6 +724,8 @@ def main(a):
             if a.stage == 'all':
                 bake_ao(var['parts'])
                 C3.mark_scalp(var)
+                if S.get('hairline'):
+                    low_hairline(var, *S['hairline'])
                 compose(var)
                 C3.composite_brows(var, RES)
                 finish_maps(var, prefix)
@@ -695,6 +738,8 @@ def main(a):
                     mv['albedo'] = to_webp(prefix + '_albedo.png', os.path.join(odir, f'{key}_albedo.webp'), 2048, 84)
                     mv['normal'] = to_webp(prefix + '_normal.png', os.path.join(odir, f'{key}_normal.webp'), 1024, 88)
                     mv['orm'] = to_webp(prefix + '_orm.png', os.path.join(odir, f'{key}_orm.webp'), 1024, 84)
+                mv['springs'] = var.get('springs', [])
+                if a.stage == 'all':
                     mv['texBytes'] = sum(os.path.getsize(os.path.join(odir, mv[k])) for k in ('albedo', 'normal', 'orm'))
                 variants[key] = mv
                 fits[key] = {n: dict(pushed=round(f[0], 4), deepest_mm=round(f[1] * 1000, 1)) for n, f in var['fit'].items()}
@@ -706,8 +751,8 @@ def main(a):
             J = dict(version=1, id=cid, name=S['name'], bones=BONES, variants={k: variants[k] for k in C3.VARIANTS if k in variants},
                      hideHair=bool(S.get('hideHair')), hideHelmet=bool(S.get('hideHelmet')), hideVest=bool(S.get('hideVest')), hidePack=bool(S.get('hidePack')),
                      glove=S.get('glove'), far=S.get('far'), thumb='thumb.webp' if os.path.exists(os.path.join(odir, 'thumb.webp')) else None,
-                     springs=[], mech=[], emis=None, fp=None, fit=fits, credits=credits or J.get('credits', []),
-                     note='glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang "bones"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo × 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam.')
+                     spring=any(v.get('springs') for v in variants.values()), mech=[], emis=None, fp=None, fit=fits, credits=credits or J.get('credits', []),
+                     note='glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang "bones"; JOINTS 19+ = ruas pegas variants.<varian>.springs, lihat rig.js SPR_BASE). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo × 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam.')
             json.dump(J, open(jp, 'w'), indent=1)
             log('manifest', jp)
     if a.stage != 'sheet':

@@ -189,7 +189,7 @@ function createStage({ scene, camera, col, sunDir, sfx = null }) {
   function fxDemo(what, n = 1) {
     if (!sfx || !show.obj || !show.obj.visible) return;
     const th = gunTheme(show.id), kind = show.kind;
-    show.queue.length = 0; show.demoT = 2.5; show.demoRot = what === 'fire' ? -1.3 : -0.9; // tembak: moncong lebih menghadap kamera supaya bulunya tidak keluar bingkai
+    show.queue.length = 0; show.demoT = 2.5; show.demoRot = what === 'fire' ? 1.15 : -0.9; // tembak: senjata dibalik (moncong di kiri, bebas dari panel toko) supaya kartu tembaknya terlihat
     if (what === 'fire') { // lima tembakan seirama senjata terpilih (maks 8/dtk)
       const gap = Math.max(0.125, 60 / (WEAPONS[kind].rpm || 600));
       for (let i = 0; i < 5; i++) later(0.35 + i * gap, () => { sfx.demo('fire'); audio.previewShot(kind, th.voice); show.kick = 1; });
@@ -379,7 +379,7 @@ export function createLobby(o) {
       </div></div>`;
   }
   function thumb(s) { return `<div class="lb-thumb r-${s.rarity}" data-thumb="${s.id}" style="--rc:${rar(s).color}"><span class="lb-ph">${ic(s.id.startsWith('gun_') ? 'gun' : 'koleksi')}</span></div>`; }
-  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura', model: 'user' };
+  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura', model: 'user', spring: 'anim' };
   function fillThumbs(root) {
     for (const el of root.querySelectorAll('[data-thumb]')) {
       const id = el.dataset.thumb;

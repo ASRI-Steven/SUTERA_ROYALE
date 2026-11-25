@@ -110,13 +110,17 @@ def cloth(ctx, col='#333333', col2=None, rough=0.9, k=0.6, grain=0.08, weave=0.0
     return _out(ctx, alb, rough + 0.06 * (f - 0.5), 0.0, h)
 
 
-def ripstop(ctx, col='#1b1c20', rough=0.88, cell=0.012, seed=0):
-    """kain taktis: kisi benang penguat tipis"""
+def ripstop(ctx, col='#1b1c20', rough=0.88, cell=0.012, seed=0, camo=None, camo_scale=9.0):
+    """kain taktis: kisi benang penguat tipis. camo = [warna, warna]: loreng bercak (dua lapis derau) di atas warna dasar"""
     a, y = wrap_coords(ctx)
     g = np.maximum(np.abs(((a / cell) % 1) - 0.5), np.abs(((y / cell) % 1) - 0.5))
     line = sstep(0.40, 0.48, g)
     f = fbm(ctx['P'], 11.0, 3, seed)
-    alb = lin(col)[None] * (0.9 + 0.2 * f)[:, None] * (1 + 0.22 * line)[:, None] * shade(ctx, 0.65)[:, None]
+    base = np.repeat(lin(col)[None], len(f), axis=0)
+    for k, c in enumerate(camo or []):
+        n = fbm(ctx['P'] * np.array([1.0, 0.55, 1.0]), camo_scale * (1 + 0.45 * k), 3, seed + 31 + 13 * k)
+        base = mix(base, lin(c)[None], sstep(0.52 + 0.03 * k, 0.56 + 0.03 * k, n))
+    alb = base * (0.9 + 0.2 * f)[:, None] * (1 + 0.22 * line)[:, None] * shade(ctx, 0.65)[:, None]
     return _out(ctx, alb, rough - 0.05 * line, 0.0, 0.00035 * line)
 
 

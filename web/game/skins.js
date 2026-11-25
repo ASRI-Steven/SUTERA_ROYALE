@@ -57,7 +57,7 @@ export const CHAR_SKINS = [
   C('char_ondel', 'Ondel-ondel', 'langka', 'panggung', 'Jaket merah berbunga emas delapan kelopak, dalaman gading berpita kembang kelapa.', CHAR_FX.ondel,
     { shirt: '#c41a20', sleeve: '#c41a20', pants: '#141214', glove: '#141214', cuff: '#e8b445', inner: '#f1e8d2', gear: '#3a2a20', pack: '#7a1418' }),
   C('char_batik', 'Batik Parang', 'epik', 'wastra', 'Jaket parang sogan-krem; kilau emas berjalan menyusuri garis parangnya.', CHAR_FX.batik,
-    { shirt: '#6b3e1e', sleeve: '#6b3e1e', pants: '#231c1a', glove: '#3a2416', cuff: '#D29F52', inner: '#e6d3a3', gear: '#3a2416', pack: '#6b3e1e' }, { costume: true }),
+    { shirt: '#6b3e1e', sleeve: '#6b3e1e', pants: '#231c1a', glove: '#3a2416', cuff: '#D29F52', inner: '#e6d3a3', gear: '#3a2416', pack: '#6b3e1e' }, { costume: true, spring: true }),
   C('char_neon', 'Neon Kota', 'epik', 'neo', 'Setelan gelap dengan garis cahaya yang berdenyut mengalir, berganti toska dan magenta.', CHAR_FX.neon,
     { shirt: '#0c0d14', sleeve: '#0c0d14', pants: '#0c0d14', glove: '#08080c', cuff: '#22e6ff', inner: '#15161f', gear: '#11121a', pack: '#0c0d14' }, { cuffGlow: '#22e6ff' }),
   C('char_empu', 'Empu Pamor', 'epik', 'pusaka', 'Beskap nila-hitam berlapis garis pamor perak yang berkilau pelan, kerah & manset emas.', CHAR_FX.empu,
@@ -69,7 +69,7 @@ export const CHAR_SKINS = [
   C('char_kencana', 'Kencana', 'epik', 'kencana', 'Marmer gading berurat emas dengan kilau emas yang menyapu pelan.', CHAR_FX.kencana,
     { shirt: '#f3efe7', sleeve: '#f3efe7', pants: '#f3efe7', glove: '#f3efe7', cuff: '#e3b24e', inner: '#efe6d4', gear: '#e9e2cf', pack: '#e3b24e' }),
   C('char_garuda', 'Garuda Emas', 'legendaris', 'pusaka', 'Putih upacara berhias bulu garuda emas yang berkilau bergelombang, berselubung aura & serbuk cahaya emas.', CHAR_FX.garuda,
-    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' }, costume: true }),
+    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' }, costume: true, spring: true }),
   C('char_warok', 'Warok Barong', 'legendaris', 'panggung', 'Hitam warok, dalaman loreng merah-putih, mata bulu merak berpelangi di bahu & punggung, aura toska-emas.', CHAR_FX.warok,
     { shirt: '#0b0a0c', sleeve: '#0b0a0c', pants: '#0b0a0c', glove: '#0b0a0c', cuff: '#d6a446', inner: '#f1ede4', gear: '#141218', pack: '#0b0a0c' }, { aura: { style: 1, c1: '#0fbf9a', c2: '#ffb830' } }),
   C('char_reaktor', 'Reaktor Sutera', 'legendaris', 'neo', 'Zirah keramik putih & grafit dengan kanal energi biru yang mengalir, inti dada berdenyut, dan aura plasma.', CHAR_FX.reaktor,
@@ -97,27 +97,27 @@ export const GUN_SKINS = [
   G('gun_ondel', 'Ondel-ondel', 'langka', 'panggung', 'Pernis merah berbunga emas dan gading berpita kembang kelapa warna-warni.', GUN_FX.ondel, { coat: true, tracer: [7.5, 3, 2.6], color: '#e8323a', color2: '#f2c230' }),
   G('gun_marmer', 'Marmer Kencana', 'langka', 'kencana', 'Marmer putih dipoles dengan urat emas seperti kintsugi; gagang marmer hitam.', GUN_FX.marmer, { coat: true, tracer: [6.5, 5.2, 3.2], color: '#e9b44a', color2: '#f2efe9' }),
   G('gun_es', 'Kristal Es', 'epik', 'alam', 'Faset es dengan cahaya aurora yang bergerak di dalamnya, kilau salju, dan aksen kristal berpendar. Tembakan berdenting kristal; lawan pecah jadi serpih es.', GUN_FX.es,
-    { coat: true, tracer: [2.6, 5.2, 8.5], flash: [2.6, 4.8, 7.2], flame: { style: 'frost', c1: '#7fd8ff', c2: '#ffffff' }, glow: true, voice: 'crystal', kill: 'shatter', emblem: 'es', color: '#5fd8ff', color2: '#e8f8ff' }),
+    { coat: true, tracer: [2.6, 5.2, 8.5], flash: [2.6, 4.8, 7.2], flame: { style: 'frost', c1: '#7fd8ff', c2: '#ffffff' }, glow: true, voice: 'crystal', kill: 'shatter', emblem: 'es', color: '#5fd8ff', color2: '#e8f8ff', fx: { id: 'es' } }),
   G('gun_neon', 'Neon Ungu', 'epik', 'neo', 'Kisi segi enam menyala dengan gelombang energi yang mengalir ke moncong dan sel data berkedip. Tembakan synth berdenyut.', GUN_FX.neon,
-    { coat: true, tracer: [5.5, 1.6, 8], flash: [5, 1.6, 7], flame: { style: 'arc', c1: '#b24dff', c2: '#7ff4ff' }, glow: true, voice: 'pulse', kill: 'pixel', emblem: 'neo', color: '#b24dff', color2: '#22e6ff' }),
+    { coat: true, tracer: [5.5, 1.6, 8], flash: [5, 1.6, 7], flame: { style: 'arc', c1: '#b24dff', c2: '#7ff4ff' }, glow: true, voice: 'pulse', kill: 'pixel', emblem: 'neo', color: '#b24dff', color2: '#22e6ff', fx: { id: 'neon' } }),
   G('gun_songket', 'Songket Emas', 'epik', 'wastra', 'Sutra marun bertenun benang emas; kilau berjalan di sepanjang benang dan bintang delapan berkelip. Tembakan berdenting bonang.', GUN_FX.songket,
-    { tracer: [7.5, 5, 1.8], flash: [7, 4.8, 1.8], flame: { style: 'glint', c1: '#f2a83a', c2: '#fff1c0' }, glow: true, voice: 'bonang', kill: 'petal', emblem: 'wastra', color: '#f2c25a', color2: '#9a1830' }),
+    { tracer: [7.5, 5, 1.8], flash: [7, 4.8, 1.8], flame: { style: 'glint', c1: '#f2a83a', c2: '#fff1c0' }, glow: true, voice: 'bonang', kill: 'petal', emblem: 'wastra', color: '#f2c25a', color2: '#9a1830', fx: { id: 'songket' } }),
   G('gun_keris', 'Pamor Keris', 'epik', 'pusaka', 'Baja hitam bergaris pamor nikel yang berpendar beriak, warangka kayu timoho, mendak emas bermata. Tembakan bergaung gong; lawan lenyap jadi asap tuah.', GUN_FX.keris,
-    { tracer: [3.2, 6.5, 5.2], flash: [4, 6, 4.8], flame: { style: 'spirit', c1: '#13b894', c2: '#ffcf6a' }, glow: true, voice: 'gong', kill: 'spirit', emblem: 'keris', color: '#2fd3b0', color2: '#d6a446' }),
+    { tracer: [3.2, 6.5, 5.2], flash: [4, 6, 4.8], flame: { style: 'spirit', c1: '#13b894', c2: '#ffcf6a' }, glow: true, voice: 'gong', kill: 'spirit', emblem: 'keris', color: '#2fd3b0', color2: '#d6a446', fx: { id: 'keris' } }),
   G('gun_petir', 'Badai Petir', 'epik', 'alam', 'Logam badai dengan kilat bercabang yang menyambar dan berkedip. Tembakan menggelegar; kill menyambar petir.', GUN_FX.petir,
-    { coat: true, tracer: [5, 5, 10], flash: [4.4, 4.2, 9], flame: { style: 'arc', c1: '#7f70ff', c2: '#ffffff' }, glow: true, voice: 'thunder', kill: 'bolt', emblem: 'petir', color: '#9d90ff', color2: '#efeaff' }),
+    { coat: true, tracer: [5, 5, 10], flash: [4.4, 4.2, 9], flame: { style: 'arc', c1: '#7f70ff', c2: '#ffffff' }, glow: true, voice: 'thunder', kill: 'bolt', emblem: 'petir', color: '#9d90ff', color2: '#efeaff', fx: { id: 'petir' } }),
   G('gun_holo', 'Holografik', 'epik', 'neo', 'Foil pelangi yang bergeser mengikuti sudut pandang, garis difraksi, dan pindaian cahaya. Tembakan berkedip digital.', GUN_FX.holo,
-    { coat: true, tracer: [7, 3.5, 7.5], flash: [6, 4.5, 7.5], flame: { style: 'glint', c1: '#ff6ad2', c2: '#7ff0ff' }, glow: true, voice: 'glitch', kill: 'pixel', emblem: 'holo', color: '#ff7ad9', color2: '#62e6ff' }),
+    { coat: true, tracer: [7, 3.5, 7.5], flash: [6, 4.5, 7.5], flame: { style: 'glint', c1: '#ff6ad2', c2: '#7ff0ff' }, glow: true, voice: 'glitch', kill: 'pixel', emblem: 'holo', color: '#ff7ad9', color2: '#62e6ff', fx: { id: 'holo' } }),
   G('gun_mutiara', 'Mutiara Laut', 'epik', 'kencana', 'Nacre berlapis berwarna pastel yang berkilau pelan, berhias emas mawar. Tembakan berdenting lonceng air.', GUN_FX.mutiara,
-    { coat: true, tracer: [6.5, 6, 6.8], flash: [5.8, 5.5, 6.5], flame: { style: 'glow', c1: '#ffc6dc', c2: '#c7f0ec' }, glow: true, voice: 'chime', kill: 'pearl', emblem: 'kencana', color: '#f7c6d8', color2: '#bff0ec' }),
+    { coat: true, tracer: [6.5, 6, 6.8], flash: [5.8, 5.5, 6.5], flame: { style: 'glow', c1: '#ffc6dc', c2: '#c7f0ec' }, glow: true, voice: 'chime', kill: 'pearl', emblem: 'kencana', color: '#f7c6d8', color2: '#bff0ec', fx: { id: 'mutiara' } }),
   G('gun_garuda', 'Emas Garuda', 'legendaris', 'pusaka', 'Emas berukir bulu garuda dan pernis merah tua berfiligri sayap. Cahaya keemasan menyapu badan senjata, tembakan berdentang gong garuda, dan lawan tersingkir dalam hujan bulu emas.', GUN_FX.garuda,
-    { coat: true, tracer: [8, 5.6, 1.6], flash: [8, 5.6, 2], flame: { style: 'glint', c1: '#ffb43a', c2: '#fff4c8', size: 0.042 }, glow: true, voice: 'garuda', kill: 'feather', emblem: 'garuda', color: '#ffc64a', color2: '#9a1414' }),
+    { coat: true, tracer: [8, 5.6, 1.6], flash: [8, 5.6, 2], flame: { style: 'glint', c1: '#ffb43a', c2: '#fff4c8', size: 0.042 }, glow: true, voice: 'garuda', kill: 'feather', emblem: 'garuda', color: '#ffc64a', color2: '#9a1414', fx: { id: 'garuda' } }),
   G('gun_reog', 'Dadak Merak', 'legendaris', 'panggung', 'Mata bulu merak berpelangi yang berdenyut dan loreng macan barongan. Tembakan berkendang & bergong, kill disambut kipas bulu merak.', GUN_FX.reog,
     { coat: true, tracer: [1.6, 6.5, 4.6], flash: [2.6, 6, 4.2], flame: { style: 'spirit', c1: '#14c9a8', c2: '#ffc64a' }, glow: true, voice: 'reog', kill: 'peacock', emblem: 'merak', color: '#19c9a8', color2: '#2a6bff', fx: { id: 'merak' } }),
   G('gun_magma', 'Inti Magma', 'legendaris', 'alam', 'Obsidian dengan lava yang mengalir di retakannya; laras membara makin panas saat menembak. Dentuman naga, lawan meledak jadi bara.', GUN_FX.magma,
-    { coat: true, tracer: [9, 3.4, 0.6], flash: [9, 3.6, 0.8], flame: { style: 'fire', c1: '#ff2a00', c2: '#ffe27a', size: 0.06 }, glow: true, voice: 'dragon', kill: 'ember', emblem: 'api', color: '#ff6a1a', color2: '#ffd860' }),
+    { coat: true, tracer: [9, 3.4, 0.6], flash: [9, 3.6, 0.8], flame: { style: 'fire', c1: '#ff2a00', c2: '#ffe27a', size: 0.06 }, glow: true, voice: 'dragon', kill: 'ember', emblem: 'api', color: '#ff6a1a', color2: '#ffd860', fx: { id: 'magma' } }),
   G('gun_plasma', 'Reaktor Plasma', 'legendaris', 'neo', 'Zirah keramik putih dengan kanal plasma yang mengalir ke moncong dan inti yang makin terang saat menembak. Lawan terurai jadi piksel cahaya.', GUN_FX.plasma,
-    { coat: true, tracer: [1.8, 7, 10], flash: [1.8, 6.4, 9], flame: { style: 'plasma', c1: '#1fb8ff', c2: '#e8fdff', size: 0.04 }, glow: true, voice: 'plasma', kill: 'disintegrate', emblem: 'reaktor', color: '#2fd8ff', color2: '#e8ecf0' }),
+    { coat: true, tracer: [1.8, 7, 10], flash: [1.8, 6.4, 9], flame: { style: 'plasma', c1: '#1fb8ff', c2: '#e8fdff', size: 0.04 }, glow: true, voice: 'plasma', kill: 'disintegrate', emblem: 'reaktor', color: '#2fd8ff', color2: '#e8ecf0', fx: { id: 'plasma' } }),
 ];
 const BY = new Map([...CHAR_SKINS, ...GUN_SKINS].map((s) => [s.id, s]));
 export const skinById = (id) => BY.get(id) || null;
@@ -137,6 +137,7 @@ export function skinFeatures(s) {
     if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
   } else {
     if (s.costume) f.push(['model', 'Kostum bermodel']);
+    if (s.costume && s.spring) f.push(['spring', 'Kain & rumbai bergerak']); // ringkasan costume.json (spring) di katalog
     if (RARITY[s.rarity].rank >= 2 || s.fx === CHAR_FX.samudra) f.push(['anim', 'Pola beranimasi']);
     if (s.cuffGlow) f.push(['glow', 'Manset menyala']);
     if (s.aura) f.push(['aura', 'Aura api / energi beranimasi']);
