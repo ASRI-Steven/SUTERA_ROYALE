@@ -1556,3 +1556,32 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   cabut/periksa berasal dari shader skin lama (`skinfx.js`), bukan efek berbentuk. Belum: kartu bundel, efek impact untuk skin
   langka, penghapusan pool Points lama di `killfx.js`.
 - **Berikutnya**: M3–M5 (16 skin senjata + 13 kostum Nusantara baru).
+
+## 46. Tata letak sisa M3 + M4 (pohon) + M5 (apartemen, batas kawasan) (25 Nov) — SUDAH di main, `?v=202611251038`; alur Tata letak selesai
+
+- **Bangun ulang** (±2,5 mnt, deterministik, byte-identik dengan yang diaudit):
+  `node tools/tidy_layout.mjs data/build/alsut-map.raw.json web/data/alsut-map.json --stages roads,buildings,walls,trees --props data/build/alsut-props.raw.json web/data/alsut-props.json --context data/build/alsut-context.raw.json web/data/alsut-context.json`
+- **Sisa M3**: `envProps.stats.dropped` 14 → 6 (= baseline M2; pos jaga & palang menghindari pohon/lajur di `derive.mjs`). Pintu k3
+  kini divalidasi dengan collider game (`doorUseLoader` di `tools/tidy/doors.mjs`: banjir radius 120 m per sisi pintu; pintu
+  buntu dan lorong buntunya dilarang, hitung ulang ≤ 4 iterasi) → pintu buntu 3 → 0 (A13 dulu "lulus" berkat pintu buntu). Daun
+  gerbang k2 hanya digambar di sisi yang menempel tembok (`lf`). `GATE_MERGE` merapikan klaster k2 (−665,−625) dan puntung
+  tembok (−574,721). k1 (548,441) "tidak bergerak" = cacat uji (titik awal di dalam gedung #4435). Bot diam ≥ 20 dtk (4 run × 8 mnt
+  per sisi): pra-tembok 0,97 %, M4 0,98 %, M5 0,97 % → **tidak ada kenaikan nyata** (angka §42 berasal dari sampel terlalu kecil).
+- **M4 tanam ulang pohon** (`tools/tidy/trees.mjs`, P1–P4 di bawah `treeGuard`; ditambah larangan pohon ≤ 3 m dari tepi jalan lokal
+  yang disempitkan): pohon 7.855 → 8.341, semak 7.069 → 7.681; semua audit pohon (A1, A2, A3, Z5–Z8) 0; `cleanTrees` saat muat
+  membuang/menggeser 0.
+- **M5** (`walls.mjs` `APARTMENTS` dan `BOUND_SHOW` = true): 15 kompleks (3 apartemen), tembok 21,9 km, gerbang k2 36, pintu k3 136;
+  tembok tampilan `t=2` 9,1 km di batas kawasan (TANPA collider); LOD jauh tanpa tumpang tindih dekat/jauh; tembok & gerbang
+  digambar di peta (`mapview.js`, K6). **Tembok dalam antar-cluster TIDAK dibuat**: segitiga tembok sudah 291 rb dari anggaran 300 rb.
+- **Audit akhir M5**: A8 0/86.916, A9 0, A10 217/0, A11 0, A12 0 (terdekat 1,72 m), A13 0, A14 0/212, tembok di gedung/aspal 0/0;
+  audit M2 tetap bersih. **Alat audit diubah**: `audit-pintu.mjs` radius 70 → 120 m (di 70 m tiga pintu ditandai buntu karena
+  sisinya terpotong batas radius; di 300 m tetap 0 buntu); A13 melewati tembok `t=2` (tanpa collider, bukan penghalang).
+- **Kinerja**: muat ±4,6 → ±4,8 dtk; draw call +7…+10 (anggaran ≤ +12); +±25 rb segitiga per frame di kompleks padat (≤ +60 rb);
+  ms/frame sama dalam derau; `alsut-props.json` 126 KB (≤ 140 KB).
+- **Diuji**: uji asap 0 galat konsol (diulang oleh integrator setelah digabung dengan Skin v2 M2 + Senjata M3 + Kostum M3);
+  kendaraan lewat gerbang 48/48 di M5; jalan kaki 16/20 + 4/4; deret rumah terpangkas M2 dari dekat: fasad utuh.
+  Tidak ada uji ulang setelah cap `?v=`.
+- **Kekurangan**: **bus tersangkut di gerbang k2 (−652,−615)** dua arah (jalan servis #847 berbelok tajam tepat di depan gerbang;
+  mobil biasa lewat; gerbang itu tidak masuk pilihan uji kendaraan M5) — usul: perpanjang bukaan sampai tikungan; beberapa pintu
+  k3 membuka ke lorong belakang ruko yang baru tembus ke jalan setelah > 70 m (sah, kurang berguna); sisa anggaran segitiga tembok
+  ±9 rb; build ±2,5 mnt. Belum (dari §40): `alsut-grass.json` belum dibangun ulang, gedung context belum dipangkas.
