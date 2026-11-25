@@ -421,6 +421,7 @@ void main() {
     float a = atan(p.x, -p.y);
     ill = ring(p, 13.0, 1.2) * smoothstep(0.58, 0.66, abs(a));
     ill = max(ill, dotm(p, vec2(0.0), 0.9));
+    blk = 0.7 * max(ring(p, 13.0, 2.3) * smoothstep(0.55, 0.64, abs(a)), dotm(p, vec2(0.0), 1.6)); // alas gelap: retikel terbaca di latar terang
     for (int i = 1; i <= 3; i++) { float y = -3.4 * float(i), w = 2.4 - 0.5 * float(i); ill = max(ill, seg(p, vec2(-w, y), vec2(w, y), 0.55)); }
   } else if (uRet == 3) { // 4×: chevron berpendar + tangga mil + kurung jarak (hitam)
     ill = max(seg(p, vec2(0.0), vec2(-2.6, -3.1), 0.6), seg(p, vec2(0.0), vec2(2.6, -3.1), 0.6));
@@ -499,7 +500,7 @@ const LENS_ILL = { rds: [6, 0.25, 0.12], holo: [5, 0.5, 0.15], s2: [3.2, 0.25, 0
 // material lensa okuler satu optik (dibuat per pemasangan; uniform diisi update())
 function lensMaterial(id, lensR, win) {
   const mag = id === 's2' || id === 's4' || id === 's8';
-  const U = { uRes: { value: new THREE.Vector2(1280, 720) }, uFovT: { value: 0.5 }, uAds: { value: 0 }, uK: { value: id === 's2' ? 1.2 : 2.2 }, uMag: { value: mag ? 1 : 0 }, uRs: { value: LENS_RS[id] || 1 },
+  const U = { uRes: { value: new THREE.Vector2(1280, 720) }, uFovT: { value: 0.5 }, uAds: { value: 0 }, uK: { value: id === 's2' ? 1.2 : id === 's4' ? 1.5 : 2.2 }, uMag: { value: mag ? 1 : 0 }, uRs: { value: LENS_RS[id] || 1 },
     uSun: { value: 0 }, uLensR: { value: lensR }, uRet: { value: LENS_RET[id] | 0 }, uIll: { value: new THREE.Vector3(...(LENS_ILL[id] || LENS_ILL.rds)) }, uWin: { value: new THREE.Vector2(...(win || [0, 0])) } };
   const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: LENS_VS, fragmentShader: LENS_FS, transparent: !mag, depthWrite: false });
   if (mag) { // digambar paling awal (bukan antrian transparan) dengan campuran alfa manual, menulis stensil 1
@@ -882,6 +883,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
     const mz = nodeLocal(kind + '_muzzle', kind), sg = nodeLocal(kind + '_sight', kind), gd = nodeLocal(kind + '_guard', kind);
     if (mz) G.muzzle.position.copy(mz);
     if (sg) { SIGHT_Y[kind] = sg.y; G.sightX = sg.x; G.sightZ = sg.z + 0.1; }
+    G.ironD = (weaponMeta(kind) || {}).ironD || 0; // jarak mata pisir besi per senjata (weapons.json; 0 = IRON_D)
     for (const [hn, pos] of [['fp_hand_r', [0.026, 0.004, 0.01]], ['fp_hand_l', gd ? [gd.x, gd.y, gd.z] : [0, -0.03, -0.25]]]) {
       // tangan kiri: genggaman yang dipaskan ke pelindung tangan senjata ini (fp_hand_l_<jenis>; revolver = pistol), kalau ada
       const h = (hn === 'fp_hand_l' && glbNode('fp_hand_l_' + (HAND_L_OF[kind] || kind))) || glbNode(hn);
@@ -2086,7 +2088,7 @@ export function createViewModel(props = {}) { // props: { kit, band } geometri b
         else if (st.inspW > 0) { st.inspW = rA || st.prev ? 0 : Math.max(0, st.inspW - dt / 0.16); if (st.inspW > 0) animInspect(G, gk, st.inspU, ease(st.inspW)); else heldPose(G); } // dibatalkan
         if (!st.prev) syncOptic(G, G.optics ? opticId(gk, o.att) : null); // selama ganti senjata, model yang turun masih senjata lama
         const O = G.opt, E = O ? O.eye : _eye.set(G.sightX || 0, SIGHT_Y[gk], (G.sightZ || 0) - 0.1); // titik mata: lensa okuler / pisir besi
-        const hip = [0.17, -0.2, -0.52], adsP = [-E.x, -E.y, -(O ? reliefOf(O) : IRON_D) - E.z];
+        const hip = [0.17, -0.2, -0.52], adsP = [-E.x, -E.y, -(O ? reliefOf(O) : G.ironD || IRON_D) - E.z];
         const sw = st.swap > 0 ? 1 - backOut(1 - st.swap) : 0, low = Math.max(lower, out); // naik: sedikit lewat lalu diam
         const spr = st.sprint * (rA || hA ? 0.35 : 1); // berlari sambil beraksi: pose lari dikurangi
         const ka = 1 - a * 0.4, tk = st.tuck * (1 - a) * (1 - spr * 0.6);
