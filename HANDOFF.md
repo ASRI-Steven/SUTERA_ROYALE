@@ -1508,3 +1508,26 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   terjun; sayap tipis dari samping; mutu keseluruhan belum premium.
 - **Belum dikerjakan dari M3**: kostum biasa/langka (kabut, gurun, rimba, merahputih, samudra, tenun, ondel), tulang genggam
   `gripL/R`. M4–M6 belum dimulai.
+
+## 44. Senjata M3 — delapan senjata sisanya + perbaikan M2 (25 Nov) — SUDAH di main, `?v=202611250900`
+
+- **Delapan senjata dibangun ulang** di `tools/blender/weapons.py` dengan gaya tiga perintis (pembantu baru `panel_cut`,
+  `slotted_hg`, `brake`, `cage`, `butt_pad`, `box_mag`, `stock_knob`, `grip_panels`). Tris LOD0: Elang/dmr 35.279, Gempa/lmg
+  28.632, Petir/burst 20.912, Kilat/smg 19.016, Lebah/pdw 15.824, Badai/shotgun 12.266, Kobra/revolver 9.388, Gada/dbs 8.966.
+  Total LOD0 ±216k (dulu ±130k); GLB 2,30 MB (Draco). **Model dunia LOD1 tidak diubah** → tidak lagi persis cocok dengan siluet
+  baru (terutama Lebah, Petir, Gempa); itu M4.
+- **Perbaikan M2**: ADS besi Rajawali — `IRON_D = 0,46` menaruh mata di belakang popor; kini `weapons.json` membawa `ironD` per
+  senjata (shotgun 0,325, dmr 0,317, sniper 0,335, lmg 0,337, pdw 0,272, dbs 0,34), runtime `G.ironD || IRON_D`, dan semua popor
+  bersisir turun ±45–50 mm di bawah garis bidik. P9: pelindung picu & panel gagang baru. Garuda: popor membulat. Lensa: bayangan
+  eye-box 4× dilemahkan (`uK` 2,2 → 1,5), retikel 2× beralas gelap. `weapons.js` hanya +4/−2 baris.
+- **Kontrak bergeser**: `revolver_sight` maju 12 mm, `dbs_sight` turun ke z 0,1118, sumbu silinder Kobra +3 mm. Tinggi sumbu
+  laras, `mag.pos`, nama node, selubung gagang tetap. **GLB + JSON + JS harus dirilis bersama.**
+- **Diuji** (headless): 11 senjata cabut/inspeksi/isi ulang/tembak/bidik, teropong 2×/4×/8×, skin `gun_reog` di 6 senjata, 0 baris
+  konsol; setelah digabung dengan Kostum M3: pertandingan cabut/tembak/bidik/isi ulang/kill ×3 dengan efek Merak. Tidak ada uji
+  ulang setelah cap `?v=`.
+- **Belum diuji**: orang ketiga/loot/lobi/ikon HUD dengan model baru, 21 skin lain, kinerja GPU (tris naik ±66 %), ponsel,
+  animasi patah-buka Gada dan pompa Badai (baru satu bingkai), tangan kiri dari dekat.
+- **Kekurangan**: Kobra di bawah mutu perintis (rangka pelat bersudut); ADS besi Badai/Gada/Gempa didominasi badan senjata di
+  tengah-bawah layar (bersih, belum elegan); Elang di atas target 30k tris; Lebah pelat bahu jadi blok gelap di pinggul; jari kiri
+  lewat 0,2–0,9 mm di Lebah/Badai; bayangan eye-box 2× saat bergerak masih tebal; senjata gelap jadi siluet di jarak pinggul.
+- **Berikutnya**: M4 (model dunia LOD1/LOD2 di tangan karakter), M5, `setGrip`.
