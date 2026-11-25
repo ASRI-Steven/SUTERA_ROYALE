@@ -739,8 +739,9 @@ function patchSkinningChunk() {
 }
 
 // penyimpan matriks tulang + palet: berperan sebagai "skeleton" bagi SkinnedMesh (renderer hanya butuh boneTexture & update)
-// (tulang tiruan: three.js menghitung bola pembatas SkinnedMesh lewat skeleton.bones — cukup pose diam, sekali saja)
-const DUMMY_BONES3 = Array.from({ length: NB3 }, () => new THREE.Object3D()), DUMMY_INV3 = DUMMY_BONES3.map(() => new THREE.Matrix4());
+// (tulang tiruan: three.js menghitung bola pembatas SkinnedMesh lewat skeleton.bones — cukup pose diam, sekali saja;
+// 38 = SPR_MAX, karena verteks kostum boleh menunjuk tulang pegas 19–37)
+const DUMMY_BONES3 = Array.from({ length: 38 }, () => new THREE.Object3D()), DUMMY_INV3 = DUMMY_BONES3.map(() => new THREE.Matrix4());
 const FAR_SPHERE3 = new THREE.Sphere(new THREE.Vector3(), 1e7);
 class SkinStore extends THREE.Skeleton {
   constructor(rows) {
@@ -922,7 +923,7 @@ export function loadCostume(id, variantKey, base = 'game/assets/costumes/') {
     const mat = costumeMaterial(map, normalMap, orm);
     if (ENV3) mat.envMap = ENV3;
     COS_MATS.push(mat);
-    return { id, variant: variantKey, meta, lods, mat };
+    return { id, variant: variantKey, meta, lods, mat, springs: mv.springs || null };
   })();
   const p = Promise.race([work, new Promise((_, rej) => setTimeout(() => rej(new Error('batas waktu ' + COS_TIMEOUT / 1000 + ' dtk')), COS_TIMEOUT))]).catch((e) => {
     if (!COS_WARNED.has(id)) { COS_WARNED.add(id); console.warn('Kostum ' + id + ' tidak dimuat (' + e.message + '), pakai tampilan lama'); }
@@ -936,21 +937,144 @@ export function loadCostume(id, variantKey, base = 'game/assets/costumes/') {
 export function costumeProbe(asset) {
   const g = instGeo3(asset.lods[0], 1, BODY_ATTR); g.instanceCount = 1;
   const m = new THREE.SkinnedMesh(g, asset.mat);
-  m.skeleton = new SkinStore(1); m.frustumCulled = false; m.boundingSphere = FAR_SPHERE3; m.receiveShadow = true;
+  m.skeleton = new SkinStore(SPR_ROWS); m.frustumCulled = false; m.boundingSphere = FAR_SPHERE3; m.receiveShadow = true;
   return m;
+}
+
+// ---------- Pegas kostum (kain: jarik, dodot, ekor; bulu) ----------
+// Tulang tambahan kostum bernomor mulai SPR_BASE = 19: chunk skinning membaca texel ke-(4 × indeks) dan lebar tekstur tulang
+// TW3 = 76 texel = 19 matriks, jadi indeks 19+ otomatis jatuh ke baris berikutnya milik karakter itu (17–18 = texel palet,
+// tidak dipakai sebagai tulang). Karakter tunggal karenanya memakai SkinStore SPR_ROWS baris; shader tidak berubah.
+// Data (costume.json → variants.<varian>.springs): [{ parent, joint (indeks tulang ruas pertama), pts: [[x,y,z],…] pose diam,
+//   stiff, damp, grav, slack (m), limit (derajat), out: [x,y,z] | null, follow: [[tulang,…] per ruas] | null }].
+// Tiap ruas punya SASARAN: ujungnya bila kaku terhadap induk ("menggantung"), dan — untuk kain bawah — bila kaku terhadap tiap
+// tulang `follow` (paha/betis kiri-kanan). Sasaran dipilih halus (softmax) menurut siapa yang paling jauh ke arah luar `out`:
+// kain depan ikut kaki yang paling maju, kain belakang ikut kaki yang paling mundur, kain samping ikut kakinya sendiri —
+// selubung kedua kaki, tanpa uji tumbukan. Di atas sasaran itu: Verlet (ruang dunia) + tarikan + redaman + gravitasi, simpangan
+// dibatasi `slack` (kain tidak bisa tertinggal sampai ditembus lutut), tidak menembus lantai, panjang ruas tetap, batas sudut.
+// Tanpa alokasi per langkah.
+const SPR_BASE = 19, SPR_ROWS = 2, SPR_MAX = SPR_ROWS * 19, SPR_TAU = 1 / 0.035, SPR_SIDE = 1.2;
+function makeSprings(asset, rig) {
+  const L = asset.springs;
+  if (!L || !L.length || !V3) return null;
+  const chains = [], piv = (name, k) => V3.pivots[V3.bones.indexOf(name) * 3 + k];
+  for (const s of L) {
+    const n = s.pts.length - 1;
+    if (n < 1 || !rig.b[s.parent] || V3.bones.indexOf(s.parent) < 0 || s.joint < SPR_BASE || s.joint + n > SPR_MAX) continue;
+    const pts = new Float32Array(s.pts.flat()), dir = new Float32Array(n * 3), len = new Float32Array(n), out = s.out || null;
+    for (let i = 0; i < n; i++) {
+      const dx = pts[i * 3 + 3] - pts[i * 3], dy = pts[i * 3 + 4] - pts[i * 3 + 1], dz = pts[i * 3 + 5] - pts[i * 3 + 2], l = Math.hypot(dx, dy, dz) || 1e-6;
+      len[i] = l; dir[i * 3] = dx / l; dir[i * 3 + 1] = dy / l; dir[i * 3 + 2] = dz / l;
+    }
+    // pengikut per ruas: [tulang, titik ujung ruas relatif poros tulang itu (x, y, z), bias sisi]
+    const fol = [];
+    for (let i = 0; i < n; i++) {
+      const F = [];
+      for (const name of (s.follow && out && s.follow[i]) || []) {
+        if (!rig.b[name] || V3.bones.indexOf(name) < 0) continue;
+        const px = piv(name, 0), py = piv(name, 1), pz = piv(name, 2);
+        F.push({ bone: rig.b[name], x: pts[i * 3 + 3] - px, y: pts[i * 3 + 4] - py, z: pts[i * 3 + 5] - pz,
+          bias: SPR_SIDE * ((px - piv(s.parent, 0)) * out[0] + (py - piv(s.parent, 1)) * out[1] + (pz - piv(s.parent, 2)) * out[2]) });
+      }
+      fol.push(F);
+    }
+    const lim = (s.limit === undefined ? 70 : s.limit) * PI / 180;
+    chains.push({ bone: rig.b[s.parent], n, joint: s.joint, pts, dir, len, fol, out,
+      loc: pts.map((v, k) => v - piv(s.parent, k % 3)), pos: new Float32Array((n + 1) * 3), prev: new Float32Array((n + 1) * 3),
+      stiff: s.stiff === undefined ? 40 : s.stiff, damp: s.damp === undefined ? 6 : s.damp, grav: s.grav === undefined ? 0.6 : s.grav, slack: s.slack === undefined ? 0.05 : s.slack,
+      cosL: Math.cos(lim), sinL: Math.sin(lim), live: false });
+  }
+  return chains.length ? { chains, root: rig.root } : null;
+}
+function stepSprings(S, data, dt) {
+  const g0 = 9.8 * dt * dt, floor = S.root.matrixWorld.elements[13] + 0.025;
+  for (let ci = 0; ci < S.chains.length; ci++) {
+    const c = S.chains[ci], e = c.bone.matrixWorld.elements, pos = c.pos, prev = c.prev, dir = c.dir, pts = c.pts, loc = c.loc;
+    const rx = e[0] * loc[0] + e[4] * loc[1] + e[8] * loc[2] + e[12], ry = e[1] * loc[0] + e[5] * loc[1] + e[9] * loc[2] + e[13], rz = e[2] * loc[0] + e[6] * loc[1] + e[10] * loc[2] + e[14];
+    const jx = rx - pos[0], jy = ry - pos[1], jz = rz - pos[2];
+    const reset = !c.live || dt <= 0 || jx * jx + jy * jy + jz * jz > 9; // baru dipasang / berpindah jauh dalam satu langkah → langsung ke sasaran
+    pos[0] = rx; pos[1] = ry; pos[2] = rz;
+    const kp = 1 - Math.exp(-c.stiff * dt), kv = Math.exp(-c.damp * dt), g = c.grav * g0, slack = c.slack;
+    let ox = 0, oy = 0, oz = 0;
+    if (c.out) { const u = c.out; ox = e[0] * u[0] + e[4] * u[1] + e[8] * u[2]; oy = e[1] * u[0] + e[5] * u[1] + e[9] * u[2]; oz = e[2] * u[0] + e[6] * u[1] + e[10] * u[2]; }
+    for (let i = 1; i <= c.n; i++) {
+      const q = i * 3, d = q - 3, L = c.len[i - 1], F = c.fol[i - 1];
+      const ax = e[0] * dir[d] + e[4] * dir[d + 1] + e[8] * dir[d + 2], ay = e[1] * dir[d] + e[5] * dir[d + 1] + e[9] * dir[d + 2], az = e[2] * dir[d] + e[6] * dir[d + 1] + e[10] * dir[d + 2]; // arah diam ruas (dunia)
+      const bx = pos[d], by = pos[d + 1], bz = pos[d + 2];
+      // sasaran: menggantung (ruas pertama: kaku terhadap induk; berikutnya: lurus dari ujung ruas sebelumnya)
+      let tx, ty, tz;
+      if (i === 1) { tx = e[0] * loc[q] + e[4] * loc[q + 1] + e[8] * loc[q + 2] + e[12]; ty = e[1] * loc[q] + e[5] * loc[q + 1] + e[9] * loc[q + 2] + e[13]; tz = e[2] * loc[q] + e[6] * loc[q + 1] + e[10] * loc[q + 2] + e[14]; }
+      else { tx = bx + ax * L; ty = by + ay * L; tz = bz + az * L; }
+      if (F.length) { // … atau ikut kaki yang paling menonjol ke arah luar rantai ini
+        const s0 = tx * ox + ty * oy + tz * oz;
+        let w = 1, sx = tx, sy = ty, sz = tz;
+        for (let k = 0; k < F.length; k++) {
+          const f = F[k], m = f.bone.matrixWorld.elements;
+          const fx = m[0] * f.x + m[4] * f.y + m[8] * f.z + m[12], fy = m[1] * f.x + m[5] * f.y + m[9] * f.z + m[13], fz = m[2] * f.x + m[6] * f.y + m[10] * f.z + m[14];
+          const gain = fx * ox + fy * oy + fz * oz - s0, wk = Math.exp(clamp((gain + f.bias) * SPR_TAU, -30, 30)), pad = clamp(gain, 0, 0.12) * 0.35; // makin terdorong kaki, makin longgar (lutut tidak menyembul di antara dua rantai)
+          w += wk; sx += (fx + ox * pad) * wk; sy += (fy + oy * pad) * wk; sz += (fz + oz * pad) * wk;
+        }
+        tx = sx / w; ty = sy / w; tz = sz / w;
+      }
+      if (ty < floor) ty = floor;
+      { const ux = tx - bx, uy = ty - by, uz = tz - bz, m = L / (Math.hypot(ux, uy, uz) || 1e-6); tx = bx + ux * m; ty = by + uy * m; tz = bz + uz * m; }
+      let x = tx, y = ty, z = tz;
+      if (!reset) {
+        const vx = (pos[q] - prev[q]) * kv, vy = (pos[q + 1] - prev[q + 1]) * kv, vz = (pos[q + 2] - prev[q + 2]) * kv;
+        prev[q] = pos[q]; prev[q + 1] = pos[q + 1]; prev[q + 2] = pos[q + 2];
+        x = pos[q] + vx; y = pos[q + 1] + vy - g; z = pos[q + 2] + vz;
+        x += (tx - x) * kp; y += (ty - y) * kp; z += (tz - z) * kp;
+        const ex = x - tx, ey = y - ty, ez = z - tz, el = Math.hypot(ex, ey, ez);
+        if (el > slack) { const m = slack / el; x = tx + ex * m; y = ty + ey * m; z = tz + ez * m; }
+        if (y < floor) y = floor;
+      }
+      let ux = x - bx, uy = y - by, uz = z - bz; const ul = Math.hypot(ux, uy, uz) || 1e-6; ux /= ul; uy /= ul; uz /= ul; // panjang ruas tetap
+      let cs = ux * ax + uy * ay + uz * az;
+      if (cs < c.cosL) { // batas sudut terhadap arah diam
+        let wx = ux - ax * cs, wy = uy - ay * cs, wz = uz - az * cs; const wl = Math.hypot(wx, wy, wz);
+        if (wl < 1e-5) { wx = ox; wy = oy; wz = oz; } else { wx /= wl; wy /= wl; wz /= wl; }
+        ux = ax * c.cosL + wx * c.sinL; uy = ay * c.cosL + wy * c.sinL; uz = az * c.cosL + wz * c.sinL; cs = c.cosL;
+      }
+      x = bx + ux * L; y = by + uy * L; z = bz + uz * L;
+      pos[q] = x; pos[q + 1] = y; pos[q + 2] = z;
+      if (reset) { prev[q] = x; prev[q + 1] = y; prev[q + 2] = z; }
+      // matriks kulit ruas: T(pangkal sekarang) × (rotasi terkecil arah diam → arah sekarang) × rotasi induk × T(−pangkal diam)
+      const vx = ay * uz - az * uy, vy = az * ux - ax * uz, vz = ax * uy - ay * ux, f = 1 / (1 + Math.max(cs, -0.999));
+      const q00 = cs + f * vx * vx, q01 = f * vx * vy - vz, q02 = f * vx * vz + vy, q10 = f * vx * vy + vz, q11 = cs + f * vy * vy, q12 = f * vy * vz - vx, q20 = f * vx * vz - vy, q21 = f * vy * vz + vx, q22 = cs + f * vz * vz;
+      const w = (c.joint + i - 1) * 16, px = pts[d], py = pts[d + 1], pz = pts[d + 2];
+      for (let k = 0; k < 3; k++) {
+        const hx = e[k * 4], hy = e[k * 4 + 1], hz = e[k * 4 + 2];
+        data[w + k * 4] = q00 * hx + q01 * hy + q02 * hz; data[w + k * 4 + 1] = q10 * hx + q11 * hy + q12 * hz; data[w + k * 4 + 2] = q20 * hx + q21 * hy + q22 * hz; data[w + k * 4 + 3] = 0;
+      }
+      data[w + 12] = bx - (data[w] * px + data[w + 4] * py + data[w + 8] * pz);
+      data[w + 13] = by - (data[w + 1] * px + data[w + 5] * py + data[w + 9] * pz);
+      data[w + 14] = bz - (data[w + 2] * px + data[w + 6] * py + data[w + 10] * pz);
+      data[w + 15] = 1;
+    }
+    c.live = true;
+  }
 }
 
 // ---------- Satu karakter (pemain orang ketiga) ----------
 // look: { variant: 'm1' | 'f1' | …, hair: indeks gaya rambut }. outfit: lihat writePalette3 (+ hair, gear, pack untuk bagian kaku).
 function buildCharacter3(outfit, gear, look) {
   BUILT = true;
-  const rig = new Rig(), parts = {}, vi = variantIndex(look.variant), v = V3.variants[vi], store = new SkinStore(1);
+  const rig = new Rig(), parts = {}, vi = variantIndex(look.variant), v = V3.variants[vi], store = new SkinStore(SPR_ROWS);
   const mk = (src, attrs) => { const g = instGeo3(src, 1, attrs); g.instanceCount = 1; const m = new THREE.SkinnedMesh(g, attrs === BODY_ATTR ? v.mat : SHADOW_MAT3); m.skeleton = store; m.frustumCulled = false; m.boundingSphere = FAR_SPHERE3; return m; };
   const body = mk(v.lods[0], BODY_ATTR), shadow = mk(v.lods[1], SHADOW_ATTR);
   body.receiveShadow = true;
   shadow.layers.set(3); // hanya pass bayangan dinamis (map/realism.js DYN_LAYER)
   rig.root.add(body, shadow);
-  store.onUpdate = () => { writeRow3(store.data, 0, rig); store.boneTexture.needsUpdate = true; }; // dipanggil renderer sekali per pass
+  // pegas kostum: waktu yang berlalu dikumpulkan dari rig.pose (pembungkus per karakter; kelas Rig tidak diubah) dan dipakai
+  // saat renderer meminta matriks (matriks dunia tulang sudah mutakhir). Tidak digambar (orang pertama) → tidak dihitung.
+  let spr = null, sprDt = -1;
+  const pose0 = rig.pose;
+  rig.pose = function (s, dt) { const r = pose0.call(this, s, dt); if (spr) sprDt = Math.max(sprDt, 0) + (dt || 0); return r; };
+  store.onUpdate = () => { // dipanggil renderer sekali per pass
+    writeRow3(store.data, 0, rig);
+    if (spr && sprDt !== 0) { stepSprings(spr, store.data, sprDt < 0 ? 0 : Math.min(sprDt, 1 / 30)); sprDt = 0; }
+    store.boneTexture.needsUpdate = true;
+  };
   writePalette3(store.data, 0, outfit);
   const hairStyle = (look.hair || 0) % Math.max(1, v.hair.length);
   for (const d of defs3()) {
@@ -999,6 +1123,7 @@ function buildCharacter3(outfit, gear, look) {
         g.instanceCount = gs.instanceCount = 1;
         body.geometry = g; body.material = asset.mat; shadow.geometry = gs;
       } else { body.geometry = geo0[0]; body.material = v.mat; shadow.geometry = geo0[1]; }
+      spr = asset ? makeSprings(asset, rig) : null; sprDt = -1; C.springs = spr;
       palette();
       for (const k in parts) show(k);
     },

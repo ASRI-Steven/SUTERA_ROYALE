@@ -57,7 +57,411 @@
    "albedo": "m1_albedo.webp",
    "normal": "m1_normal.webp",
    "orm": "m1_orm.webp",
-   "texBytes": 463604
+   "texBytes": 463604,
+   "springs": [
+    {
+     "name": "sayapL",
+     "parent": "chest",
+     "joint": 19,
+     "pts": [
+      [
+       0.07,
+       1.4,
+       -0.1521
+      ],
+      [
+       0.17,
+       0.98,
+       -0.2721
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "sayapR",
+     "parent": "chest",
+     "joint": 20,
+     "pts": [
+      [
+       -0.07,
+       1.4,
+       -0.1521
+      ],
+      [
+       -0.17,
+       0.98,
+       -0.2721
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "dodot0",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1601
+      ],
+      [
+       0.0,
+       0.75,
+       0.1572
+      ],
+      [
+       0.0,
+       0.53,
+       0.1485
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot1",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.1275,
+       0.95,
+       0.1408
+      ],
+      [
+       0.1264,
+       0.75,
+       0.1381
+      ],
+      [
+       0.1254,
+       0.53,
+       0.1296
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot2",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.1889,
+       0.95,
+       0.0134
+      ],
+      [
+       0.1887,
+       0.75,
+       0.0117
+      ],
+      [
+       0.1872,
+       0.53,
+       0.0041
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot3",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.1262,
+       0.95,
+       -0.1128
+      ],
+      [
+       0.1252,
+       0.75,
+       -0.1135
+      ],
+      [
+       0.1242,
+       0.53,
+       -0.12
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot4",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1378
+      ],
+      [
+       0.0,
+       0.75,
+       -0.1383
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1447
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot5",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.1262,
+       0.95,
+       -0.1129
+      ],
+      [
+       -0.1252,
+       0.75,
+       -0.1135
+      ],
+      [
+       -0.1242,
+       0.53,
+       -0.1201
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot6",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.1876,
+       0.95,
+       0.0134
+      ],
+      [
+       -0.1881,
+       0.75,
+       0.0117
+      ],
+      [
+       -0.1866,
+       0.53,
+       0.0041
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot7",
+     "parent": "hips",
+     "joint": 35,
+     "pts": [
+      [
+       -0.1273,
+       0.95,
+       0.1407
+      ],
+      [
+       -0.1263,
+       0.75,
+       0.138
+      ],
+      [
+       -0.1253,
+       0.53,
+       0.1294
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    }
+   ],
+   "caps": [
+    [
+     "thighL",
+     "shinL",
+     0.098
+    ],
+    [
+     "shinL",
+     "footL",
+     0.078
+    ],
+    [
+     "thighR",
+     "shinR",
+     0.098
+    ],
+    [
+     "shinR",
+     "footR",
+     0.078
+    ]
+   ]
   },
   "f1": {
    "glb": "f1.glb",
@@ -94,7 +498,389 @@
    "albedo": "f1_albedo.webp",
    "normal": "f1_normal.webp",
    "orm": "f1_orm.webp",
-   "texBytes": 448820
+   "texBytes": 448820,
+   "springs": [
+    {
+     "name": "sayapL",
+     "parent": "chest",
+     "joint": 19,
+     "pts": [
+      [
+       0.07,
+       1.4,
+       -0.1431
+      ],
+      [
+       0.17,
+       0.98,
+       -0.2631
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "sayapR",
+     "parent": "chest",
+     "joint": 20,
+     "pts": [
+      [
+       -0.07,
+       1.4,
+       -0.1431
+      ],
+      [
+       -0.17,
+       0.98,
+       -0.2631
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "dodot0",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1529
+      ],
+      [
+       0.0,
+       0.75,
+       0.1604
+      ],
+      [
+       0.0,
+       0.53,
+       0.1594
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot1",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.1385,
+       0.95,
+       0.1431
+      ],
+      [
+       0.1374,
+       0.75,
+       0.1508
+      ],
+      [
+       0.1363,
+       0.53,
+       0.1499
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot2",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.2121,
+       0.95,
+       0.0046
+      ],
+      [
+       0.2105,
+       0.75,
+       0.0134
+      ],
+      [
+       0.2088,
+       0.53,
+       0.0135
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot3",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.1339,
+       0.95,
+       -0.1293
+      ],
+      [
+       0.1329,
+       0.75,
+       -0.1195
+      ],
+      [
+       0.1318,
+       0.53,
+       -0.1183
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot4",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1465
+      ],
+      [
+       0.0,
+       0.75,
+       -0.1365
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1352
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot5",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.1342,
+       0.95,
+       -0.1296
+      ],
+      [
+       -0.1331,
+       0.75,
+       -0.1197
+      ],
+      [
+       -0.132,
+       0.53,
+       -0.1185
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot6",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.2112,
+       0.95,
+       0.0046
+      ],
+      [
+       -0.2095,
+       0.75,
+       0.0134
+      ],
+      [
+       -0.2078,
+       0.53,
+       0.0135
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot7",
+     "parent": "hips",
+     "joint": 35,
+     "pts": [
+      [
+       -0.138,
+       0.95,
+       0.1427
+      ],
+      [
+       -0.1369,
+       0.75,
+       0.1503
+      ],
+      [
+       -0.1358,
+       0.53,
+       0.1494
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    }
+   ]
   },
   "m2": {
    "glb": "m2.glb",
@@ -131,7 +917,389 @@
    "albedo": "m2_albedo.webp",
    "normal": "m2_normal.webp",
    "orm": "m2_orm.webp",
-   "texBytes": 459890
+   "texBytes": 459890,
+   "springs": [
+    {
+     "name": "sayapL",
+     "parent": "chest",
+     "joint": 19,
+     "pts": [
+      [
+       0.07,
+       1.4,
+       -0.1557
+      ],
+      [
+       0.17,
+       0.98,
+       -0.2757
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "sayapR",
+     "parent": "chest",
+     "joint": 20,
+     "pts": [
+      [
+       -0.07,
+       1.4,
+       -0.1557
+      ],
+      [
+       -0.17,
+       0.98,
+       -0.2757
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "dodot0",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.16
+      ],
+      [
+       0.0,
+       0.75,
+       0.1571
+      ],
+      [
+       0.0,
+       0.53,
+       0.148
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot1",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.1281,
+       0.95,
+       0.1419
+      ],
+      [
+       0.1271,
+       0.75,
+       0.1392
+      ],
+      [
+       0.126,
+       0.53,
+       0.1302
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot2",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.1907,
+       0.95,
+       0.0138
+      ],
+      [
+       0.1897,
+       0.75,
+       0.0121
+      ],
+      [
+       0.1882,
+       0.53,
+       0.0041
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot3",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.1258,
+       0.95,
+       -0.112
+      ],
+      [
+       0.1248,
+       0.75,
+       -0.1127
+      ],
+      [
+       0.1238,
+       0.53,
+       -0.1197
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot4",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1372
+      ],
+      [
+       0.0,
+       0.75,
+       -0.1377
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1445
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot5",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.1257,
+       0.95,
+       -0.1118
+      ],
+      [
+       -0.1247,
+       0.75,
+       -0.1125
+      ],
+      [
+       -0.1237,
+       0.53,
+       -0.1195
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot6",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.1898,
+       0.95,
+       0.0138
+      ],
+      [
+       -0.1888,
+       0.75,
+       0.0121
+      ],
+      [
+       -0.1873,
+       0.53,
+       0.0041
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot7",
+     "parent": "hips",
+     "joint": 35,
+     "pts": [
+      [
+       -0.128,
+       0.95,
+       0.1419
+      ],
+      [
+       -0.127,
+       0.75,
+       0.1391
+      ],
+      [
+       -0.126,
+       0.53,
+       0.1301
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    }
+   ]
   },
   "f2": {
    "glb": "f2.glb",
@@ -168,7 +1336,389 @@
    "albedo": "f2_albedo.webp",
    "normal": "f2_normal.webp",
    "orm": "f2_orm.webp",
-   "texBytes": 443220
+   "texBytes": 443220,
+   "springs": [
+    {
+     "name": "sayapL",
+     "parent": "chest",
+     "joint": 19,
+     "pts": [
+      [
+       0.07,
+       1.4,
+       -0.1426
+      ],
+      [
+       0.17,
+       0.98,
+       -0.2626
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "sayapR",
+     "parent": "chest",
+     "joint": 20,
+     "pts": [
+      [
+       -0.07,
+       1.4,
+       -0.1426
+      ],
+      [
+       -0.17,
+       0.98,
+       -0.2626
+      ]
+     ],
+     "stiff": 26,
+     "damp": 3.5,
+     "grav": 0.25,
+     "slack": 0.07,
+     "limit": 16
+    },
+    {
+     "name": "dodot0",
+     "parent": "hips",
+     "joint": 21,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       0.1569
+      ],
+      [
+       0.0,
+       0.75,
+       0.1649
+      ],
+      [
+       0.0,
+       0.53,
+       0.1634
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot1",
+     "parent": "hips",
+     "joint": 23,
+     "pts": [
+      [
+       0.1402,
+       0.95,
+       0.1457
+      ],
+      [
+       0.1391,
+       0.75,
+       0.1538
+      ],
+      [
+       0.138,
+       0.53,
+       0.1524
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot2",
+     "parent": "hips",
+     "joint": 25,
+     "pts": [
+      [
+       0.2177,
+       0.95,
+       0.0055
+      ],
+      [
+       0.216,
+       0.75,
+       0.0147
+      ],
+      [
+       0.2142,
+       0.53,
+       0.0144
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      1.0,
+      0.0,
+      0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot3",
+     "parent": "hips",
+     "joint": 27,
+     "pts": [
+      [
+       0.1369,
+       0.95,
+       -0.1314
+      ],
+      [
+       0.1358,
+       0.75,
+       -0.1211
+      ],
+      [
+       0.1347,
+       0.53,
+       -0.1203
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot4",
+     "parent": "hips",
+     "joint": 29,
+     "pts": [
+      [
+       0.0,
+       0.95,
+       -0.1488
+      ],
+      [
+       0.0,
+       0.75,
+       -0.1384
+      ],
+      [
+       0.0,
+       0.53,
+       -0.1375
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      0.0,
+      0.0,
+      -1.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot5",
+     "parent": "hips",
+     "joint": 31,
+     "pts": [
+      [
+       -0.1368,
+       0.95,
+       -0.1313
+      ],
+      [
+       -0.1357,
+       0.75,
+       -0.121
+      ],
+      [
+       -0.1346,
+       0.53,
+       -0.1202
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      -0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot6",
+     "parent": "hips",
+     "joint": 33,
+     "pts": [
+      [
+       -0.2171,
+       0.95,
+       0.0055
+      ],
+      [
+       -0.2153,
+       0.75,
+       0.0147
+      ],
+      [
+       -0.2136,
+       0.53,
+       0.0144
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -1.0,
+      0.0,
+      -0.0
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    },
+    {
+     "name": "dodot7",
+     "parent": "hips",
+     "joint": 35,
+     "pts": [
+      [
+       -0.1399,
+       0.95,
+       0.1454
+      ],
+      [
+       -0.1388,
+       0.75,
+       0.1535
+      ],
+      [
+       -0.1377,
+       0.53,
+       0.1521
+      ]
+     ],
+     "stiff": 34,
+     "damp": 5,
+     "grav": 0.5,
+     "limit": 125,
+     "slack": 0.045,
+     "out": [
+      -0.7071,
+      0.0,
+      0.7071
+     ],
+     "follow": [
+      [
+       "thighL",
+       "thighR"
+      ],
+      [
+       "thighL",
+       "thighR"
+      ]
+     ]
+    }
+   ]
   }
  },
  "hideHair": true,
@@ -185,7 +1735,7 @@
   "inner": "#6e1220"
  },
  "thumb": "thumb.webp",
- "springs": [],
+ "spring": true,
  "mech": [],
  "emis": null,
  "fp": null,
@@ -233,5 +1783,5 @@
    "use": "geometri pakaian (warna & motif dibuat ulang)"
   }
  ],
- "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
+ "note": "glTF: +Y atas, menghadap +Z, kiri = +X; mesh ber-skin pada pose diam rig.js (17 tulang \"bones\"; JOINTS 19+ = ruas pegas variants.<varian>.springs, lihat rig.js SPR_BASE). _SLOT: 0 kulit, 1 tangan, 7 tetap. Albedo \u00d7 0,5 (netral tubuh v3); ORM = AO, kekasaran, logam."
 }

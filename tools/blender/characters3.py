@@ -933,7 +933,7 @@ def transfer(p, tree, T, hn, pos2):
     """atribut verteks hasil decimate diambil dari titik terdekat di mesh penuh bagian itu"""
     P = p['rest']
     n = len(pos2)
-    ow = np.zeros((n, len(BONES)), dtype=np.float32); nor = np.zeros((n, 3)); slot = np.zeros(n, dtype=np.int64)
+    ow = np.zeros((n, p['ow'].shape[1]), dtype=np.float32); nor = np.zeros((n, 3)); slot = np.zeros(n, dtype=np.int64)
     for i, v in enumerate(pos2):
         loc, _, fi, _ = tree.find_nearest(Vector(v))
         ga, gb, gc = T[fi]

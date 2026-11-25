@@ -379,7 +379,7 @@ export function createLobby(o) {
       </div></div>`;
   }
   function thumb(s) { return `<div class="lb-thumb r-${s.rarity}" data-thumb="${s.id}" style="--rc:${rar(s).color}"><span class="lb-ph">${ic(s.id.startsWith('gun_') ? 'gun' : 'koleksi')}</span></div>`; }
-  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura', model: 'user' };
+  const FEAT_IC = { anim: 'anim', sound: 'sound', kill: 'spark', tracer: 'tracer', muzzle: 'burst', glow: 'aura', aura: 'aura', model: 'user', spring: 'anim' };
   function fillThumbs(root) {
     for (const el of root.querySelectorAll('[data-thumb]')) {
       const id = el.dataset.thumb;
