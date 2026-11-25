@@ -57,7 +57,7 @@ export const CHAR_SKINS = [
   C('char_ondel', 'Ondel-ondel', 'langka', 'panggung', 'Jaket merah berbunga emas delapan kelopak, dalaman gading berpita kembang kelapa.', CHAR_FX.ondel,
     { shirt: '#c41a20', sleeve: '#c41a20', pants: '#141214', glove: '#141214', cuff: '#e8b445', inner: '#f1e8d2', gear: '#3a2a20', pack: '#7a1418' }),
   C('char_batik', 'Batik Parang', 'epik', 'wastra', 'Jaket parang sogan-krem; kilau emas berjalan menyusuri garis parangnya.', CHAR_FX.batik,
-    { shirt: '#6b3e1e', sleeve: '#6b3e1e', pants: '#231c1a', glove: '#3a2416', cuff: '#D29F52', inner: '#e6d3a3', gear: '#3a2416', pack: '#6b3e1e' }, { costume: true }),
+    { shirt: '#6b3e1e', sleeve: '#6b3e1e', pants: '#231c1a', glove: '#3a2416', cuff: '#D29F52', inner: '#e6d3a3', gear: '#3a2416', pack: '#6b3e1e' }, { costume: true, spring: true }),
   C('char_neon', 'Neon Kota', 'epik', 'neo', 'Setelan gelap dengan garis cahaya yang berdenyut mengalir, berganti toska dan magenta.', CHAR_FX.neon,
     { shirt: '#0c0d14', sleeve: '#0c0d14', pants: '#0c0d14', glove: '#08080c', cuff: '#22e6ff', inner: '#15161f', gear: '#11121a', pack: '#0c0d14' }, { cuffGlow: '#22e6ff' }),
   C('char_empu', 'Empu Pamor', 'epik', 'pusaka', 'Beskap nila-hitam berlapis garis pamor perak yang berkilau pelan, kerah & manset emas.', CHAR_FX.empu,
@@ -69,7 +69,7 @@ export const CHAR_SKINS = [
   C('char_kencana', 'Kencana', 'epik', 'kencana', 'Marmer gading berurat emas dengan kilau emas yang menyapu pelan.', CHAR_FX.kencana,
     { shirt: '#f3efe7', sleeve: '#f3efe7', pants: '#f3efe7', glove: '#f3efe7', cuff: '#e3b24e', inner: '#efe6d4', gear: '#e9e2cf', pack: '#e3b24e' }),
   C('char_garuda', 'Garuda Emas', 'legendaris', 'pusaka', 'Putih upacara berhias bulu garuda emas yang berkilau bergelombang, berselubung aura & serbuk cahaya emas.', CHAR_FX.garuda,
-    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' }, costume: true }),
+    { shirt: '#f4f1e8', sleeve: '#f4f1e8', pants: '#f4f1e8', glove: '#f4f1e8', cuff: '#e2a93b', inner: '#e2a93b', gear: '#e9e2cf', pack: '#e2a93b' }, { aura: { style: 0, c1: '#ff6a00', c2: '#ffd040' }, costume: true, spring: true }),
   C('char_warok', 'Warok Barong', 'legendaris', 'panggung', 'Hitam warok, dalaman loreng merah-putih, mata bulu merak berpelangi di bahu & punggung, aura toska-emas.', CHAR_FX.warok,
     { shirt: '#0b0a0c', sleeve: '#0b0a0c', pants: '#0b0a0c', glove: '#0b0a0c', cuff: '#d6a446', inner: '#f1ede4', gear: '#141218', pack: '#0b0a0c' }, { aura: { style: 1, c1: '#0fbf9a', c2: '#ffb830' } }),
   C('char_reaktor', 'Reaktor Sutera', 'legendaris', 'neo', 'Zirah keramik putih & grafit dengan kanal energi biru yang mengalir, inti dada berdenyut, dan aura plasma.', CHAR_FX.reaktor,
@@ -137,6 +137,7 @@ export function skinFeatures(s) {
     if (th.flame) f.push(['muzzle', 'Nyala moncong beranimasi']);
   } else {
     if (s.costume) f.push(['model', 'Kostum bermodel']);
+    if (s.costume && s.spring) f.push(['spring', 'Kain & rumbai bergerak']); // ringkasan costume.json (spring) di katalog
     if (RARITY[s.rarity].rank >= 2 || s.fx === CHAR_FX.samudra) f.push(['anim', 'Pola beranimasi']);
     if (s.cuffGlow) f.push(['glow', 'Manset menyala']);
     if (s.aura) f.push(['aura', 'Aura api / energi beranimasi']);
