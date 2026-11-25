@@ -1,4 +1,4 @@
-// Mesin efek skin berbentuk: kartu pita (2×5 verteks, 8 segitiga) bertekstur atlas bentuk SDF (game/fxshapes.js) yang bisa
+// Mesin efek skin berbentuk: kartu pita (2×7 verteks, 12 segitiga) bertekstur atlas bentuk SDF (game/fxshapes.js) yang bisa
 // mengipas, melesat, melayang, mekar — bukan THREE.Points. Geraknya dihitung di vertex shader dari (uT − t0) menurut
 // preset; CPU hanya menulis 24 float saat emisi (0 kerja per frame per kartu, 0 alokasi). Tidak mengimpor modul game.
 // Satu lapisan = dua mesh (potong + aditif) yang berbagi buffer instans; tanpa instans hidup → tidak digambar (0 draw call).
@@ -6,8 +6,11 @@
 import * as THREE from 'three';
 
 // preset gerak. mode: 0 melayang · 1 lesat · 2 kipas · 3 kilas (billboard) · 4 cap (rebah pada bidang a×b) · 5 ombak
-// (bilah naik lalu turun) · 6 tiang (tegak, billboard sumbu)
-// [mode, aditif, gravitasi, drag,  ayun, Hz, putar, tekuk,  masuk dtk, keluar dtk, denyut emisi, goyang]
+// (bilah naik lalu turun) · 6 tiang (tegak pada arah, billboard sumbu; goyang > 0 = tumbuh lewat-balik & bergoyang) ·
+// 7 pilin (mengitari sumbu `arah` sambil maju: kecepatan = [laju sepanjang sumbu, laju sudut rad/dtk, tumbuh radius/dtk],
+// aux = radius, sudut awal = fase)
+// [mode, aditif, gravitasi, drag,  ayun, Hz, putar, tekuk,  masuk dtk, keluar dtk, denyut emisi, goyang,
+//  (opsional) kedip Hz, amplitudo gelombang pita, bilangan gelombang, laju gelombang]
 export const PRESETS = {
   drift:   [0, 0, 3.4, 2.4,  0.22, 3.1, 0.0, 0.16,  0.06, 0.45, 0, 0],
   drop:    [0, 0, 5.5, 1.6,  0.10, 4.0, 0.0, 0.12,  0.04, 0.25, 0, 0],
@@ -27,6 +30,20 @@ export const PRESETS = {
   rise:    [0, 0, -0.5, 1.2, 0.25, 2.6, 0.0, 0.16, 0.0, 0.45, 0, 0],       // lepas lalu melayang naik
   bloom:   [3, 1, 0, 0,      0, 0, 0, 0,           0.12, 0.25, 0, 0],      // cap dampak: mekar 0,12 dtk, pudar 0,25 dtk
   dropVm:  [0, 0, 6.0, 0.6,  0.0, 4.0, 0.0, 0.1,   0.0, 0.2, 0, 0],        // jatuh di ruang senjata (selongsong bulu, rontok magasin)
+  // ---- M2 ----
+  grow:    [6, 0, 0, 0,      0, 0, 0, 0,           0.22, 0.3, 0, 0.05],              // tumbuh dari dasar dengan lewat-balik, bergoyang (kristal, batang)
+  tongue:  [6, 1, 0, 0,      0, 0, 0, 0,           0.1, 0.25, 0, 0.08,  0, 0.10, 5.0, 11.0], // lidah api: tegak, meliuk, aditif
+  flick:   [6, 1, 0, 0,      0, 0, 0, 0,           0.02, 0.05, 0, 0,    26, 0.0, 0, 0],      // kilat: tegak pada arah, berkedip
+  flickPop:[3, 1, 0, 0,      0, 0, 0, 0,           0.02, 0.06, 0, 0,    24, 0.0, 0, 0],      // kilas berkedip (busur, glitch)
+  helix:   [7, 0, 0, 0.5,    0, 0, 0, 0.12,        0.15, 0.4, 0, 0],                 // naik berpilin (potong)
+  helixAdd:[7, 1, 0, 0.5,    0, 0, 0, 0.12,        0.15, 0.4, 0, 0,     0, 0.07, 5.0, 8.0],  // naik berpilin (aditif, meliuk: benang, sulur)
+  orbit:   [7, 1, 0, 0,      0, 0, 0, 0,           0.12, 0.25, 0, 0],                // mengitari sumbu (aditif)
+  ribbon:  [1, 1, 0.3, 1.8,  0, 0, 0, 0,           0.06, 0.35, 0, 0,    0, 0.16, 6.0, 12.0], // pita menari searah gerak (aditif)
+  smoke:   [3, 0, -0.9, 1.0, 0, 0, 0.5, 0,         0.5, 0.6, 0, 0],                  // kepul naik membesar, larut berbintik (potong)
+  spinPop: [3, 1, 0, 0,      0, 0, 4.5, 0,         0.1, 0.3, 0, 0],                  // kilas berputar (bintang, segitiga foil)
+  flip:    [1, 0, 4.5, 0.8,  0, 0, 13.0, 0,        0.02, 0.15, 0, 0],                // balistik berputar pipih (serpih, kerang, tetes)
+  bloomC:  [3, 0, 0, 0,      0, 0, 0, 0,           0.14, 0.25, 0, 0],                // mekar billboard potong (kerang, pelat)
+  glow:    [4, 1, 0, 0,      0, 0, 0, 0,           0.25, 0.9, 0, 0],                 // cap tanah yang menyala lalu mendingin pelan
 };
 const PNAMES = Object.keys(PRESETS);
 export const PRESET = Object.fromEntries(PNAMES.map((n, i) => [n, i]));
@@ -35,16 +52,18 @@ const VS = `
 attribute vec2 uvp;
 attribute vec4 iA, iB, iC, iD, iE, iF;
 uniform float uT, uH, uAdd, uVm;
+uniform vec4 uP3[32];
 uniform mat4 uAnchor[4];
-uniform vec4 uP0[24], uP1[24], uP2[24];
-varying vec2 vUv; varying vec4 vK; varying float vV;
+uniform vec4 uP0[32], uP1[32], uP2[32];
+varying vec2 vUv; varying vec4 vK; varying float vV, vN;
 float backOut(float x) { float y = x - 1.0; return 1.0 + 2.70158 * y * y * y + 1.70158 * y * y; }
 void main() {
   int pi = int(iD.z + 0.5);
-  vec4 P0 = uP0[pi], P1 = uP1[pi], P2 = uP2[pi];
+  vec4 P0 = uP0[pi], P1 = uP1[pi], P2 = uP2[pi], P3 = uP3[pi];
   float t = uT - iA.w, life = iB.w;
-  gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vUv = vec2(0.0); vK = vec4(0.0); vV = 0.0;
+  gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vUv = vec2(0.0); vK = vec4(0.0); vV = 0.0; vN = 0.0;
   if (t < 0.0 || t >= life || abs(P0.y - uAdd) > 0.5) return;
+  if (P3.x > 0.0 && fract(sin(floor(t * P3.x) * 12.9898 + iD.w * 78.233) * 43758.5453) < 0.42) return; // kedip
   int mode = int(P0.x + 0.5);
   mat4 M = uAnchor[int(iE.z + 0.5)];
   float sc = length(M[0].xyz);
@@ -97,11 +116,22 @@ void main() {
     float an = iC.w + P1.z * t; ax = a * cos(an) + b * sin(an); sd = b * cos(an) - a * sin(an);
     float k = 1.0 - (1.0 - kin) * (1.0 - kin);
     grow = mix(iE.w, 1.0, k); cen = 0.5; fade = kout * min(1.0, kin * 4.0);
+  } else if (mode == 7) { // pilin: mengitari sumbu dir sambil maju sepanjang sumbu
+    vec3 n = normalize(dir), u1 = normalize(cross(n, abs(n.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0))), u2 = cross(n, u1);
+    float an = iC.w + iB.y * t, rad = max(0.0, iE.w + iB.z * t) * sc;
+    c = p0 + n * (iB.x * sc * e) + (u1 * cos(an) + u2 * sin(an)) * rad;
+    view = normalize(cameraPosition - c);
+    ax = normalize(n * (iB.x * sc * exp(-dr * t)) + (u2 * cos(an) - u1 * sin(an)) * (rad * iB.y) + n * 1e-4);
+    sd = normalize(cross(ax, view));
+    bend = P1.w * 0.6; grow = 0.3 + 0.7 * kin; diss = 1.0 - kout; fade = kout;
   } else { // tiang: tegak pada dir, menghadap kamera
-    ax = normalize(dir); sd = normalize(cross(ax, view));
-    grow = kin; fade = kout * kout;
+    ax = normalize(dir);
+    if (P2.w > 0.0) { ax = normalize(ax + normalize(cross(ax, view)) * (P2.w * sin(t * 3.1 + seed * 40.0))); grow = backOut(kin); diss = 1.0 - kout; fade = P0.y > 0.5 ? kout : 1.0; }
+    else { grow = kin; fade = kout * kout; }
+    sd = normalize(cross(ax, view));
   }
-  vec3 pos = c + ax * ((v - cen) * h * grow) + sd * (x * w * wk * (cen > 0.0 ? grow : 1.0) + bend * h * v * v);
+  float wav = P3.y > 0.0 ? P3.y * h * (0.25 + 0.75 * v) * sin(v * P3.z - t * P3.w + seed * 6.2832) : 0.0;
+  vec3 pos = c + ax * ((v - cen) * h * grow) + sd * (x * w * wk * (cen > 0.0 ? grow : 1.0) + bend * h * v * v + wav);
   vec4 mv = viewMatrix * vec4(pos, 1.0);
   float dist = -(viewMatrix * vec4(c + ax * (h * grow * (0.5 - cen)), 1.0)).z;
   float px = h * grow * uH * projectionMatrix[1][1] * 0.5 / max(0.02, dist), keep = smoothstep(6.0, 10.0, px);
@@ -109,14 +139,15 @@ void main() {
   if (keep <= 0.001) return;
   fade *= keep;
   gl_Position = projectionMatrix * mv;
-  vUv = iF.xy + vec2(x + 0.5, v) * iF.zw; vV = v;
+  vUv = iF.xy + vec2(x + 0.5, v) * iF.zw; vV = v; vN = uVm > 0.5 || dist < 4.0 ? 1.0 : 0.0;
   vK = vec4(iE.x, gain, fade, diss);
 }`;
 const FS = `
 uniform sampler2D tAtlas, tPal;
-uniform float uAdd, uPalH, uShade;
+uniform float uAdd, uPalH, uShade, uClear;
+uniform vec2 uRes;
 uniform vec3 uSunC, uAmb;
-varying vec2 vUv; varying vec4 vK; varying float vV;
+varying vec2 vUv; varying vec4 vK; varying float vV, vN;
 float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main() {
   vec4 tx = texture2D(tAtlas, vUv);
@@ -124,6 +155,10 @@ void main() {
   if (vK.w > 0.0) { // larut dari ujung, berbintik
     float cut = 1.12 - 1.3 * vK.w, n = h21(floor(vUv * 700.0));
     a *= 1.0 - smoothstep(cut - 0.1, cut, vV + 0.14 * n);
+  }
+  if (vN > 0.5 && uClear > 0.0) { // zona bersih bidikan: kartu dekat tidak digambar di sekitar pusat layar
+    float cz = smoothstep(0.065, 0.11, length(gl_FragCoord.xy - 0.5 * uRes) / uRes.y);
+    a *= uAdd > 0.5 ? cz : step(h21(gl_FragCoord.xy) * 0.999, cz);
   }
   vec3 alb = texture2D(tPal, vec2(tx.b, (vK.x * 2.0 + 0.5) / uPalH)).rgb * (0.4 + 0.6 * tx.g);
   vec3 emi = texture2D(tPal, vec2(tx.b, (vK.x * 2.0 + 1.5) / uPalH)).rgb * (tx.a * vK.y);
@@ -140,9 +175,10 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
-const STRIDE = 24, ROWS = 5;
+const STRIDE = 24, ROWS = 7, NP = 32; // NP = kapasitas tabel preset di shader (uP0..uP3); PRESETS tidak boleh lebih
+if (PNAMES.length > NP) console.warn('shapefx: PRESETS melebihi ' + NP + ' — preset sisanya tidak terbaca shader');
 export function createShapeLayer({ max = 384, atlas, vm = false }) {
-  // pita 2 kolom × 5 baris
+  // pita 2 kolom × ROWS baris
   const uvp = new Float32Array(ROWS * 2 * 2), index = [];
   for (let r = 0; r < ROWS; r++) { uvp[r * 4] = -0.5; uvp[r * 4 + 1] = r / (ROWS - 1); uvp[r * 4 + 2] = 0.5; uvp[r * 4 + 3] = r / (ROWS - 1); }
   for (let r = 0; r < ROWS - 1; r++) { const a = r * 2; index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
@@ -156,10 +192,10 @@ export function createShapeLayer({ max = 384, atlas, vm = false }) {
   geo.instanceCount = max;
   for (let i = 0; i < max; i++) buf[i * STRIDE + 3] = 1e9; // t0 jauh di masa depan = mati
   const anchors = [new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4(), new THREE.Matrix4()];
-  const P0 = [], P1 = [], P2 = [];
-  for (let i = 0; i < 24; i++) { const p = PRESETS[PNAMES[i]] || PRESETS.drift; P0.push(new THREE.Vector4(p[0], p[1], p[2], p[3])); P1.push(new THREE.Vector4(p[4], p[5], p[6], p[7])); P2.push(new THREE.Vector4(p[8], p[9], p[10], p[11])); }
+  const P0 = [], P1 = [], P2 = [], P3 = [];
+  for (let i = 0; i < NP; i++) { const p = PRESETS[PNAMES[i]] || PRESETS.drift; P0.push(new THREE.Vector4(p[0], p[1], p[2], p[3])); P1.push(new THREE.Vector4(p[4], p[5], p[6], p[7])); P2.push(new THREE.Vector4(p[8], p[9], p[10], p[11])); P3.push(new THREE.Vector4(p[12] || 0, p[13] || 0, p[14] || 0, p[15] || 0)); }
   const shared = {
-    uT: { value: 0 }, uH: { value: 720 }, uVm: { value: vm ? 1 : 0 }, uAnchor: { value: anchors }, uP0: { value: P0 }, uP1: { value: P1 }, uP2: { value: P2 },
+    uT: { value: 0 }, uH: { value: 720 }, uVm: { value: vm ? 1 : 0 }, uAnchor: { value: anchors }, uP0: { value: P0 }, uP1: { value: P1 }, uP2: { value: P2 }, uP3: { value: P3 }, uRes: { value: new THREE.Vector2(1280, 720) }, uClear: { value: vm ? 1 : 0 },
     tAtlas: { value: atlas.tex }, tPal: { value: atlas.pal }, uPalH: { value: atlas.palRows }, uShade: { value: 1 },
     uSunC: { value: new THREE.Color(0.55, 0.52, 0.46) }, uAmb: { value: new THREE.Color(0.5, 0.52, 0.56) },
   };
@@ -168,7 +204,7 @@ export function createShapeLayer({ max = 384, atlas, vm = false }) {
     const mat = new THREE.ShaderMaterial({ uniforms: { ...shared, uAdd: { value: add } }, vertexShader: VS, fragmentShader: FS, transparent: true, depthWrite: !add, side: THREE.DoubleSide, blending: add ? THREE.AdditiveBlending : THREE.NormalBlending });
     const m = new THREE.Mesh(geo, mat);
     m.frustumCulled = false; m.matrixAutoUpdate = false; m.renderOrder = add ? 26 : 25; m.visible = false; m.castShadow = false;
-    m.onBeforeRender = (renderer) => { const rt = renderer.getRenderTarget(); shared.uH.value = rt ? rt.height : renderer.domElement.height; };
+    m.onBeforeRender = (renderer) => { const rt = renderer.getRenderTarget(); shared.uH.value = rt ? rt.height : renderer.domElement.height; shared.uRes.value.set(rt ? rt.width : renderer.domElement.width, shared.uH.value); };
     group.add(m); meshes.push(m);
   }
   group.matrixAutoUpdate = false;
@@ -177,6 +213,7 @@ export function createShapeLayer({ max = 384, atlas, vm = false }) {
   const api = {
     group, meshes, uniforms: shared, max,
     rng: 12345,
+    sizeK: 1, // pengali ukuran kartu yang diemisi (etalase lobi memperbesar efek isi ulang supaya terbaca)
     rand() { api.rng = (api.rng * 1664525 + 1013904223) >>> 0; return api.rng / 4294967296; },
     // posisi · kecepatan (kipas/cap: sumbu samping b) · arah (sumbu panjang / tengah kipas a) · sudut awal · tinggi (m) ·
     // lebar/tinggi · preset · benih · baris palet · penguat emisi · jangkar 0–3 · aux (sudut kipas / y lantai / skala awal
@@ -187,7 +224,7 @@ export function createShapeLayer({ max = 384, atlas, vm = false }) {
       buf[o] = px; buf[o + 1] = py; buf[o + 2] = pz; buf[o + 3] = T + delay;
       buf[o + 4] = vx; buf[o + 5] = vy; buf[o + 6] = vz; buf[o + 7] = life;
       buf[o + 8] = dx; buf[o + 9] = dy; buf[o + 10] = dz; buf[o + 11] = ang;
-      buf[o + 12] = size; buf[o + 13] = aspect; buf[o + 14] = preset; buf[o + 15] = seed;
+      buf[o + 12] = size * api.sizeK; buf[o + 13] = aspect; buf[o + 14] = preset; buf[o + 15] = seed;
       buf[o + 16] = pal; buf[o + 17] = gain; buf[o + 18] = anchor; buf[o + 19] = aux;
       atlas.rect(cell, r4); buf[o + 20] = r4[0]; buf[o + 21] = r4[1]; buf[o + 22] = r4[2]; buf[o + 23] = r4[3];
       ends[i] = T + delay + life;
@@ -200,6 +237,7 @@ export function createShapeLayer({ max = 384, atlas, vm = false }) {
     setAnchor(i, m) { anchors[i].copy(m); },
     setLight(sun, amb) { if (sun) shared.uSunC.value.copy(sun); if (amb) shared.uAmb.value.copy(amb); },
     setShade(k) { shared.uShade.value = k; },
+    setClear(k) { shared.uClear.value = k; }, // zona bersih bidikan (0 = mati: etalase lobi)
     get time() { return shared.uT.value; },
     update(dt) {
       const live = lastEnd > shared.uT.value;
