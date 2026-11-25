@@ -1531,3 +1531,28 @@ worktree `.wt/skinv2` (branch `wip/skinv2`), mengikuti `docs/rancangan/2026-11-2
   tengah-bawah layar (bersih, belum elegan); Elang di atas target 30k tris; Lebah pelat bahu jadi blok gelap di pinggul; jari kiri
   lewat 0,2–0,9 mm di Lebah/Badai; bayangan eye-box 2× saat bergerak masih tebal; senjata gelap jadi siluet di jarak pinggul.
 - **Berikutnya**: M4 (model dunia LOD1/LOD2 di tangan karakter), M5, `setGrip`.
+
+## 45. Skin v2 M2 — sepuluh skin lama dikonversi + perbaikan M1 Merak (25 Nov) — SUDAH di main, `?v=202611250927`
+
+- **Kesebelas skin senjata beranimasi kini memakai efek berbentuk** (`skins.js` hanya menambah `fx:{id}`; ID & harga tetap):
+  Merak/`gun_reog` (bulu merak, kipas), `gun_garuda` (bulu emas, sayap), `gun_magma` (lidah api, batu terbang, asap),
+  `gun_plasma` (heksagon, kristal, busur listrik), `gun_es` (kristal tusuk, kepingan salju), `gun_neon` (cincin heksagon),
+  `gun_songket` (belah ketupat, bintang, kelopak, sulur emas), `gun_keris` (asap/naga berluk, cincin), `gun_petir` (awan
+  gelap, sambaran), `gun_holo` (bingkai HUD, segitiga, sinar), `gun_mutiara` (kerang, gelembung, ombak; palet `laut`).
+  `audio.js`: 10 bunyi finisher `FINISH`. Tema baru di `fxlib.js`, sel atlas + palet di `fxshapes.js`.
+- **Perbaikan M1 Merak**: bulu api diperbesar (terlihat di orang pertama dan peragaan "Tembak" lobi); equip ditunda lewat
+  `pendEquip` sampai senjata tampil (dulu tidak memunculkan kartu); zona bidik bersih di shader (`uClear`) → kipas beruntun 5 tidak
+  lagi menutup bidikan; titik magasin digeser 3 cm ke arah kamera (`magOut`); peragaan isi ulang lobi memakai kartu 1,5×.
+  `shapefx.js`: `sizeK`; kelebihan preset dari `NP` kini hanya peringatan, bukan throw.
+- **Biaya** (240 frame tembak otomatis + 5 kill): Penuh vs Mati ≈ +0,1–0,15 ms/frame; puncak 61 kartu VM / 236 kartu dunia
+  (batas 96/384); program shader 197 vs 195.
+- **Diuji**: lobi (4 peragaan) dan pertandingan orang pertama (cabut, tembak, isi ulang, periksa, kill ×3) untuk 11 tema; tingkat
+  Ringkas/Mati dan grafis Hemat; beruntun 5. Setelah digabung dengan Senjata M3 + Kostum M3: pertandingan Merak, Mutiara, Magma,
+  0 galat konsol. Tidak ada uji ulang setelah cap `?v=`.
+- **Belum diuji**: orang ketiga, kendaraan, pemain lain, suara yang benar-benar terdengar (headless dibisukan), GPU timer, matriks
+  uji 1–12 rancangan secara penuh.
+- **Kekurangan**: efek isi ulang di orang pertama nyaris tak terlihat di SEMUA tema (magwell di dekat/di bawah tepi layar selama
+  animasi); Magma kecil di orang pertama; cincin Neon agak besar di kanan layar; awan Petir pipih; kilau putih senjata saat
+  cabut/periksa berasal dari shader skin lama (`skinfx.js`), bukan efek berbentuk. Belum: kartu bundel, efek impact untuk skin
+  langka, penghapusan pool Points lama di `killfx.js`.
+- **Berikutnya**: M3–M5 (16 skin senjata + 13 kostum Nusantara baru).
